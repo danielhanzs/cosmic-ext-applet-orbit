@@ -152,7 +152,7 @@ flatpak run org.flatpak.Builder --user --install --force-clean \
 
 `flatpak/local.json` builds the working tree, fetching crates while it
 builds. `flatpak/io.github.danielhanzs.CosmicOrbit.json` is the manifest for
-the COSMIC Flatpak repository: it builds the `v0.1.0` tag offline, from
+the COSMIC Flatpak repository: it builds the `v0.1.1` tag offline, from
 `flatpak/cargo-sources.json`, which `flatpak/generate-sources.sh` makes from
 `Cargo.lock`.
 
