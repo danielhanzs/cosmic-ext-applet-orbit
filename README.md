@@ -10,6 +10,11 @@ libcosmic, following your system theme.
   <img src="data/icons/scalable/apps/io.github.danielhanzs.CosmicOrbit.svg" width="128" alt="Orbit icon">
 </p>
 
+<p align="center">
+  <img src="data/screenshots/dropdown.png" alt="Orbit as a dropdown" height="420">
+  <img src="data/screenshots/islands.png" alt="Orbit fullscreen, as separate islands" height="420">
+</p>
+
 ## Features
 
 ### Quick tiles

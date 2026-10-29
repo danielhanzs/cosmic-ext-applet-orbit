@@ -10,6 +10,9 @@ jiff = "0.2"
 cosmic-settings-a11y-manager-subscription = { git = "https://github.com/pop-os/cosmic-settings", rev = "f1d00fc" }
 cosmic-settings-accessibility-subscription = { git = "https://github.com/pop-os/cosmic-settings", rev = "f1d00fc" }
 futures = "0.3"
+# Cover art: the JPEG and PNG decoders libcosmic leaves out.
+iced = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = ["image-without-codecs"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = [

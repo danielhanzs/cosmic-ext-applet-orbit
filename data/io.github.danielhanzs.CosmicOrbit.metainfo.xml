@@ -25,6 +25,16 @@
       <li>Opens as a dropdown, side panel or fullscreen; one surface or separate islands</li>
     </ul>
   </description>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Quick settings, sliders, calendar and media in one popup</caption>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/main/data/screenshots/dropdown.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Fullscreen, as separate islands, with the month open</caption>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/main/data/screenshots/islands.png</image>
+    </screenshot>
+  </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicOrbit.desktop</launchable>
   <url type="homepage">https://github.com/danielhanzs/cosmic-orbit</url>
   <url type="bugtracker">https://github.com/danielhanzs/cosmic-orbit/issues</url>

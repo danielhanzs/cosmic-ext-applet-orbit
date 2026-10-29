@@ -764,7 +764,7 @@ impl App {
                     .push(dot);
                 row = row.push(
                     button::custom(widget::container(cell).center_x(Length::Fill))
-                        .class(if selected { style::picked() } else { theme::Button::Text })
+                        .class(if selected { style::picked() } else { style::flat() })
                         .padding([4, 0])
                         .width(Length::Fill)
                         .height(Length::Fixed(38.0))
@@ -817,7 +817,7 @@ impl App {
                 column = column.push(
                     widget::Row::new()
                         .align_y(Alignment::Center)
-                        .push(text::caption(T.no_calendar).width(Length::Fill))
+                        .push(widget::space().width(Length::Fill))
                         .push(button::text(T.add_accounts).on_press(Message::Spawn("gnome-online-accounts-gtk", &[]))),
                 );
             }
