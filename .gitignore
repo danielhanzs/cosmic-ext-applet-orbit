@@ -1,2 +1,6 @@
 target/
 .superpowers/
+.flatpak-builder/
+flatpak/build/
+flatpak/repo/
+*.flatpak

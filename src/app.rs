@@ -274,16 +274,6 @@ fn log<T>(what: &str, result: zbus::Result<T>) {
     }
 }
 
-/// Starts a program and leaves it be.
-fn spawn(program: &str, args: &[&str]) {
-    match std::process::Command::new(program).args(args).spawn() {
-        Ok(mut child) => {
-            std::thread::spawn(move || child.wait());
-        }
-        Err(err) => tracing::warn!("cannot run {program}: {err}"),
-    }
-}
-
 fn profile_name(profile: &str) -> &'static str {
     match profile {
         "performance" => T.performance,
@@ -1708,7 +1698,7 @@ impl cosmic::Application for App {
                 self.prefs.save();
             }
             Message::Spawn(program, args) => {
-                spawn(program, args);
+                crate::host::spawn(program, args);
                 return self.close();
             }
             Message::None => {}

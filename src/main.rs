@@ -6,6 +6,7 @@ mod audio;
 mod calendar;
 mod config;
 mod desktop;
+mod host;
 mod i18n;
 mod icons;
 mod media;

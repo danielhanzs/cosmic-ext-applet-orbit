@@ -136,6 +136,24 @@ gnome-online-accounts-gtk     # add your Google / Microsoft / Nextcloud account
 
 Orbit shows a button to open the accounts dialog while no calendar is set up.
 
+### Or as a Flatpak
+
+```sh
+flatpak install --user flathub org.flatpak.Builder org.freedesktop.Sdk//25.08 \
+    org.freedesktop.Sdk.Extension.rust-stable//25.08 com.system76.Cosmic.BaseApp//stable
+flatpak run org.flatpak.Builder --user --install --force-clean \
+    flatpak/build flatpak/local.json
+```
+
+`flatpak/local.json` builds the working tree, fetching crates while it
+builds. `flatpak/io.github.danielhanzs.CosmicOrbit.json` is the manifest for
+the COSMIC Flatpak repository: it builds the `v0.1.0` tag offline, from
+`flatpak/cargo-sources.json`, which `flatpak/generate-sources.sh` makes from
+`Cargo.lock`.
+
+In the sandbox Orbit runs `wpctl`, `pactl`, `curl`, `cosmic-settings`… on
+the host through `flatpak-spawn --host`, as COSMIC applets in Flatpak do.
+
 ## Updating
 
 ```sh

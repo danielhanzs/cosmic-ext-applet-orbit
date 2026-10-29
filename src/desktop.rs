@@ -84,16 +84,14 @@ pub fn set_high_contrast(enabled: bool) {
 /// rest (speed, scrolling…) stays as COSMIC Settings left it.
 fn touchpad_files() -> (Option<std::path::PathBuf>, Vec<std::path::PathBuf>) {
     const KEY: &str = "com.system76.CosmicComp/v1/input_touchpad";
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    let user = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| home.map(|h| h.join(".config")))
-        .map(|dir| dir.join("cosmic").join(KEY));
-    let system = std::env::var("XDG_DATA_DIRS")
-        .unwrap_or_else(|_| "/usr/local/share:/usr/share".into())
-        .split(':')
-        .map(|dir| std::path::Path::new(dir).join("cosmic").join(KEY))
-        .collect();
+    let user = crate::host::config_dir().map(|dir| dir.join("cosmic").join(KEY));
+    // A sandbox sees the host's /usr under /run/host.
+    let data_dirs = if crate::host::in_flatpak() {
+        "/run/host/usr/local/share:/run/host/usr/share".to_string()
+    } else {
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into())
+    };
+    let system = data_dirs.split(':').map(|dir| std::path::Path::new(dir).join("cosmic").join(KEY)).collect();
     (user, system)
 }
 

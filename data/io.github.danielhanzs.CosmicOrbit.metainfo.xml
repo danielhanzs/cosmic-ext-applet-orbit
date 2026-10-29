@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.danielhanzs.CosmicOrbit</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Orbit</name>
+  <summary>Control panel for the COSMIC panel</summary>
+  <summary xml:lang="hu">Vezérlőpult a COSMIC panelre</summary>
+  <developer id="io.github.danielhanzs">
+    <name>Hánzs Dániel</name>
+  </developer>
+  <description>
+    <p>
+      Quick toggles, sliders, a calendar with your synced events and a dynamic
+      island for what's playing, filming or recording — in one popup on your
+      COSMIC panel, following your theme.
+    </p>
+    <ul>
+      <li>Wi-Fi, Bluetooth, VPN, power mode, do not disturb, dark style, airplane mode, microphone, keep awake, tiling, accessibility and touchpad tiles, with detail pages</li>
+      <li>Drag to reorder tiles, make them wide or small, show their icons on the panel</li>
+      <li>Volume with output picker, and screen brightness</li>
+      <li>Month calendar with events from GNOME Online Accounts calendars</li>
+      <li>Media controls, and which apps use the camera or microphone</li>
+      <li>VPN and Wi-Fi passwords from the keyring, or asked in the popup</li>
+      <li>Opens as a dropdown, side panel or fullscreen; one surface or separate islands</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.danielhanzs.CosmicOrbit.desktop</launchable>
+  <url type="homepage">https://github.com/danielhanzs/cosmic-orbit</url>
+  <url type="bugtracker">https://github.com/danielhanzs/cosmic-orbit/issues</url>
+  <url type="vcs-browser">https://github.com/danielhanzs/cosmic-orbit</url>
+  <provides>
+    <id>io.github.danielhanzs.CosmicOrbit.desktop</id>
+  </provides>
+  <categories>
+    <category>COSMIC</category>
+  </categories>
+  <keywords>
+    <keyword>COSMIC</keyword>
+    <keyword>applet</keyword>
+    <keyword>quick settings</keyword>
+    <keyword>control center</keyword>
+    <keyword>calendar</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-29">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

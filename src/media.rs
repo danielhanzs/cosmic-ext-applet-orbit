@@ -87,7 +87,7 @@ async fn art(url: &str) -> Option<PathBuf> {
     let file = dir.join(format!("{:x}", hasher.finish()));
     if !file.exists() {
         tokio::fs::create_dir_all(&dir).await.ok()?;
-        let ok = tokio::process::Command::new("curl")
+        let ok = crate::host::command("curl")
             .args(["-sfL", "--globoff", "--proto", "=https", "--proto-redir", "=https"])
             .args(["--max-time", "5", "--max-filesize", "5000000", "-o"])
             .arg(&file)

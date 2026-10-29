@@ -5,7 +5,7 @@
 
 use cosmic::iced::{Subscription, stream};
 use futures::SinkExt;
-use tokio::{io::AsyncBufReadExt, process::Command};
+use tokio::io::AsyncBufReadExt;
 
 #[derive(Debug, Clone, Default)]
 pub struct Audio {
@@ -25,7 +25,7 @@ pub struct Output {
 }
 
 async fn run(program: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(program).args(args).output().await.ok()?;
+    let out = crate::host::command(program).args(args).output().await.ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -88,7 +88,7 @@ pub fn changes() -> Subscription<()> {
     Subscription::run(|| {
         stream::channel(4, async |mut out| {
             loop {
-                let child = Command::new("pactl")
+                let child = crate::host::command("pactl")
                     .arg("subscribe")
                     .stdout(std::process::Stdio::piped())
                     .kill_on_drop(true)
@@ -121,7 +121,11 @@ mod tests {
 /// Apps with a camera open: directly, as /proc shows, or through PipeWire
 /// (the camera portal), where PipeWire holds the device for them.
 pub async fn camera() -> Vec<String> {
-    let holders = tokio::task::spawn_blocking(camera_holders).await.unwrap_or_default();
+    let holders = if crate::host::in_flatpak() {
+        host_camera_holders().await
+    } else {
+        tokio::task::spawn_blocking(camera_holders).await.unwrap_or_default()
+    };
     let mut apps: Vec<String> = holders
         .iter()
         .filter(|name| !matches!(name.as_str(), "pipewire" | "wireplumber"))
@@ -133,6 +137,15 @@ pub async fn camera() -> Vec<String> {
     apps.sort();
     apps.dedup();
     apps
+}
+
+/// The same, asked of the host: a sandbox sees only its own processes.
+async fn host_camera_holders() -> Vec<String> {
+    const SCRIPT: &str = "for p in /proc/[0-9]*; do ls -l \"$p/fd\" 2>/dev/null | grep -q /dev/video && cat \"$p/comm\"; done";
+    run("sh", &["-c", SCRIPT])
+        .await
+        .map(|out| out.lines().map(str::to_string).collect())
+        .unwrap_or_default()
 }
 
 /// Names of this user's processes holding a /dev/video* open.
