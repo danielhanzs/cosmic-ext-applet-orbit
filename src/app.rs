@@ -20,7 +20,7 @@ use crate::{
     agent,
     audio::{self, Audio},
     calendar::{self, Event},
-    config::{DARK, DND, Layout, PanelIcons, Prefs},
+    config::{DARK, DND, Layout, PanelIcons, Prefs, Spacing},
     icons,
     desktop,
     style,
@@ -221,6 +221,7 @@ pub enum Message {
     ResetTiles,
     PanelIcons(PanelIcons),
     SetIslands(bool),
+    SetSpacing(Spacing),
     ToggleCalendar,
     Camera(Vec<String>),
     TileClick(Tile),
@@ -1262,6 +1263,10 @@ impl App {
         for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
             icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
         }
+        let mut spacing = widget::Row::new().spacing(4);
+        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
+            spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
+        }
         let switch = |label: &'static str, on: bool, message: fn(bool) -> Message| {
             widget::Row::new()
                 .align_y(Alignment::Center)
@@ -1278,6 +1283,8 @@ impl App {
             .push(text::body(T.panel_icons))
             .push(icons)
             .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
+            .push(text::body(T.panel_spacing))
+            .push(spacing)
             .into()
     }
 
@@ -1640,6 +1647,10 @@ impl cosmic::Application for App {
                 self.prefs.panel_icons = icons;
                 self.prefs.save();
             }
+            Message::SetSpacing(spacing) => {
+                self.prefs.spacing = spacing;
+                self.prefs.save();
+            }
             Message::SetIslands(on) => {
                 self.prefs.islands = on;
                 self.prefs.save();
@@ -1791,8 +1802,7 @@ impl cosmic::Application for App {
         let at = icons.len() - usize::from(self.battery.is_some());
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
-        // As dense as COSMIC's interface density says.
-        let gap = self.core.system_theme().cosmic().space_xxs();
+        let gap = self.prefs.spacing.gap();
         if self.prefs.clock {
             let date = self.now.date();
             let clock = if horizontal {

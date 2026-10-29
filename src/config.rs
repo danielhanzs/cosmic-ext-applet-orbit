@@ -14,6 +14,24 @@ pub enum Layout {
     Fullscreen,
 }
 
+/// The gap between the icons on the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Spacing {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Spacing {
+    pub fn gap(self) -> u16 {
+        match self {
+            Spacing::Small => 2,
+            Spacing::Medium => 6,
+            Spacing::Large => 12,
+        }
+    }
+}
+
 /// Which tiles show their icon on the panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PanelIcons {
@@ -36,6 +54,7 @@ pub struct Prefs {
     pub calendar_open: bool,
     /// Each part of the popup on its own, or all on one surface.
     pub islands: bool,
+    pub spacing: Spacing,
 }
 
 impl Default for Prefs {
@@ -49,6 +68,7 @@ impl Default for Prefs {
             panel_icons: PanelIcons::Active,
             calendar_open: false,
             islands: false,
+            spacing: Spacing::Medium,
         }
     }
 }
@@ -85,6 +105,9 @@ impl Prefs {
             if let Ok(v) = c.get("islands") {
                 prefs.islands = v;
             }
+            if let Ok(v) = c.get("spacing") {
+                prefs.spacing = v;
+            }
         }
         prefs
     }
@@ -100,7 +123,8 @@ impl Prefs {
             .and(c.set("small", &self.small))
             .and(c.set("panel_icons", self.panel_icons))
             .and(c.set("calendar_open", self.calendar_open))
-            .and(c.set("islands", self.islands));
+            .and(c.set("islands", self.islands))
+            .and(c.set("spacing", self.spacing));
         if let Err(err) = result {
             tracing::warn!("cannot save settings: {err}");
         }

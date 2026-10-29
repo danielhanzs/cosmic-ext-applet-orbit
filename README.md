@@ -29,7 +29,7 @@ Workspaces.
 ### Looks like COSMIC
 Orbit follows your **Appearance** settings: accent color, dark/light,
 roundness (round, slightly round, square), **frosted glass** for applet
-popups, and **interface density** for the spacing of the panel icons. Show
+popups. The space between the panel icons is yours to set. Show
 the popup as one surface or as **separate islands** — status and actions,
 controls, calendar, and the dynamic island each on its own.
 - State is **live in both directions**: Orbit listens to NetworkManager,
@@ -39,7 +39,8 @@ controls, calendar, and the dynamic island each on its own.
 ### Panel
 Status icons (network, VPN, Bluetooth, volume, battery, camera and
 microphone in use), the clock, and the tiles' own icons: none, only the
-active ones, or all of them with the inactive ones faint. The battery icon
+active ones, or all of them with the inactive ones faint, with adjustable
+spacing. The battery icon
 shows its charge and a clear bolt while plugged in.
 
 ### Sliders
