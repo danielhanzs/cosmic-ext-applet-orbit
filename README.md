@@ -1,49 +1,191 @@
-# Orbit — control panel applet for COSMIC
+# Orbit
 
-A Windows/phone-style control panel for the COSMIC panel: quick tiles,
-volume and brightness, a calendar with your synced events, and a "dynamic
-island" for what's playing, filming or recording — in one popup.
+**A control panel applet for the COSMIC desktop** — quick toggles, sliders, a
+calendar with your synced events, and a "dynamic island" for what's playing,
+filming or recording, all in one popup on your panel. Think the Windows 11
+quick settings or a phone's control center, built natively for COSMIC with
+libcosmic, following your system theme.
 
-- **Tiles**: Wi-Fi, Bluetooth, VPN, power mode, do not disturb, dark style,
-  airplane mode, microphone. Click toggles; the arrow opens details (networks,
-  devices, VPNs, profiles). Drag to reorder, hide, or show only the active ones.
-- **Opens as** dropdown, side panel (slides in), or fullscreen.
-- **Calendar**: events from Evolution Data Server, i.e. the accounts added in
-  GNOME Online Accounts (Google, Microsoft, Nextcloud, CalDAV…); days with
-  events get a dot. Dates follow your region format (LC_TIME), even when the
-  language is another.
-- **Privacy**: which apps use the camera or the microphone, on the panel and
-  in the island.
-- **Clock** on the panel (can be turned off if you keep COSMIC's own).
-- **VPN / Wi-Fi passwords**: the applet is a NetworkManager secret agent, so
-  connections with "store for this user only" passwords connect from the
-  panel without COSMIC Settings open. Passwords come from the keyring, or are
-  asked in the popup and optionally saved there; a locked keyring is unlocked
-  with its own dialog.
-- Follows the COSMIC theme (accent, dark/light, corner radius).
+<p align="center">
+  <img src="data/icons/scalable/apps/io.github.danielhanzs.CosmicOrbit.svg" width="128" alt="Orbit icon">
+</p>
 
-## Install
+## Features
+
+### Quick tiles
+Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
+Airplane mode · Microphone
+
+- **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
+  networks (join, with a password prompt), Bluetooth devices (connect, battery
+  level), VPN connections, power profiles.
+- **Edit**: drag tiles to reorder them, hide the ones you don't use, or show
+  only the tiles that are on (with a button to see all).
+- State is **live in both directions**: Orbit listens to NetworkManager,
+  BlueZ, UPower, power-profiles-daemon, PipeWire and COSMIC's own settings,
+  so changes made anywhere else show up immediately.
+
+### Sliders
+Volume (with output device picker and mute) and screen brightness.
+
+### Calendar
+- Today's date and your next event at a glance; click to open the month.
+- Days with events are marked with a dot; pick a day to see its events.
+- Events come from the calendars synced to the system — Evolution Data
+  Server, filled by GNOME Online Accounts (Google, Microsoft 365, Nextcloud,
+  CalDAV…). Repeating events are handled.
+
+### Dynamic island
+At the bottom of the popup, what's running that you should know about:
+- the media playing (any MPRIS player: Spotify, browsers, …) with cover art
+  and controls,
+- apps using the **camera** (green) or the **microphone** (orange) — also
+  shown as icons on the panel.
+
+### Layouts
+Open Orbit as a **dropdown** under the panel, a **side panel** sliding in from
+the edge, or **fullscreen** with a two-column layout.
+
+### Clock
+Date and time on the panel (optional, if you'd rather keep COSMIC's own).
+
+### Localization
+English and Hungarian. The interface follows your language
+(`LC_MESSAGES`), while dates, month names, the first day of the week and the
+12/24-hour clock follow your **region format** (`LC_TIME`) — so an English
+system with Hungarian formats shows "október 29., csütörtök".
+
+### VPN and Wi-Fi passwords that just work
+Connections whose password is stored "for this user only" (agent-owned)
+can only connect while a NetworkManager *secret agent* answers for them.
+COSMIC Settings is one — but only while it's open, which is why VPNs often
+fail to connect from other applets. **Orbit is a secret agent itself**:
+
+1. it looks the password up in your keyring (GNOME Keyring / Secret
+   Service), unlocking it with the keyring's own dialog if it's locked;
+2. if it isn't there, it asks in the popup, and can remember it in the
+   keyring for next time.
+
+Only NetworkManager itself may ask Orbit for secrets; other callers are
+refused.
+
+## Requirements
+
+- COSMIC desktop (tested on Pop!_OS 24.04 with COSMIC 1.11)
+- NetworkManager, BlueZ, UPower, power-profiles-daemon
+- PipeWire with WirePlumber (`wpctl`) and `pactl`
+- `curl` (cover art), `cosmic-settings`, `cosmic-osd`
+- Optional, for calendar events: `evolution-data-server` and
+  `gnome-online-accounts-gtk`
+
+## Installation
+
+### 1. Build dependencies
 
 ```sh
-sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev pulseaudio-utils
-# Rust from https://rustup.rs
-./install.sh
+sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev \
+    pulseaudio-utils curl git
 ```
 
-Then add **Orbit** in Settings → Desktop → Panel → Applets.
+Rust (1.93 or newer, as libcosmic asks) from [rustup.rs](https://rustup.rs):
 
-For calendar events:
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### 2. Build and install
+
+```sh
+git clone https://github.com/danielhanzs/cosmic-orbit.git
+cd cosmic-orbit
+./install.sh            # installs into ~/.local
+# or system wide:
+# sudo ./install.sh /usr
+```
+
+### 3. Add it to the panel
+
+**Settings → Desktop → Panel → Applets → Add applet → Orbit.**
+
+If it doesn't show up in the list, log out and back in once, so the panel
+picks up the new desktop entry.
+
+### 4. Calendar (optional)
 
 ```sh
 sudo apt install evolution-data-server gnome-online-accounts-gtk
-gnome-online-accounts-gtk   # add your accounts
+gnome-online-accounts-gtk     # add your Google / Microsoft / Nextcloud account
 ```
 
-## Runtime tools
+Orbit shows a button to open the accounts dialog while no calendar is set up.
 
-`wpctl` (WirePlumber), `pactl`, `curl` (album art), `cosmic-settings`,
-`cosmic-osd`, `loginctl`.
+## Updating
+
+```sh
+cd cosmic-orbit
+git pull
+./install.sh
+```
+
+The panel keeps running the old binary until the applet restarts: log out
+and in, or remove Orbit from the panel and add it again.
+
+## Uninstalling
+
+Remove Orbit from the panel first, then:
+
+```sh
+rm ~/.local/bin/cosmic-orbit \
+   ~/.local/share/applications/io.github.danielhanzs.CosmicOrbit.desktop \
+   ~/.local/share/icons/hicolor/scalable/apps/io.github.danielhanzs.CosmicOrbit*.svg
+rm -r ~/.config/cosmic/io.github.danielhanzs.CosmicOrbit   # settings
+rm -r ~/.cache/io.github.danielhanzs.CosmicOrbit           # cover art
+```
+
+## Troubleshooting
+
+The panel collects the applet's log:
+
+```sh
+journalctl --user -f | grep CosmicOrbit
+```
+
+More detail: set `RUST_LOG=cosmic_orbit=debug` in the environment the panel
+starts with.
+
+- **No calendar events** — check that `evolution-data-server` is installed
+  and an account with a calendar is added in GNOME Online Accounts.
+- **VPN asks for a password every time** — turn on *Remember* in the prompt.
+- **Brightness slider missing** — the screen exposes no backlight to COSMIC
+  (common on desktop monitors).
+
+## Development
+
+```sh
+cargo build --release
+cargo test
+```
+
+| File | What it does |
+|------|--------------|
+| `src/app.rs` | the applet: panel button, popup layouts, tiles, pages |
+| `src/sys.rs` | NetworkManager, BlueZ, UPower, power profiles, brightness, change signals |
+| `src/agent.rs` | NetworkManager secret agent and keyring access |
+| `src/audio.rs` | volume, outputs, microphone and camera use |
+| `src/media.rs` | MPRIS player and cover art |
+| `src/calendar.rs` | Evolution Data Server events |
+| `src/config.rs` | saved preferences and COSMIC settings |
+| `src/i18n.rs` | translations and date formats |
+
+Translations are plain structs in `src/i18n.rs`: copy `EN`, translate, and
+pick it by locale.
+
+## Credits
+
+Inspired by DrakRosmann's
+[cosmic-ext-applet-quick-settings](https://github.com/DrakRosmann/cosmic-ext-applet-quick-settings),
+whose approach to COSMIC's settings and protocols informed this rewrite.
 
 ## License
 
-GPL-3.0-only
+[GPL-3.0-only](LICENSE)
