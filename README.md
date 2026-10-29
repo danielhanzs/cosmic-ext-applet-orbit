@@ -25,6 +25,13 @@ Workspaces.
   state) and small (icon only), remove with −, add with +, or reset.
 - On a bright accent color (lime, yellow…) text turns black so it stays
   readable; on dark accents it stays white.
+
+### Looks like COSMIC
+Orbit follows your **Appearance** settings: accent color, dark/light,
+roundness (round, slightly round, square), **frosted glass** for applet
+popups, and **interface density** for the spacing of the panel icons. Show
+the popup as one surface or as **separate islands** — status and actions,
+controls, calendar, and the dynamic island each on its own.
 - State is **live in both directions**: Orbit listens to NetworkManager,
   BlueZ, UPower, power-profiles-daemon, PipeWire, the compositor and COSMIC's
   own settings, so changes made anywhere else show up immediately.
@@ -32,14 +39,15 @@ Workspaces.
 ### Panel
 Status icons (network, VPN, Bluetooth, volume, battery, camera and
 microphone in use), the clock, and the tiles' own icons: none, only the
-active ones, or all of them with the inactive ones faint.
-The space between icons is adjustable.
+active ones, or all of them with the inactive ones faint. The battery icon
+shows its charge and a clear bolt while plugged in.
 
 ### Sliders
 Volume (with output device picker and mute) and screen brightness.
 
 ### Calendar
-- Today's date and your next event at a glance; click to open the month.
+- Today's date and your next event at a glance; click to open the month
+  (remembered).
 - Days with events are marked with a dot; pick a day to see its events.
 - Events come from the calendars synced to the system — Evolution Data
   Server, filled by GNOME Online Accounts (Google, Microsoft 365, Nextcloud,
@@ -78,7 +86,8 @@ refused.
 
 ## Requirements
 
-- COSMIC desktop (tested on Pop!_OS 24.04 with COSMIC 1.11)
+- COSMIC desktop 1.11 or newer (built against the same libcosmic as
+  COSMIC 1.11's own applets; tested on Pop!_OS 24.04)
 - NetworkManager, BlueZ, UPower, power-profiles-daemon
 - PipeWire with WirePlumber (`wpctl`) and `pactl`
 - `curl` (cover art), `cosmic-settings`, `cosmic-osd`

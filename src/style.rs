@@ -73,6 +73,23 @@ pub fn picked() -> theme::Button {
     custom(|t, s| surface(t, true, s, false))
 }
 
+/// A whole line that lights on hover, edge to edge (the calendar's head).
+pub fn flat() -> theme::Button {
+    custom(|t, s| {
+        let cosmic = t.cosmic();
+        let mut style = button::Style::new();
+        style.background = match s {
+            State::Active => None,
+            State::Hovered => Some(Background::Color(cosmic.text_button.hover.into())),
+            State::Pressed => Some(Background::Color(cosmic.text_button.pressed.into())),
+        };
+        style.text_color = Some(cosmic.background(t.transparent).on.into());
+        style.icon_color = style.text_color;
+        style.border_radius = cosmic.corner_radii.radius_s.into();
+        style
+    })
+}
+
 /// An icon button inside a tile: no surface of its own, the tile's text color.
 pub fn on_tile(on: bool) -> theme::Button {
     custom(move |t, s| {

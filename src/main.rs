@@ -7,6 +7,7 @@ mod calendar;
 mod config;
 mod desktop;
 mod i18n;
+mod icons;
 mod media;
 mod style;
 mod sys;

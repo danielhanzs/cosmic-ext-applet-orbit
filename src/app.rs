@@ -20,7 +20,8 @@ use crate::{
     agent,
     audio::{self, Audio},
     calendar::{self, Event},
-    config::{DARK, DND, Layout, PanelIcons, Prefs, Spacing},
+    config::{DARK, DND, Layout, PanelIcons, Prefs},
+    icons,
     desktop,
     style,
     workspaces,
@@ -165,8 +166,6 @@ pub struct App {
     visible: civil::Date,
     /// The shown month's events by day; None: no calendar service.
     events: Option<HashMap<civil::Date, Vec<Event>>>,
-    /// The month shown, or only today's line.
-    calendar_open: bool,
     /// Apps using a camera.
     camera: Vec<String>,
     a11y: Option<desktop::A11ySender>,
@@ -221,7 +220,7 @@ pub enum Message {
     Inhibited(Option<u32>),
     ResetTiles,
     PanelIcons(PanelIcons),
-    SetSpacing(Spacing),
+    SetIslands(bool),
     ToggleCalendar,
     Camera(Vec<String>),
     TileClick(Tile),
@@ -292,14 +291,6 @@ fn profile_name(profile: &str) -> &'static str {
     }
 }
 
-fn profile_icon(profile: &str) -> &'static str {
-    match profile {
-        "performance" => "power-profile-performance-symbolic",
-        "power-saver" => "power-profile-power-saver-symbolic",
-        _ => "power-profile-balanced-symbolic",
-    }
-}
-
 fn wifi_icon(strength: u8) -> &'static str {
     match strength {
         0..=24 => "network-wireless-signal-weak-symbolic",
@@ -311,7 +302,7 @@ fn wifi_icon(strength: u8) -> &'static str {
 
 /// A tile as shown: icon, subtitle, lit, and the page with more of it.
 struct TileView {
-    icon: &'static str,
+    icon: icon::Handle,
     title: &'static str,
     subtitle: String,
     on: bool,
@@ -376,7 +367,7 @@ impl App {
             Tile::Wifi if self.net.wifi_device.is_none() => {
                 let wired = self.net.primary.as_ref().filter(|p| p.wired);
                 return TileView {
-                    icon: "network-wired-symbolic",
+                    icon: named("network-wired-symbolic"),
                     title: T.wired,
                     subtitle: wired.map_or(T.not_connected.into(), |p| p.name.clone()),
                     on: wired.is_some(),
@@ -395,7 +386,7 @@ impl App {
                     None if self.net.wifi_enabled => "network-wireless-offline-symbolic",
                     None => "network-wireless-disabled-symbolic",
                 };
-                (icon, self.net.wifi_enabled, subtitle, Some(Page::Wifi))
+                (named(icon), self.net.wifi_enabled, subtitle, Some(Page::Wifi))
             }
             Tile::Bluetooth => {
                 let names: Vec<_> =
@@ -406,7 +397,7 @@ impl App {
                     on_off(self.bt.powered)
                 };
                 let icon = if self.bt.powered { "bluetooth-active-symbolic" } else { "bluetooth-disabled-symbolic" };
-                (icon, self.bt.powered, subtitle, Some(Page::Bluetooth))
+                (named(icon), self.bt.powered, subtitle, Some(Page::Bluetooth))
             }
             Tile::Vpn => {
                 let active = self.net.vpns.iter().find(|v| v.active.is_some());
@@ -415,54 +406,54 @@ impl App {
                     Some(_) => T.connecting.into(),
                     None => T.off.into(),
                 };
-                ("network-vpn-symbolic", active.is_some(), subtitle, Some(Page::Vpn))
+                (named("network-vpn-symbolic"), active.is_some(), subtitle, Some(Page::Vpn))
             }
             Tile::Power => {
                 let active = &self.profiles.active;
                 (
-                    profile_icon(active),
+                    icons::power_profile(active),
                     !active.is_empty() && active != "balanced",
                     profile_name(active).into(),
                     Some(Page::Power),
                 )
             }
-            Tile::Dnd => ("notification-disabled-symbolic", self.dnd, on_off(self.dnd), None),
-            Tile::Dark => ("dark-mode-symbolic", self.dark, on_off(self.dark), None),
-            Tile::Airplane => ("airplane-mode-symbolic", self.airplane(), on_off(self.airplane()), None),
+            Tile::Dnd => (named("notification-disabled-symbolic"), self.dnd, on_off(self.dnd), None),
+            Tile::Dark => (icons::dark_style(), self.dark, on_off(self.dark), None),
+            Tile::Airplane => (named("airplane-mode-symbolic"), self.airplane(), on_off(self.airplane()), None),
             Tile::Mic => {
                 let muted = self.audio.mic_muted;
                 let icon = if muted { "microphone-disabled-symbolic" } else { "audio-input-microphone-symbolic" };
                 let subtitle = if muted { T.muted } else { T.on };
-                (icon, muted, subtitle.into(), None)
+                (named(icon), muted, subtitle.into(), None)
             }
-            Tile::KeepAwake => ("view-reveal-symbolic", self.inhibit.is_some(), on_off(self.inhibit.is_some()), None),
+            Tile::KeepAwake => (icons::keep_awake(), self.inhibit.is_some(), on_off(self.inhibit.is_some()), None),
             Tile::Tiling => {
                 let on = self.tiling.unwrap_or_else(desktop::autotile);
-                ("view-grid-symbolic", on, on_off(on), None)
+                (named("view-grid-symbolic"), on, on_off(on), None)
             }
             Tile::Magnifier => {
                 let on = self.magnifier.unwrap_or(false);
-                ("zoom-in-symbolic", on, on_off(on), None)
+                (named("zoom-in-symbolic"), on, on_off(on), None)
             }
             Tile::InvertColors => {
                 let on = self.screen_filter.is_some_and(|f| f.0);
-                ("preferences-color-symbolic", on, on_off(on), None)
+                (named("preferences-color-symbolic"), on, on_off(on), None)
             }
             Tile::ScreenReader => {
                 let on = self.screen_reader.unwrap_or(false);
-                ("preferences-desktop-accessibility-symbolic", on, on_off(on), None)
+                (named("preferences-desktop-accessibility-symbolic"), on, on_off(on), None)
             }
             Tile::HighContrast => {
                 let on = self.core.system_theme().cosmic().is_high_contrast;
-                ("color-select-symbolic", on, on_off(on), None)
+                (named("color-select-symbolic"), on, on_off(on), None)
             }
             // Shortcuts: never lit.
-            Tile::Screenshot => ("accessories-screenshot-symbolic", false, String::new(), None),
-            Tile::Workspaces => ("view-app-grid-symbolic", false, String::new(), None),
+            Tile::Screenshot => (named("accessories-screenshot-symbolic"), false, String::new(), None),
+            Tile::Workspaces => (named("view-app-grid-symbolic"), false, String::new(), None),
             Tile::Touchpad => {
                 let on = self.touchpad.unwrap_or(false);
                 let icon = if on { "input-touchpad-symbolic" } else { "touchpad-disabled-symbolic" };
-                (icon, on, on_off(on), None)
+                (named(icon), on, on_off(on), None)
             }
         };
         TileView { icon, title: tile.name(), subtitle, on, page }
@@ -631,7 +622,7 @@ impl App {
         let mut row = widget::Row::new().spacing(8).align_y(Alignment::Center);
         if let Some(b) = &self.battery {
             row = row
-                .push(icon::from_name(b.icon.as_str()).size(16))
+                .push(icon::icon(icons::battery(b.percent, b.charging)).size(16))
                 .push(text::body(format!("{:.0}%", b.percent)));
         }
         let action = |name: &'static str, message: Message| {
@@ -684,7 +675,7 @@ impl App {
         let view = self.tile(tile);
         let small = self.prefs.small.contains(&tile);
         let content: Element<'_, Message> = if small {
-            widget::container(icon::from_name(view.icon).size(20)).center(Length::Fill).into()
+            widget::container(icon::icon(view.icon.clone()).size(20)).center(Length::Fill).into()
         } else {
             let mut label = widget::Column::new().push(text::body(view.title).font(cosmic::font::bold()));
             if !view.subtitle.is_empty() {
@@ -693,7 +684,7 @@ impl App {
             let mut row = widget::Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(icon::from_name(view.icon).size(20))
+                .push(icon::icon(view.icon.clone()).size(20))
                 .push(widget::container(label).width(Length::Fill).clip(true));
             if let Some(page) = view.page {
                 row = row.push(
@@ -809,7 +800,7 @@ impl App {
             (None, Some(_)) => T.no_events.to_string(),
             (None, None) => T.no_calendar.to_string(),
         };
-        let chevron = if self.calendar_open { "go-up-symbolic" } else { "go-down-symbolic" };
+        let chevron = if self.prefs.calendar_open { "go-up-symbolic" } else { "go-down-symbolic" };
         let head = button::custom(
             widget::Row::new()
                 .spacing(8)
@@ -822,14 +813,14 @@ impl App {
                 )
                 .push(icon::from_name(chevron).size(16)),
         )
-        .class(theme::Button::Text)
-        .padding(0)
+        .class(style::flat())
+        .padding(12)
         .width(Length::Fill)
         .on_press(Message::ToggleCalendar);
-        if !self.calendar_open {
-            return card(head);
+        if !self.prefs.calendar_open {
+            return head.into();
         }
-        let mut column = widget::Column::new().spacing(8).push(head).push(self.month_grid());
+        let mut column = widget::Column::new().spacing(8).push(self.month_grid());
         match &self.events {
             None => {
                 column = column.push(
@@ -864,7 +855,10 @@ impl App {
                 }
             }
         }
-        card(column)
+        widget::Column::new()
+            .push(head)
+            .push(container(column).padding([0, 12, 12, 12]))
+            .into()
     }
 
     /// What's running that speaks up: the music, who records.
@@ -928,7 +922,7 @@ impl App {
                         background: Some(Color::from(cosmic.palette.neutral_1.with_alpha(0.9)).into()),
                         text_color: Some(cosmic.palette.neutral_9.into()),
                         icon_color: Some(cosmic.palette.neutral_9.into()),
-                        border: iced::Border { radius: 28.0.into(), ..Default::default() },
+                        border: iced::Border { radius: cosmic.corner_radii.radius_m.into(), ..Default::default() },
                         ..Default::default()
                     }
                 }))
@@ -936,27 +930,52 @@ impl App {
         })
     }
 
+    /// The popup's parts: on one surface, or each an island of its own.
     fn main_page(&self, wide: bool) -> Element<'_, Message> {
-        let controls = widget::Column::new()
-            .spacing(14)
-            .push(self.header())
-            .push(self.sliders())
-            .push(self.tiles());
-        let mut side = widget::Column::new().spacing(14);
+        let islands = self.prefs.islands;
+        let width = Length::Fixed(WIDTH);
+        let frame = |parts| frame(parts, islands);
+        let mut left = vec![self.header(), widget::Column::new().spacing(14).push(self.sliders()).push(self.tiles()).into()];
+        let mut right: Vec<Element<'_, Message>> = Vec::new();
         if self.prefs.calendar {
-            side = side.push(self.calendar_view());
+            // Flush to its edges, so the whole line lights on hover.
+            let calendar = self.calendar_view();
+            right.push(if islands {
+                panel(calendar, WIDTH).padding(0).into()
+            } else {
+                container(calendar).width(Length::Fill).class(theme::Container::Card).into()
+            });
         }
-        if let Some(island) = self.island() {
-            side = side.push(island);
-        }
+        let island = self.island();
         if wide {
-            widget::Row::new()
+            let mut side = widget::Column::new().spacing(if islands { 8 } else { 14 });
+            side = side.push(if islands {
+                right.into_iter().fold(widget::Column::new().spacing(8), |c, p| c.push(p)).into()
+            } else {
+                frame(right)
+            });
+            if let Some(island) = island {
+                side = side.push(island);
+            }
+            return widget::Row::new()
                 .spacing(24)
-                .push(widget::container(controls).width(Length::Fixed(WIDTH)))
-                .push(widget::container(side).width(Length::Fixed(WIDTH)))
-                .into()
+                .push(container(frame(left)).width(width))
+                .push(container(side).width(width))
+                .into();
+        }
+        if islands {
+            let mut column = widget::Column::new().spacing(8).push(frame(left));
+            for part in right {
+                column = column.push(part);
+            }
+            if let Some(island) = island {
+                column = column.push(island);
+            }
+            column.into()
         } else {
-            controls.push(side).into()
+            left.extend(right);
+            left.extend(island);
+            frame(left)
         }
     }
 
@@ -974,7 +993,7 @@ impl App {
 
     fn item(
         &self,
-        icon_name: impl Into<String>,
+        icon_handle: icon::Handle,
         title: impl Into<String>,
         subtitle: Option<String>,
         checked: bool,
@@ -987,7 +1006,7 @@ impl App {
         let mut row = widget::Row::new()
             .spacing(12)
             .align_y(Alignment::Center)
-            .push(icon::from_name(icon_name.into()).size(20))
+            .push(icon::icon(icon_handle).size(20))
             .push(widget::container(label).width(Length::Fill));
         if checked {
             row = row.push(icon::from_name("object-select-symbolic").size(16));
@@ -1025,7 +1044,7 @@ impl App {
                         };
                         let subtitle = ap.active.then(|| T.connected.to_string());
                         let name = if ap.secure { format!("{} 🔒", ap.ssid) } else { ap.ssid.clone() };
-                        column = column.push(self.item(wifi_icon(ap.strength), name, subtitle, ap.active, message));
+                        column = column.push(self.item(named(wifi_icon(ap.strength)), name, subtitle, ap.active, message));
                     }
                 }
                 column = column.push(self.more("wireless"));
@@ -1041,7 +1060,7 @@ impl App {
                         };
                         let icon_name = format!("{}-symbolic", device.icon);
                         column = column.push(self.item(
-                            icon_name,
+                            named(&icon_name),
                             device.name.clone(),
                             subtitle,
                             device.connected,
@@ -1062,7 +1081,7 @@ impl App {
                         None => (None, Message::Connect(vpn.path.clone())),
                     };
                     column = column.push(self.item(
-                        "network-vpn-symbolic",
+                        named("network-vpn-symbolic"),
                         vpn.name.clone(),
                         subtitle,
                         vpn.active.is_some(),
@@ -1075,7 +1094,7 @@ impl App {
                 column = column.push(self.page_header(T.power, None));
                 for profile in &self.profiles.available {
                     column = column.push(self.item(
-                        profile_icon(profile),
+                        icons::power_profile(profile),
                         profile_name(profile),
                         None,
                         *profile == self.profiles.active,
@@ -1088,7 +1107,7 @@ impl App {
                 column = column.push(self.page_header(T.sound_output, None));
                 for output in &self.audio.outputs {
                     column = column.push(self.item(
-                        "audio-speakers-symbolic",
+                        named("audio-speakers-symbolic"),
                         output.description.clone(),
                         None,
                         output.default,
@@ -1134,7 +1153,7 @@ impl App {
                 let mut inner = widget::Row::new()
                     .spacing(8)
                     .align_y(Alignment::Center)
-                    .push(icon::from_name(self.tile(tile).icon).size(18));
+                    .push(icon::icon(self.tile(tile).icon).size(18));
                 if !small {
                     inner = inner.push(
                         widget::container(text::body(tile.name()).wrapping(iced::widget::text::Wrapping::None))
@@ -1214,7 +1233,7 @@ impl App {
                                 widget::Row::new()
                                     .spacing(4)
                                     .align_y(Alignment::Center)
-                                    .push(icon::from_name(self.tile(*tile).icon).size(18))
+                                    .push(icon::icon(self.tile(*tile).icon).size(18))
                                     .push(icon::from_name("list-add-symbolic").size(12)),
                             )
                             .class(style::tile(false))
@@ -1239,10 +1258,6 @@ impl App {
         for (layout, name) in [(Layout::Dropdown, T.dropdown), (Layout::Side, T.side), (Layout::Fullscreen, T.fullscreen)] {
             layouts = layouts.push(choice(name, layout == self.prefs.layout, Message::SetLayout(layout)));
         }
-        let mut spacing = widget::Row::new().spacing(4);
-        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
-            spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
-        }
         let mut icons = widget::Row::new().spacing(4);
         for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
             icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
@@ -1262,8 +1277,7 @@ impl App {
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
             .push(text::body(T.panel_icons))
             .push(icons)
-            .push(text::body(T.panel_spacing))
-            .push(spacing)
+            .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
             .into()
     }
 
@@ -1334,22 +1348,31 @@ fn dot<'a>(on_accent: bool) -> Element<'a, Message> {
         .into()
 }
 
+/// Padded parts, framed together on one surface or each as an island.
+fn frame<'a>(parts: Vec<Element<'a, Message>>, islands: bool) -> Element<'a, Message> {
+    if islands {
+        parts
+            .into_iter()
+            .fold(widget::Column::new().spacing(8), |c, part| c.push(panel(container(part).padding(14).into(), WIDTH)))
+            .into()
+    } else {
+        let column = parts.into_iter().fold(widget::Column::new().spacing(14), |c, p| c.push(p));
+        panel(container(column).padding(14).into(), WIDTH).into()
+    }
+}
+
+/// An icon from the icon theme.
+fn named(name: &str) -> icon::Handle {
+    icon::from_name(name.to_string()).symbolic(true).handle()
+}
+
 /// An icon on the panel, in the panel's color; faint for a function that's off.
-fn status_icon<'a>(name: &str, size: u16, faint: bool) -> Element<'a, Message> {
-    icon::icon(icon::from_name(name.to_string()).symbolic(true).handle())
+fn status_icon<'a>(handle: icon::Handle, size: u16, faint: bool) -> Element<'a, Message> {
+    icon::icon(handle)
         .size(size)
         .class(theme::Svg::Custom(std::rc::Rc::new(move |theme| iced::widget::svg::Style {
             color: Some(Color::from(theme.cosmic().background(theme.transparent).on).scale_alpha(if faint { 0.4 } else { 1.0 })),
         })))
-        .into()
-}
-
-/// A rounded block in the theme's component color.
-fn card<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    container(content)
-        .padding(12)
-        .width(Length::Fill)
-        .class(theme::Container::Card)
         .into()
 }
 
@@ -1389,7 +1412,6 @@ impl cosmic::Application for App {
             workspaces: None,
             tiling: None,
             touchpad: desktop::touchpad(),
-            calendar_open: false,
             drag: None,
             drag_over: None,
             pending: HashSet::new(),
@@ -1511,7 +1533,10 @@ impl cosmic::Application for App {
                     self.events = events;
                 }
             }
-            Message::ToggleCalendar => self.calendar_open = !self.calendar_open,
+            Message::ToggleCalendar => {
+                self.prefs.calendar_open = !self.prefs.calendar_open;
+                self.prefs.save();
+            }
             Message::CheckCamera => return run(async { Message::Camera(audio::camera().await) }),
             Message::Camera(apps) => self.camera = apps,
             Message::TileClick(tile) => return self.click(tile),
@@ -1615,8 +1640,8 @@ impl cosmic::Application for App {
                 self.prefs.panel_icons = icons;
                 self.prefs.save();
             }
-            Message::SetSpacing(spacing) => {
-                self.prefs.spacing = spacing;
+            Message::SetIslands(on) => {
+                self.prefs.islands = on;
                 self.prefs.save();
             }
             Message::A11y(desktop::A11y::Ready(tx)) => self.a11y = Some(tx),
@@ -1726,7 +1751,7 @@ impl cosmic::Application for App {
         let applet = &self.core.applet;
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
-        let mut push = |name: &str| icons.push(status_icon(name, size, false));
+        let mut push = |name: &str| icons.push(status_icon(named(name), size, false));
         if !self.camera.is_empty() {
             push("camera-web-symbolic");
         }
@@ -1760,12 +1785,14 @@ impl cosmic::Application for App {
             }
         }
         if let Some(b) = &self.battery {
-            push(b.icon.as_str());
+            icons.push(status_icon(icons::battery(b.percent, b.charging), size, false));
         }
         // Before the battery and the clock, at the end of the status icons.
         let at = icons.len() - usize::from(self.battery.is_some());
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
+        // As dense as COSMIC's interface density says.
+        let gap = self.core.system_theme().cosmic().space_xxs();
         if self.prefs.clock {
             let date = self.now.date();
             let clock = if horizontal {
@@ -1776,9 +1803,9 @@ impl cosmic::Application for App {
             icons.push(applet.text(clock).into());
         }
         let content: Element<'_, Message> = if horizontal {
-            widget::row::with_children(icons).spacing(self.prefs.spacing.gap()).align_y(Alignment::Center).into()
+            widget::row::with_children(icons).spacing(gap).align_y(Alignment::Center).into()
         } else {
-            widget::column::with_children(icons).spacing(self.prefs.spacing.gap()).align_x(Alignment::Center).into()
+            widget::column::with_children(icons).spacing(gap).align_x(Alignment::Center).into()
         };
         let (major, minor) = applet.suggested_padding(true);
         let button = button::custom(content)
@@ -1794,28 +1821,30 @@ impl cosmic::Application for App {
         }
         let layout = self.prefs.layout;
         let wide = layout == Layout::Fullscreen && self.page == Page::Main;
-        let content = if self.page == Page::Main { self.main_page(wide) } else { self.sub_page() };
-        let body = widget::scrollable(widget::container(content).padding(14));
+        let content = if self.page == Page::Main {
+            self.main_page(wide)
+        } else {
+            panel(container(self.sub_page()).padding(14).into(), WIDTH).into()
+        };
+        let body = widget::scrollable(content);
         match layout {
-            Layout::Dropdown => self
-                .core
-                .applet
-                .popup_container(container(body).width(Length::Fixed(WIDTH)))
-                .limits(Limits::NONE.width(WIDTH).min_height(1.0).max_height(self.screen.1 as f32))
-                .into(),
+            Layout::Dropdown => cosmic::widget::autosize::autosize(
+                container(body).width(Length::Fixed(WIDTH)),
+                widget::Id::new("orbit-autosize"),
+            )
+            .limits(Limits::NONE.width(WIDTH).min_height(1.0).max_height(self.screen.1 as f32))
+            .into(),
             Layout::Side => {
                 let t = (self.opened.elapsed().as_secs_f32() / SLIDE.as_secs_f32()).min(1.0);
                 let shift = (1.0 - t).powi(3) * (WIDTH + 40.0);
-                container(panel(body.into(), WIDTH).height(Length::Fill))
+                container(body)
                     .padding(iced::Padding { left: 20.0 + shift, right: 20.0 - shift.min(20.0), top: 0.0, bottom: 0.0 })
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
             }
             Layout::Fullscreen => {
-                let width = if wide { WIDTH * 2.0 + 60.0 } else { WIDTH };
-                let card = widget::mouse_area(panel(body.into(), width).max_height(self.screen.1 as f32 * 0.9))
-                    .on_press(Message::None);
+                let card = widget::mouse_area(container(body).max_height(self.screen.1 as f32 * 0.9)).on_press(Message::None);
                 widget::mouse_area(
                     container(card)
                         .center(Length::Fill)

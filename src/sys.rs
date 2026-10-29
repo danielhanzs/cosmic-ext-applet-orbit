@@ -414,14 +414,13 @@ trait Battery {
     fn state(&self) -> zbus::Result<u32>;
     #[zbus(property)]
     fn is_present(&self) -> zbus::Result<bool>;
-    #[zbus(property)]
-    fn icon_name(&self) -> zbus::Result<String>;
 }
 
 #[derive(Debug, Clone)]
 pub struct BatteryState {
     pub percent: f64,
-    pub icon: String,
+    /// Plugged in: charging, or full.
+    pub charging: bool,
 }
 
 pub async fn battery() -> zbus::Result<Option<BatteryState>> {
@@ -432,7 +431,8 @@ pub async fn battery() -> zbus::Result<Option<BatteryState>> {
     }
     Ok(Some(BatteryState {
         percent: battery.percentage().await?,
-        icon: battery.icon_name().await?,
+        // 1: charging, 4: fully charged.
+        charging: matches!(battery.state().await?, 1 | 4),
     }))
 }
 
