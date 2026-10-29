@@ -20,7 +20,10 @@ use crate::{
     agent,
     audio::{self, Audio},
     calendar::{self, Event},
-    config::{DARK, DND, Layout, Prefs},
+    config::{DARK, DND, Layout, Prefs, Spacing},
+    desktop,
+    style,
+    workspaces,
     i18n::{self, T},
     media::{self, Media},
     sys::{self, AccessPoint, BatteryState, Bluetooth, Network, Profiles, Source},
@@ -39,10 +42,40 @@ pub enum Tile {
     Dark,
     Airplane,
     Mic,
+    KeepAwake,
+    Tiling,
+    Magnifier,
+    InvertColors,
+    ScreenReader,
+    HighContrast,
+    Screenshot,
+    Workspaces,
+    Touchpad,
 }
 
 impl Tile {
-    pub const ALL: [Tile; 8] = [
+    pub const ALL: [Tile; 17] = [
+        Tile::Wifi,
+        Tile::Bluetooth,
+        Tile::Vpn,
+        Tile::Power,
+        Tile::Dnd,
+        Tile::Dark,
+        Tile::Airplane,
+        Tile::Mic,
+        Tile::KeepAwake,
+        Tile::Tiling,
+        Tile::Magnifier,
+        Tile::InvertColors,
+        Tile::ScreenReader,
+        Tile::HighContrast,
+        Tile::Screenshot,
+        Tile::Workspaces,
+        Tile::Touchpad,
+    ];
+
+    /// Shown at first, and after a reset.
+    pub const DEFAULT: [Tile; 8] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -63,8 +96,40 @@ impl Tile {
             Tile::Dark => T.dark,
             Tile::Airplane => T.airplane,
             Tile::Mic => T.mic,
+            Tile::KeepAwake => T.keep_awake,
+            Tile::Tiling => T.tiling,
+            Tile::Magnifier => T.magnifier,
+            Tile::InvertColors => T.invert_colors,
+            Tile::ScreenReader => T.screen_reader,
+            Tile::HighContrast => T.high_contrast,
+            Tile::Screenshot => T.screenshot,
+            Tile::Workspaces => T.workspaces,
+            Tile::Touchpad => T.touchpad,
         }
     }
+
+    /// Already on the panel as status icons, so not again as tiles.
+    fn has_status_icon(self) -> bool {
+        matches!(self, Tile::Wifi | Tile::Bluetooth | Tile::Vpn | Tile::Mic)
+    }
+}
+
+/// Lays tiles out in rows of four columns: wide tiles take two, small ones
+/// one. Each tile keeps its index in `tiles`, for dragging.
+fn rows(tiles: &[Tile], small: &[Tile]) -> Vec<Vec<(usize, Tile)>> {
+    let mut rows: Vec<Vec<(usize, Tile)>> = vec![Vec::new()];
+    let mut used = 0;
+    for (i, tile) in tiles.iter().enumerate() {
+        let width = if small.contains(tile) { 1 } else { 2 };
+        if used + width > 4 {
+            rows.push(Vec::new());
+            used = 0;
+        }
+        rows.last_mut().expect("a row").push((i, *tile));
+        used += width;
+    }
+    rows.retain(|r| !r.is_empty());
+    rows
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +169,18 @@ pub struct App {
     calendar_open: bool,
     /// Apps using a camera.
     camera: Vec<String>,
+    a11y: Option<desktop::A11ySender>,
+    magnifier: Option<bool>,
+    /// Inverted colors, and the color filter kept as it is.
+    screen_filter: Option<(bool, Option<desktop::ColorFilter>)>,
+    screen_reader: Option<bool>,
+    reader: Option<tokio::sync::mpsc::UnboundedSender<desktop::ReaderRequest>>,
+    /// Keeping awake: the inhibition's cookie.
+    inhibit: Option<u32>,
+    workspaces: Option<cosmic::cctk::sctk::reexports::calloop::channel::Sender<bool>>,
+    /// Whether the active workspace tiles.
+    tiling: Option<bool>,
+    touchpad: Option<bool>,
     /// A tile being dragged in the editor, and where it would go.
     drag: Option<usize>,
     drag_over: Option<usize>,
@@ -113,7 +190,6 @@ pub struct App {
     adjusting: Option<Instant>,
     password: Option<(agent::Request, String)>,
     remember: bool,
-    show_all: bool,
     screen: (u32, u32),
 }
 
@@ -138,6 +214,14 @@ pub enum Message {
     Media(Option<Media>),
     Events(civil::Date, Option<HashMap<civil::Date, Vec<Event>>>),
     CheckCamera,
+    A11y(desktop::A11y),
+    Reader(desktop::ReaderResponse),
+    Workspaces(workspaces::Event),
+    CompChanged,
+    Inhibited(Option<u32>),
+    ResetTiles,
+    PanelTiles(bool),
+    SetSpacing(Spacing),
     ToggleCalendar,
     Camera(Vec<String>),
     TileClick(Tile),
@@ -353,6 +437,35 @@ impl App {
                 let subtitle = if muted { T.muted } else { T.on };
                 (icon, muted, subtitle.into(), None)
             }
+            Tile::KeepAwake => ("view-reveal-symbolic", self.inhibit.is_some(), on_off(self.inhibit.is_some()), None),
+            Tile::Tiling => {
+                let on = self.tiling.unwrap_or_else(desktop::autotile);
+                ("view-grid-symbolic", on, on_off(on), None)
+            }
+            Tile::Magnifier => {
+                let on = self.magnifier.unwrap_or(false);
+                ("zoom-in-symbolic", on, on_off(on), None)
+            }
+            Tile::InvertColors => {
+                let on = self.screen_filter.is_some_and(|f| f.0);
+                ("preferences-color-symbolic", on, on_off(on), None)
+            }
+            Tile::ScreenReader => {
+                let on = self.screen_reader.unwrap_or(false);
+                ("preferences-desktop-accessibility-symbolic", on, on_off(on), None)
+            }
+            Tile::HighContrast => {
+                let on = self.core.system_theme().cosmic().is_high_contrast;
+                ("color-select-symbolic", on, on_off(on), None)
+            }
+            // Shortcuts: never lit.
+            Tile::Screenshot => ("accessories-screenshot-symbolic", false, String::new(), None),
+            Tile::Workspaces => ("view-app-grid-symbolic", false, String::new(), None),
+            Tile::Touchpad => {
+                let on = self.touchpad.unwrap_or(false);
+                let icon = if on { "input-touchpad-symbolic" } else { "touchpad-disabled-symbolic" };
+                (icon, on, on_off(on), None)
+            }
         };
         TileView { icon, title: tile.name(), subtitle, on, page }
     }
@@ -405,6 +518,50 @@ impl App {
                 })
             }
             Tile::Mic => fire(audio::toggle_mute(true)),
+            Tile::KeepAwake => match self.inhibit.take() {
+                Some(cookie) => fire(desktop::allow_idle(cookie)),
+                None => run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) }),
+            },
+            Tile::Tiling => {
+                let on = !self.tiling.unwrap_or_else(desktop::autotile);
+                match &self.workspaces {
+                    Some(tx) => _ = tx.send(on),
+                    None => desktop::set_autotile(on),
+                }
+                self.tiling = Some(on);
+                Task::none()
+            }
+            Tile::Magnifier => {
+                if let (Some(tx), Some(on)) = (&self.a11y, self.magnifier) {
+                    _ = tx.send(desktop::AccessibilityRequest::Magnifier(!on));
+                }
+                Task::none()
+            }
+            Tile::InvertColors => {
+                if let (Some(tx), Some((inverted, filter))) = (&self.a11y, self.screen_filter) {
+                    _ = tx.send(desktop::AccessibilityRequest::ScreenFilter { inverted: !inverted, filter });
+                }
+                Task::none()
+            }
+            Tile::ScreenReader => {
+                if let (Some(tx), Some(on)) = (&self.reader, self.screen_reader) {
+                    _ = tx.send(desktop::ReaderRequest::ScreenReader(!on));
+                    self.screen_reader = Some(!on);
+                }
+                Task::none()
+            }
+            Tile::HighContrast => {
+                desktop::set_high_contrast(!self.core.system_theme().cosmic().is_high_contrast);
+                Task::none()
+            }
+            Tile::Screenshot => self.update(Message::Spawn("cosmic-screenshot", &[])),
+            Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
+            Tile::Touchpad => {
+                let on = !self.touchpad.unwrap_or(false);
+                desktop::set_touchpad(on);
+                self.touchpad = Some(on);
+                Task::none()
+            }
         }
     }
 
@@ -464,7 +621,6 @@ impl App {
         if self.page != Page::Password {
             self.page = Page::Main;
         }
-        self.show_all = false;
         match self.popup.take() {
             Some(id) => cosmic::surface::surface_task(surface::action::destroy_popup(id)),
             None => Task::none(),
@@ -528,49 +684,64 @@ impl App {
 
     fn tile_view(&self, tile: Tile) -> Element<'_, Message> {
         let view = self.tile(tile);
-        let label = widget::Column::new()
-            .push(text::body(view.title).font(cosmic::font::bold()))
-            .push(text::caption(view.subtitle).wrapping(iced::widget::text::Wrapping::None));
-        let mut content = widget::Row::new()
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .push(icon::from_name(view.icon).size(20))
-            .push(widget::container(label).width(Length::Fill).clip(true));
-        if let Some(page) = view.page {
-            content = content.push(
-                button::icon(icon::from_name("go-next-symbolic"))
-                    .padding(4)
-                    .on_press(Message::Page(page)),
-            );
-        }
-        button::custom(content)
-            .class(if view.on { theme::Button::Suggested } else { theme::Button::Standard })
-            .padding([10, 12])
+        let small = self.prefs.small.contains(&tile);
+        let content: Element<'_, Message> = if small {
+            widget::container(icon::from_name(view.icon).size(20)).center(Length::Fill).into()
+        } else {
+            let mut label = widget::Column::new().push(text::body(view.title).font(cosmic::font::bold()));
+            if !view.subtitle.is_empty() {
+                label = label.push(text::caption(view.subtitle).wrapping(iced::widget::text::Wrapping::None));
+            }
+            let mut row = widget::Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(icon::from_name(view.icon).size(20))
+                .push(widget::container(label).width(Length::Fill).clip(true));
+            if let Some(page) = view.page {
+                row = row.push(
+                    button::icon(icon::from_name("go-next-symbolic"))
+                        .class(style::on_tile(view.on))
+                        .padding(4)
+                        .on_press(Message::Page(page)),
+                );
+            }
+            row.into()
+        };
+        let button = button::custom(content)
+            .class(style::tile(view.on))
+            .padding(if small { [10, 0] } else { [10, 12] })
             .width(Length::Fill)
             .height(Length::Fixed(60.0))
-            .on_press(Message::TileClick(tile))
-            .into()
+            .on_press(Message::TileClick(tile));
+        let tip: Element<'_, Message> = button.into();
+        if small {
+            widget::tooltip(tip, text::caption(view.title), widget::tooltip::Position::Top).into()
+        } else {
+            tip
+        }
     }
 
     fn tiles(&self) -> Element<'_, Message> {
         let mut shown: Vec<Tile> = self.prefs.tiles.clone();
-        let hidden_inactive = self.prefs.only_active && !self.show_all;
-        if hidden_inactive {
+        if self.prefs.only_active && !self.prefs.show_all {
             shown.retain(|t| self.tile(*t).on);
         }
         let mut column = widget::Column::new().spacing(8);
-        for pair in shown.chunks(2) {
-            let mut row = widget::Row::new().spacing(8);
-            for tile in pair {
-                row = row.push(self.tile_view(*tile));
+        for row in rows(&shown, &self.prefs.small) {
+            let mut line = widget::Row::new().spacing(8);
+            let mut used = 0;
+            for (_, tile) in row {
+                let width = if self.prefs.small.contains(&tile) { 1 } else { 2 };
+                used += width;
+                line = line.push(widget::container(self.tile_view(tile)).width(Length::FillPortion(width)));
             }
-            if pair.len() == 1 {
-                row = row.push(widget::space().width(Length::Fill));
+            if used < 4 {
+                line = line.push(widget::space().width(Length::FillPortion(4 - used)));
             }
-            column = column.push(row);
+            column = column.push(line);
         }
         if self.prefs.only_active {
-            let label = if self.show_all { T.done } else { T.show_all };
+            let label = if self.prefs.show_all { T.show_less } else { T.show_all };
             column = column.push(
                 widget::Row::new()
                     .push(widget::space().width(Length::Fill))
@@ -624,7 +795,7 @@ impl App {
                     .push(dot);
                 row = row.push(
                     button::custom(widget::container(cell).center_x(Length::Fill))
-                        .class(if selected { theme::Button::Suggested } else { theme::Button::Text })
+                        .class(if selected { style::picked() } else { theme::Button::Text })
                         .padding([4, 0])
                         .width(Length::Fill)
                         .height(Length::Fixed(38.0))
@@ -947,58 +1118,143 @@ impl App {
     }
 
     fn edit_page(&self) -> Element<'_, Message> {
+        let header = widget::Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(button::icon(icon::from_name("go-previous-symbolic")).padding(8).on_press(Message::Page(Page::Main)))
+            .push(text::title4(T.edit).width(Length::Fill))
+            .push(
+                widget::tooltip(
+                    button::icon(icon::from_name("edit-undo-symbolic")).padding(8).on_press(Message::ResetTiles),
+                    text::caption(T.reset),
+                    widget::tooltip::Position::Bottom,
+                ),
+            );
         let mut column = widget::Column::new()
-            .spacing(6)
-            .push(self.page_header(T.edit, None))
-            .push(text::heading(T.tiles));
-        let shown = &self.prefs.tiles;
-        let hidden = Tile::ALL.iter().filter(|t| !shown.contains(t));
-        // Grab a row and drop it on another to move it there.
-        for (i, tile) in shown.iter().enumerate() {
-            let row = widget::Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(icon::from_name("list-drag-handle-symbolic").size(16))
-                .push(icon::from_name(self.tile(*tile).icon).size(16))
-                .push(text::body(tile.name()).width(Length::Fill))
-                .push(widget::toggler(true).on_toggle(|on| Message::ShowTile(*tile, on)));
-            let target = self.drag.is_some() && self.drag_over == Some(i) && self.drag != Some(i);
-            let class = match (self.drag == Some(i), target) {
-                (true, _) => theme::Container::Primary,
-                (_, true) => theme::Container::custom(|theme| container::Style {
+            .spacing(10)
+            .push(header)
+            .push(text::caption(T.edit_hint));
+
+        // The shown tiles, as they lay out: drag to move, click to resize.
+        let mut grid = widget::Column::new().spacing(8);
+        for row in rows(&self.prefs.tiles, &self.prefs.small) {
+            let mut line = widget::Row::new().spacing(8);
+            let mut used = 0;
+            for (i, tile) in row {
+                let small = self.prefs.small.contains(&tile);
+                let width = if small { 1 } else { 2 };
+                used += width;
+                let mut inner = widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name(self.tile(tile).icon).size(18));
+                if !small {
+                    inner = inner.push(
+                        widget::container(text::body(tile.name()).wrapping(iced::widget::text::Wrapping::None))
+                            .width(Length::Fill)
+                            .clip(true),
+                    );
+                } else {
+                    inner = inner.push(widget::space().width(Length::Fill));
+                }
+                inner = inner.push(
+                    button::icon(icon::from_name("list-remove-symbolic"))
+                        .class(style::picked())
+                        .padding(2)
+                        .on_press(Message::ShowTile(tile, false)),
+                );
+                let dragged = self.drag == Some(i);
+                let target = self.drag.is_some() && self.drag_over == Some(i) && !dragged;
+                let cell = container(inner)
+                    .padding([10, 10])
+                    .height(Length::Fixed(52.0))
+                    .width(Length::Fill)
+                    .class(theme::Container::custom(move |theme| {
+                        let cosmic = theme.cosmic();
+                        container::Style {
+                            background: Some(Color::from(cosmic.button.base).scale_alpha(if dragged { 0.5 } else { 1.0 }).into()),
+                            text_color: Some(cosmic.button.on.into()),
+                            icon_color: Some(cosmic.button.on.into()),
+                            border: iced::Border {
+                                color: if target { cosmic.accent_color().into() } else { Color::TRANSPARENT },
+                                width: 2.0,
+                                radius: cosmic.corner_radii.radius_m.into(),
+                            },
+                            ..Default::default()
+                        }
+                    }));
+                line = line.push(
+                    container(
+                        widget::mouse_area(cell)
+                            .interaction(iced::mouse::Interaction::Grab)
+                            .on_press(Message::DragStart(i))
+                            .on_enter(Message::DragOver(i)),
+                    )
+                    .width(Length::FillPortion(width)),
+                );
+            }
+            if used < 4 {
+                line = line.push(widget::space().width(Length::FillPortion(4 - used)));
+            }
+            grid = grid.push(line);
+        }
+        column = column.push(
+            container(grid).padding(8).width(Length::Fill).class(theme::Container::custom(|theme| {
+                let cosmic = theme.cosmic();
+                container::Style {
                     border: iced::Border {
-                        color: theme.cosmic().accent_color().into(),
-                        width: 2.0,
-                        radius: theme.cosmic().corner_radii.radius_s.into(),
+                        color: cosmic.accent_color().into(),
+                        width: 1.0,
+                        radius: cosmic.corner_radii.radius_m.into(),
                     },
                     ..Default::default()
-                }),
-                _ => theme::Container::Transparent,
-            };
-            column = column.push(
-                widget::mouse_area(container(row).padding([6, 8]).class(class))
-                    .interaction(iced::mouse::Interaction::Grab)
-                    .on_press(Message::DragStart(i))
-                    .on_enter(Message::DragOver(i)),
-            );
+                }
+            })),
+        );
+
+        // The others, to add.
+        let hidden: Vec<Tile> = Tile::ALL.into_iter().filter(|t| !self.prefs.tiles.contains(t)).collect();
+        if !hidden.is_empty() {
+            column = column.push(text::heading(T.add));
+            for four in hidden.chunks(4) {
+                let mut line = widget::Row::new().spacing(8);
+                for tile in four {
+                    let cell = widget::Column::new()
+                        .spacing(4)
+                        .align_x(Alignment::Center)
+                        .push(
+                            button::custom(
+                                widget::Row::new()
+                                    .spacing(4)
+                                    .align_y(Alignment::Center)
+                                    .push(icon::from_name(self.tile(*tile).icon).size(18))
+                                    .push(icon::from_name("list-add-symbolic").size(12)),
+                            )
+                            .class(style::tile(false))
+                            .padding([12, 14])
+                            .on_press(Message::ShowTile(*tile, true)),
+                        )
+                        .push(text::caption(tile.name()).align_x(iced::alignment::Horizontal::Center));
+                    line = line.push(widget::container(cell).center_x(Length::FillPortion(1)));
+                }
+                for _ in four.len()..4 {
+                    line = line.push(widget::space().width(Length::FillPortion(1)));
+                }
+                column = column.push(line);
+            }
         }
-        for tile in hidden {
-            column = column.push(
-                widget::Row::new()
-                    .align_y(Alignment::Center)
-                    .push(text::body(tile.name()).width(Length::Fill))
-                    .push(widget::toggler(false).on_toggle(|on| Message::ShowTile(*tile, on))),
-            );
+
+        let choice = |label: &'static str, picked: bool, message: Message| {
+            let b = button::text(label).on_press(message);
+            if picked { b.class(style::picked()) } else { b }
+        };
+        let mut layouts = widget::Row::new().spacing(4);
+        for (layout, name) in [(Layout::Dropdown, T.dropdown), (Layout::Side, T.side), (Layout::Fullscreen, T.fullscreen)] {
+            layouts = layouts.push(choice(name, layout == self.prefs.layout, Message::SetLayout(layout)));
         }
-        let layouts = [
-            (Layout::Dropdown, T.dropdown),
-            (Layout::Side, T.side),
-            (Layout::Fullscreen, T.fullscreen),
-        ];
-        let mut choices = widget::Row::new().spacing(4);
-        for (layout, name) in layouts {
-            let b = button::text(name).on_press(Message::SetLayout(layout));
-            choices = choices.push(if layout == self.prefs.layout { b.class(theme::Button::Suggested) } else { b });
+        let mut spacing = widget::Row::new().spacing(4);
+        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
+            spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
         }
         let switch = |label: &'static str, on: bool, message: fn(bool) -> Message| {
             widget::Row::new()
@@ -1009,11 +1265,14 @@ impl App {
         column
             .push(widget::divider::horizontal::default())
             .push(text::heading(T.layout))
-            .push(choices)
+            .push(layouts)
             .push(widget::divider::horizontal::default())
             .push(switch(T.only_active, self.prefs.only_active, Message::OnlyActive))
             .push(switch(T.show_calendar, self.prefs.calendar, Message::ShowCalendar))
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
+            .push(switch(T.panel_tiles, self.prefs.panel_tiles, Message::PanelTiles))
+            .push(text::body(T.panel_spacing))
+            .push(spacing)
             .into()
     }
 
@@ -1120,6 +1379,15 @@ impl cosmic::Application for App {
             visible: Zoned::now().date().first_of_month(),
             events: None,
             camera: Vec::new(),
+            a11y: None,
+            magnifier: None,
+            screen_filter: None,
+            screen_reader: None,
+            reader: None,
+            inhibit: None,
+            workspaces: None,
+            tiling: None,
+            touchpad: desktop::touchpad(),
             calendar_open: false,
             drag: None,
             drag_over: None,
@@ -1127,7 +1395,6 @@ impl cosmic::Application for App {
             adjusting: None,
             password: None,
             remember: true,
-            show_all: false,
             screen: (1920, 1080),
         };
         let mut tasks: Vec<_> = [
@@ -1321,13 +1588,66 @@ impl cosmic::Application for App {
             Message::DragOver(i) => self.drag_over = Some(i),
             Message::DragEnd => {
                 if let (Some(from), Some(to)) = (self.drag.take(), self.drag_over.take()) {
-                    if from != to && from < self.prefs.tiles.len() && to < self.prefs.tiles.len() {
-                        let tile = self.prefs.tiles.remove(from);
-                        self.prefs.tiles.insert(to, tile);
+                    let len = self.prefs.tiles.len();
+                    if from < len && to < len {
+                        if from == to {
+                            // A click, not a drag: wide to small and back.
+                            let tile = self.prefs.tiles[from];
+                            match self.prefs.small.iter().position(|t| *t == tile) {
+                                Some(at) => _ = self.prefs.small.remove(at),
+                                None => self.prefs.small.push(tile),
+                            }
+                        } else {
+                            let tile = self.prefs.tiles.remove(from);
+                            self.prefs.tiles.insert(to, tile);
+                        }
                         self.prefs.save();
                     }
                 }
             }
+            Message::ResetTiles => {
+                self.prefs.tiles = Tile::DEFAULT.to_vec();
+                self.prefs.small.clear();
+                self.prefs.save();
+            }
+            Message::PanelTiles(on) => {
+                self.prefs.panel_tiles = on;
+                self.prefs.save();
+            }
+            Message::SetSpacing(spacing) => {
+                self.prefs.spacing = spacing;
+                self.prefs.save();
+            }
+            Message::A11y(desktop::A11y::Ready(tx)) => self.a11y = Some(tx),
+            Message::A11y(desktop::A11y::Event(event)) => match event {
+                desktop::AccessibilityEvent::Magnifier(on) => self.magnifier = Some(on),
+                desktop::AccessibilityEvent::ScreenFilter { inverted, filter } => {
+                    self.screen_filter = Some((inverted, filter));
+                }
+                desktop::AccessibilityEvent::Closed => {
+                    self.a11y = None;
+                    self.magnifier = None;
+                    self.screen_filter = None;
+                }
+                // Only changes are sent: until one, both are off.
+                desktop::AccessibilityEvent::Bound(_) => {
+                    self.magnifier.get_or_insert(false);
+                    self.screen_filter.get_or_insert((false, None));
+                }
+            },
+            Message::Reader(response) => match response {
+                desktop::ReaderResponse::Init(on, tx) => {
+                    self.screen_reader = Some(on);
+                    self.reader = Some(tx);
+                }
+                desktop::ReaderResponse::ScreenReader(on) => self.screen_reader = Some(on),
+                desktop::ReaderResponse::IsEnabled(_) => {}
+                desktop::ReaderResponse::Error(err) => tracing::debug!("screen reader: {err}"),
+            },
+            Message::Workspaces(workspaces::Event::Ready(tx)) => self.workspaces = Some(tx),
+            Message::Workspaces(workspaces::Event::Tiling(on)) => self.tiling = Some(on),
+            Message::CompChanged => self.touchpad = desktop::touchpad(),
+            Message::Inhibited(cookie) => self.inhibit = cookie,
             Message::ShowTile(tile, on) => {
                 self.prefs.tiles.retain(|t| *t != tile);
                 if on {
@@ -1354,7 +1674,10 @@ impl cosmic::Application for App {
                 self.prefs.clock = on;
                 self.prefs.save();
             }
-            Message::ShowAll => self.show_all = !self.show_all,
+            Message::ShowAll => {
+                self.prefs.show_all = !self.prefs.show_all;
+                self.prefs.save();
+            }
             Message::Spawn(program, args) => {
                 spawn(program, args);
                 return self.close();
@@ -1370,6 +1693,10 @@ impl cosmic::Application for App {
             audio::changes().map(|()| Message::AudioChanged),
             crate::config::changes().map(|()| Message::FlagsChanged),
             agent::subscription().map(Message::Secret),
+            desktop::a11y().map(Message::A11y),
+            desktop::screen_reader().map(Message::Reader),
+            desktop::comp_changes().map(|()| Message::CompChanged),
+            workspaces::subscription().map(Message::Workspaces),
             iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
             iced::event::listen_with(|event, _, _| {
                 use iced::event::wayland::{Event as Wayland, OutputEvent};
@@ -1427,6 +1754,14 @@ impl cosmic::Application for App {
         if self.bt.devices.iter().any(|d| d.connected) {
             push("bluetooth-active-symbolic");
         }
+        if self.prefs.panel_tiles {
+            for tile in &self.prefs.tiles {
+                let view = self.tile(*tile);
+                if view.on && !tile.has_status_icon() {
+                    push(view.icon);
+                }
+            }
+        }
         push(if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
         if let Some(b) = &self.battery {
             push(b.icon.as_str());
@@ -1442,9 +1777,9 @@ impl cosmic::Application for App {
             icons.push(applet.text(clock).into());
         }
         let content: Element<'_, Message> = if horizontal {
-            widget::row::with_children(icons).spacing(8).align_y(Alignment::Center).into()
+            widget::row::with_children(icons).spacing(self.prefs.spacing.gap()).align_y(Alignment::Center).into()
         } else {
-            widget::column::with_children(icons).spacing(8).align_x(Alignment::Center).into()
+            widget::column::with_children(icons).spacing(self.prefs.spacing.gap()).align_x(Alignment::Center).into()
         };
         let (major, minor) = applet.suggested_padding(true);
         let button = button::custom(content)

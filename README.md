@@ -14,16 +14,26 @@ libcosmic, following your system theme.
 
 ### Quick tiles
 Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
-Airplane mode · Microphone
+Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors ·
+Screen reader · High contrast · Touchpad, plus shortcuts to Screenshot and
+Workspaces.
 
 - **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
   networks (join, with a password prompt), Bluetooth devices (connect, battery
   level), VPN connections, power profiles.
-- **Edit**: drag tiles to reorder them, hide the ones you don't use, or show
-  only the tiles that are on (with a button to see all).
+- **Edit tiles**: drag to reorder, click to switch between wide (name and
+  state) and small (icon only), remove with −, add with +, or reset.
+- **Show only active tiles**, with a button to see the rest — remembered.
+- On a bright accent color (lime, yellow…) text turns black so it stays
+  readable; on dark accents it stays white.
 - State is **live in both directions**: Orbit listens to NetworkManager,
-  BlueZ, UPower, power-profiles-daemon, PipeWire and COSMIC's own settings,
-  so changes made anywhere else show up immediately.
+  BlueZ, UPower, power-profiles-daemon, PipeWire, the compositor and COSMIC's
+  own settings, so changes made anywhere else show up immediately.
+
+### Panel
+Status icons (network, VPN, Bluetooth, volume, battery, camera and
+microphone in use), optionally the icons of active tiles, and the clock.
+The space between icons is adjustable.
 
 ### Sliders
 Volume (with output device picker and mute) and screen brightness.
@@ -45,9 +55,6 @@ At the bottom of the popup, what's running that you should know about:
 ### Layouts
 Open Orbit as a **dropdown** under the panel, a **side panel** sliding in from
 the edge, or **fullscreen** with a two-column layout.
-
-### Clock
-Date and time on the panel (optional, if you'd rather keep COSMIC's own).
 
 ### Localization
 English and Hungarian. The interface follows your language

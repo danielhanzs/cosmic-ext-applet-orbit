@@ -10,3 +10,4 @@ Keywords=COSMIC;Applet;Settings;Control;Quick;Calendar;
 Icon=io.github.danielhanzs.CosmicOrbit
 NoDisplay=true
 X-CosmicApplet=true
+X-HostWaylandDisplay=true

@@ -14,24 +14,53 @@ pub enum Layout {
     Fullscreen,
 }
 
+/// The gap between the icons on the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Spacing {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Spacing {
+    pub fn gap(self) -> u16 {
+        match self {
+            Spacing::Small => 2,
+            Spacing::Medium => 6,
+            Spacing::Large => 12,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Prefs {
     /// Shown tiles, in order; the rest are hidden.
     pub tiles: Vec<Tile>,
     pub layout: Layout,
     pub only_active: bool,
+    /// With `only_active`: the inactive tiles shown for now, remembered.
+    pub show_all: bool,
     pub calendar: bool,
     pub clock: bool,
+    /// Tiles shown as only their icon, a quarter wide.
+    pub small: Vec<Tile>,
+    /// The icons of tiles that are on, on the panel too.
+    pub panel_tiles: bool,
+    pub spacing: Spacing,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
-            tiles: Tile::ALL.to_vec(),
+            tiles: Tile::DEFAULT.to_vec(),
             layout: Layout::Dropdown,
             only_active: false,
+            show_all: false,
             calendar: true,
             clock: true,
+            small: Vec::new(),
+            panel_tiles: false,
+            spacing: Spacing::Medium,
         }
     }
 }
@@ -53,11 +82,23 @@ impl Prefs {
             if let Ok(v) = c.get("only_active") {
                 prefs.only_active = v;
             }
+            if let Ok(v) = c.get("show_all") {
+                prefs.show_all = v;
+            }
             if let Ok(v) = c.get("calendar") {
                 prefs.calendar = v;
             }
             if let Ok(v) = c.get("clock") {
                 prefs.clock = v;
+            }
+            if let Ok(v) = c.get("small") {
+                prefs.small = v;
+            }
+            if let Ok(v) = c.get("panel_tiles") {
+                prefs.panel_tiles = v;
+            }
+            if let Ok(v) = c.get("spacing") {
+                prefs.spacing = v;
             }
         }
         prefs
@@ -69,8 +110,12 @@ impl Prefs {
             .set("tiles", &self.tiles)
             .and(c.set("layout", self.layout))
             .and(c.set("only_active", self.only_active))
+            .and(c.set("show_all", self.show_all))
             .and(c.set("calendar", self.calendar))
-            .and(c.set("clock", self.clock));
+            .and(c.set("clock", self.clock))
+            .and(c.set("small", &self.small))
+            .and(c.set("panel_tiles", self.panel_tiles))
+            .and(c.set("spacing", self.spacing));
         if let Err(err) = result {
             tracing::warn!("cannot save settings: {err}");
         }

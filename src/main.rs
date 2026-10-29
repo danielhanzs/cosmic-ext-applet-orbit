@@ -5,9 +5,12 @@ mod app;
 mod audio;
 mod calendar;
 mod config;
+mod desktop;
 mod i18n;
 mod media;
+mod style;
 mod sys;
+mod workspaces;
 
 pub const APP_ID: &str = "io.github.danielhanzs.CosmicOrbit";
 

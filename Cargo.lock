@@ -930,6 +930,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-dbus-a11y"
+version = "0.1.0"
+source = "git+https://github.com/pop-os/dbus-settings-bindings#eed01dd3609e90e3c8cd043656734c500956c793"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "cosmic-freedesktop-icons"
 version = "0.4.0"
 source = "git+https://github.com/pop-os/freedesktop-icons#ab4c57b8e416c6af9297cb04d101889896fd9a92"
@@ -947,6 +955,8 @@ dependencies = [
 name = "cosmic-orbit"
 version = "0.1.0"
 dependencies = [
+ "cosmic-settings-a11y-manager-subscription",
+ "cosmic-settings-accessibility-subscription",
  "futures",
  "jiff",
  "libcosmic",
@@ -984,6 +994,33 @@ dependencies = [
  "wayland-protocols-wlr",
  "wayland-scanner",
  "wayland-server",
+]
+
+[[package]]
+name = "cosmic-settings-a11y-manager-subscription"
+version = "1.0.7"
+source = "git+https://github.com/pop-os/cosmic-settings?rev=ae5c750#ae5c7506627373f62e78372ce9e932fb591de35b"
+dependencies = [
+ "cosmic-protocols",
+ "iced_futures",
+ "num-derive",
+ "num-traits",
+ "smithay-client-toolkit",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "cosmic-settings-accessibility-subscription"
+version = "1.0.7"
+source = "git+https://github.com/pop-os/cosmic-settings?rev=ae5c750#ae5c7506627373f62e78372ce9e932fb591de35b"
+dependencies = [
+ "cosmic-dbus-a11y",
+ "futures",
+ "iced_futures",
+ "tokio",
+ "tracing",
+ "zbus",
 ]
 
 [[package]]
@@ -3125,6 +3162,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
