@@ -23,7 +23,6 @@ Workspaces.
   level), VPN connections, power profiles.
 - **Edit tiles**: drag to reorder, click to switch between wide (name and
   state) and small (icon only), remove with −, add with +, or reset.
-- **Show only active tiles**, with a button to see the rest — remembered.
 - On a bright accent color (lime, yellow…) text turns black so it stays
   readable; on dark accents it stays white.
 - State is **live in both directions**: Orbit listens to NetworkManager,
@@ -32,7 +31,8 @@ Workspaces.
 
 ### Panel
 Status icons (network, VPN, Bluetooth, volume, battery, camera and
-microphone in use), optionally the icons of active tiles, and the clock.
+microphone in use), the clock, and the tiles' own icons: none, only the
+active ones, or all of them with the inactive ones faint.
 The space between icons is adjustable.
 
 ### Sliders

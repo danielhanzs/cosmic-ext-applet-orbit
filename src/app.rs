@@ -20,7 +20,7 @@ use crate::{
     agent,
     audio::{self, Audio},
     calendar::{self, Event},
-    config::{DARK, DND, Layout, Prefs, Spacing},
+    config::{DARK, DND, Layout, PanelIcons, Prefs, Spacing},
     desktop,
     style,
     workspaces,
@@ -220,7 +220,7 @@ pub enum Message {
     CompChanged,
     Inhibited(Option<u32>),
     ResetTiles,
-    PanelTiles(bool),
+    PanelIcons(PanelIcons),
     SetSpacing(Spacing),
     ToggleCalendar,
     Camera(Vec<String>),
@@ -251,10 +251,8 @@ pub enum Message {
     DragEnd,
     ShowTile(Tile, bool),
     SetLayout(Layout),
-    OnlyActive(bool),
     ShowCalendar(bool),
     ShowClock(bool),
-    ShowAll,
     Spawn(&'static str, &'static [&'static str]),
     None,
 }
@@ -722,12 +720,9 @@ impl App {
     }
 
     fn tiles(&self) -> Element<'_, Message> {
-        let mut shown: Vec<Tile> = self.prefs.tiles.clone();
-        if self.prefs.only_active && !self.prefs.show_all {
-            shown.retain(|t| self.tile(*t).on);
-        }
+        let shown = &self.prefs.tiles;
         let mut column = widget::Column::new().spacing(8);
-        for row in rows(&shown, &self.prefs.small) {
+        for row in rows(shown, &self.prefs.small) {
             let mut line = widget::Row::new().spacing(8);
             let mut used = 0;
             for (_, tile) in row {
@@ -739,14 +734,6 @@ impl App {
                 line = line.push(widget::space().width(Length::FillPortion(4 - used)));
             }
             column = column.push(line);
-        }
-        if self.prefs.only_active {
-            let label = if self.prefs.show_all { T.show_less } else { T.show_all };
-            column = column.push(
-                widget::Row::new()
-                    .push(widget::space().width(Length::Fill))
-                    .push(button::text(label).on_press(Message::ShowAll)),
-            );
         }
         column.into()
     }
@@ -1256,6 +1243,10 @@ impl App {
         for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
             spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
         }
+        let mut icons = widget::Row::new().spacing(4);
+        for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
+            icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
+        }
         let switch = |label: &'static str, on: bool, message: fn(bool) -> Message| {
             widget::Row::new()
                 .align_y(Alignment::Center)
@@ -1267,10 +1258,10 @@ impl App {
             .push(text::heading(T.layout))
             .push(layouts)
             .push(widget::divider::horizontal::default())
-            .push(switch(T.only_active, self.prefs.only_active, Message::OnlyActive))
             .push(switch(T.show_calendar, self.prefs.calendar, Message::ShowCalendar))
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
-            .push(switch(T.panel_tiles, self.prefs.panel_tiles, Message::PanelTiles))
+            .push(text::body(T.panel_icons))
+            .push(icons)
             .push(text::body(T.panel_spacing))
             .push(spacing)
             .into()
@@ -1340,6 +1331,16 @@ fn dot<'a>(on_accent: bool) -> Element<'a, Message> {
                 ..Default::default()
             }
         }))
+        .into()
+}
+
+/// An icon on the panel, in the panel's color; faint for a function that's off.
+fn status_icon<'a>(name: &str, size: u16, faint: bool) -> Element<'a, Message> {
+    icon::icon(icon::from_name(name.to_string()).symbolic(true).handle())
+        .size(size)
+        .class(theme::Svg::Custom(std::rc::Rc::new(move |theme| iced::widget::svg::Style {
+            color: Some(Color::from(theme.cosmic().background(theme.transparent).on).scale_alpha(if faint { 0.4 } else { 1.0 })),
+        })))
         .into()
 }
 
@@ -1610,8 +1611,8 @@ impl cosmic::Application for App {
                 self.prefs.small.clear();
                 self.prefs.save();
             }
-            Message::PanelTiles(on) => {
-                self.prefs.panel_tiles = on;
+            Message::PanelIcons(icons) => {
+                self.prefs.panel_icons = icons;
                 self.prefs.save();
             }
             Message::SetSpacing(spacing) => {
@@ -1662,20 +1663,12 @@ impl cosmic::Application for App {
                 let close = self.close();
                 return Task::batch([close, self.open()]).chain(self.update(Message::Page(Page::Edit)));
             }
-            Message::OnlyActive(on) => {
-                self.prefs.only_active = on;
-                self.prefs.save();
-            }
             Message::ShowCalendar(on) => {
                 self.prefs.calendar = on;
                 self.prefs.save();
             }
             Message::ShowClock(on) => {
                 self.prefs.clock = on;
-                self.prefs.save();
-            }
-            Message::ShowAll => {
-                self.prefs.show_all = !self.prefs.show_all;
                 self.prefs.save();
             }
             Message::Spawn(program, args) => {
@@ -1733,7 +1726,7 @@ impl cosmic::Application for App {
         let applet = &self.core.applet;
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
-        let mut push = |name: &str| icons.push(icon::from_name(name.to_string()).size(size).symbolic(true).into());
+        let mut push = |name: &str| icons.push(status_icon(name, size, false));
         if !self.camera.is_empty() {
             push("camera-web-symbolic");
         }
@@ -1754,18 +1747,24 @@ impl cosmic::Application for App {
         if self.bt.devices.iter().any(|d| d.connected) {
             push("bluetooth-active-symbolic");
         }
-        if self.prefs.panel_tiles {
-            for tile in &self.prefs.tiles {
-                let view = self.tile(*tile);
-                if view.on && !tile.has_status_icon() {
-                    push(view.icon);
-                }
+        push(if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
+        // The tiles' own icons: the ones on, or all with the off ones faint.
+        let mut tile_icons = Vec::new();
+        for tile in self.prefs.tiles.iter().filter(|t| !t.has_status_icon()) {
+            let view = self.tile(*tile);
+            let shortcut = matches!(tile, Tile::Screenshot | Tile::Workspaces);
+            match self.prefs.panel_icons {
+                PanelIcons::Active if view.on => tile_icons.push(status_icon(view.icon, size, false)),
+                PanelIcons::All if !shortcut => tile_icons.push(status_icon(view.icon, size, !view.on)),
+                _ => {}
             }
         }
-        push(if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
         if let Some(b) = &self.battery {
             push(b.icon.as_str());
         }
+        // Before the battery and the clock, at the end of the status icons.
+        let at = icons.len() - usize::from(self.battery.is_some());
+        icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
         if self.prefs.clock {
             let date = self.now.date();
