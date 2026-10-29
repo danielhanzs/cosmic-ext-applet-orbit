@@ -100,6 +100,8 @@ pub struct App {
     visible: civil::Date,
     /// The shown month's events by day; None: no calendar service.
     events: Option<HashMap<civil::Date, Vec<Event>>>,
+    /// The month shown, or only today's line.
+    calendar_open: bool,
     /// Apps using a camera.
     camera: Vec<String>,
     /// A tile being dragged in the editor, and where it would go.
@@ -136,6 +138,7 @@ pub enum Message {
     Media(Option<Media>),
     Events(civil::Date, Option<HashMap<civil::Date, Vec<Event>>>),
     CheckCamera,
+    ToggleCalendar,
     Camera(Vec<String>),
     TileClick(Tile),
     Volume(f32),
@@ -634,10 +637,41 @@ impl App {
     }
 
     fn calendar_view(&self) -> Element<'_, Message> {
-        let mut column = widget::Column::new()
-            .spacing(8)
-            .push(text::title4(i18n::long_date(self.now.date())))
-            .push(self.month_grid());
+        // Closed: today, and what's next today.
+        let today = self.now.date();
+        let next = self.events.as_ref().and_then(|days| days.get(&today)).and_then(|events| {
+            let now = self.now.time();
+            events.iter().find(|e| e.end.or(e.start).is_none_or(|t| t >= now))
+        });
+        let summary = match (next, &self.events) {
+            (Some(e), _) => match e.start {
+                Some(start) => format!("{} {}", i18n::clock(start), e.summary),
+                None => e.summary.clone(),
+            },
+            (None, Some(_)) => T.no_events.to_string(),
+            (None, None) => T.no_calendar.to_string(),
+        };
+        let chevron = if self.calendar_open { "go-up-symbolic" } else { "go-down-symbolic" };
+        let head = button::custom(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(
+                    widget::Column::new()
+                        .push(text::title4(i18n::long_date(today)))
+                        .push(text::caption(summary).wrapping(iced::widget::text::Wrapping::None))
+                        .width(Length::Fill),
+                )
+                .push(icon::from_name(chevron).size(16)),
+        )
+        .class(theme::Button::Text)
+        .padding(0)
+        .width(Length::Fill)
+        .on_press(Message::ToggleCalendar);
+        if !self.calendar_open {
+            return card(head);
+        }
+        let mut column = widget::Column::new().spacing(8).push(head).push(self.month_grid());
         match &self.events {
             None => {
                 column = column.push(
@@ -1086,6 +1120,7 @@ impl cosmic::Application for App {
             visible: Zoned::now().date().first_of_month(),
             events: None,
             camera: Vec::new(),
+            calendar_open: false,
             drag: None,
             drag_over: None,
             pending: HashSet::new(),
@@ -1208,6 +1243,7 @@ impl cosmic::Application for App {
                     self.events = events;
                 }
             }
+            Message::ToggleCalendar => self.calendar_open = !self.calendar_open,
             Message::CheckCamera => return run(async { Message::Camera(audio::camera().await) }),
             Message::Camera(apps) => self.camera = apps,
             Message::TileClick(tile) => return self.click(tile),

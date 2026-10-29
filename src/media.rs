@@ -73,7 +73,9 @@ async fn art(url: &str) -> Option<PathBuf> {
     if let Some(path) = url.strip_prefix("file://") {
         return Some(PathBuf::from(path));
     }
-    if !url.starts_with("https://") && !url.starts_with("http://") {
+    // The player is a local app the user runs; its URL is trusted as much
+    // as the app, but curl still gets only plain HTTPS, small files.
+    if !url.starts_with("https://") {
         return None;
     }
     let mut hasher = std::hash::DefaultHasher::new();
@@ -86,7 +88,8 @@ async fn art(url: &str) -> Option<PathBuf> {
     if !file.exists() {
         tokio::fs::create_dir_all(&dir).await.ok()?;
         let ok = tokio::process::Command::new("curl")
-            .args(["-sfL", "--max-time", "5", "-o"])
+            .args(["-sfL", "--globoff", "--proto", "=https", "--proto-redir", "=https"])
+            .args(["--max-time", "5", "--max-filesize", "5000000", "-o"])
             .arg(&file)
             .arg(url)
             .status()

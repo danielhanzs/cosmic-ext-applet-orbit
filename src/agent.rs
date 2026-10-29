@@ -68,12 +68,22 @@ fn secret_key(setting: &str) -> Option<&'static str> {
 impl Agent {
     async fn get_secrets(
         &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
         connection: Settings,
         _connection_path: OwnedObjectPath,
         setting_name: String,
         _hints: Vec<String>,
         flags: u32,
     ) -> zbus::fdo::Result<Settings> {
+        // Anyone on the system bus can call us: answer NetworkManager only.
+        let nm = zbus::fdo::DBusProxy::new(conn)
+            .await?
+            .get_name_owner("org.freedesktop.NetworkManager".try_into().map_err(zbus::Error::from)?)
+            .await?;
+        if header.sender().map(|s| s.as_str()) != Some(nm.as_str()) {
+            return Err(zbus::fdo::Error::AccessDenied("only NetworkManager may ask".into()));
+        }
         let no = || zbus::fdo::Error::Failed("no secrets".into());
         let key = secret_key(&setting_name).ok_or_else(no)?;
         let uuid = text(&connection, "connection", "uuid").ok_or_else(no)?;
