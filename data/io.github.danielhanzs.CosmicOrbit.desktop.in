@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Orbit
+Comment=Quick toggles, sliders, calendar and media in one popup
+Comment[hu]=Gyorskapcsolók, csúszkák, naptár és média egy helyen
+Type=Application
+Exec=@bindir@/cosmic-orbit
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Settings;Control;Quick;Calendar;
+Icon=io.github.danielhanzs.CosmicOrbit
+NoDisplay=true
+X-CosmicApplet=true

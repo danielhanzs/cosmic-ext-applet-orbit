@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="orbit-planet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="orbit-ring" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-20 64 64)">
+    <!-- back of the ring -->
+    <path d="M6 64 A58 18 0 0 1 122 64" fill="none" stroke="url(#orbit-ring)" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
+  </g>
+  <circle cx="64" cy="64" r="38" fill="url(#orbit-planet)"/>
+  <!-- the panel's tiles: two on, two off -->
+  <rect x="45" y="45" width="17" height="17" rx="5" fill="#fff"/>
+  <rect x="66" y="45" width="17" height="17" rx="5" fill="#fff" opacity="0.4"/>
+  <rect x="45" y="66" width="17" height="17" rx="5" fill="#fff" opacity="0.4"/>
+  <rect x="66" y="66" width="17" height="17" rx="5" fill="#fff"/>
+  <g transform="rotate(-20 64 64)">
+    <!-- front of the ring, and a moon on it -->
+    <path d="M122 64 A58 18 0 0 1 6 64" fill="none" stroke="url(#orbit-ring)" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="112" cy="74" r="7" fill="#fbbf24"/>
+  </g>
+</svg>
