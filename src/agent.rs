@@ -21,10 +21,21 @@ type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 /// What the user typed: the password, and whether to keep it in the keyring.
 pub type Answer = Option<(String, bool)>;
 
+/// What the agent tells the popup.
+#[derive(Clone, Debug)]
+pub enum Event {
+    /// A password to ask for.
+    Ask(Request),
+    /// NetworkManager no longer wants the password for this connection path.
+    Cancel(String),
+}
+
 /// A password the agent waits for, shown in the popup.
 #[derive(Clone)]
 pub struct Request {
     pub connection: String,
+    /// The connection's object path, which a cancel names.
+    pub path: String,
     reply: Arc<Mutex<Option<oneshot::Sender<Answer>>>>,
 }
 
@@ -43,7 +54,19 @@ impl std::fmt::Debug for Request {
 }
 
 struct Agent {
-    requests: mpsc::Sender<Request>,
+    requests: mpsc::Sender<Event>,
+}
+
+/// Anyone on the system bus can call us: NetworkManager only is answered.
+async fn from_network_manager(header: &zbus::message::Header<'_>, conn: &zbus::Connection) -> zbus::fdo::Result<()> {
+    let nm = zbus::fdo::DBusProxy::new(conn)
+        .await?
+        .get_name_owner("org.freedesktop.NetworkManager".try_into().map_err(zbus::Error::from)?)
+        .await?;
+    if header.sender().map(|s| s.as_str()) != Some(nm.as_str()) {
+        return Err(zbus::fdo::Error::AccessDenied("only NetworkManager may ask".into()));
+    }
+    Ok(())
 }
 
 // NM_SECRET_AGENT_GET_SECRETS_FLAG_*
@@ -71,19 +94,12 @@ impl Agent {
         #[zbus(header)] header: zbus::message::Header<'_>,
         #[zbus(connection)] conn: &zbus::Connection,
         connection: Settings,
-        _connection_path: OwnedObjectPath,
+        connection_path: OwnedObjectPath,
         setting_name: String,
         _hints: Vec<String>,
         flags: u32,
     ) -> zbus::fdo::Result<Settings> {
-        // Anyone on the system bus can call us: answer NetworkManager only.
-        let nm = zbus::fdo::DBusProxy::new(conn)
-            .await?
-            .get_name_owner("org.freedesktop.NetworkManager".try_into().map_err(zbus::Error::from)?)
-            .await?;
-        if header.sender().map(|s| s.as_str()) != Some(nm.as_str()) {
-            return Err(zbus::fdo::Error::AccessDenied("only NetworkManager may ask".into()));
-        }
+        from_network_manager(&header, conn).await?;
         let no = || zbus::fdo::Error::Failed("no secrets".into());
         let key = secret_key(&setting_name).ok_or_else(no)?;
         let uuid = text(&connection, "connection", "uuid").ok_or_else(no)?;
@@ -95,8 +111,12 @@ impl Agent {
         }
         if secret.is_none() && flags & ALLOW_INTERACTION != 0 {
             let (tx, rx) = oneshot::channel();
-            let request = Request { connection: name.clone(), reply: Arc::new(Mutex::new(Some(tx))) };
-            if self.requests.clone().send(request).await.is_ok() {
+            let request = Request {
+                connection: name.clone(),
+                path: connection_path.to_string(),
+                reply: Arc::new(Mutex::new(Some(tx))),
+            };
+            if self.requests.clone().send(Event::Ask(request)).await.is_ok() {
                 // NetworkManager gives up after two minutes.
                 if let Ok(Ok(Some((password, remember)))) =
                     tokio::time::timeout(Duration::from_secs(110), rx).await
@@ -120,7 +140,17 @@ impl Agent {
         Ok(HashMap::from([(setting_name, HashMap::from([(field.to_string(), value)]))]))
     }
 
-    async fn cancel_get_secrets(&self, _connection_path: OwnedObjectPath, _setting_name: String) {}
+    async fn cancel_get_secrets(
+        &self,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] conn: &zbus::Connection,
+        connection_path: OwnedObjectPath,
+        _setting_name: String,
+    ) -> zbus::fdo::Result<()> {
+        from_network_manager(&header, conn).await?;
+        _ = self.requests.clone().send(Event::Cancel(connection_path.to_string())).await;
+        Ok(())
+    }
 
     async fn save_secrets(&self, _connection: Settings, _connection_path: OwnedObjectPath) {}
 
@@ -128,7 +158,7 @@ impl Agent {
 }
 
 /// Registers the agent, and yields each password it needs asked.
-pub fn subscription() -> Subscription<Request> {
+pub fn subscription() -> Subscription<Event> {
     Subscription::run(|| {
         stream::channel(4, async |mut out| {
             let (tx, mut rx) = mpsc::channel(4);
@@ -267,7 +297,7 @@ mod keyring {
 
     pub async fn find(uuid: &str, setting: &str, key: &str) -> Option<String> {
         let result = async {
-            let conn = zbus::Connection::session().await?;
+            let conn = crate::bus::session().await?;
             let mut attrs = attributes(uuid, setting, key);
             // Some stores leave the schema out.
             attrs.remove("xdg:schema");
@@ -316,7 +346,7 @@ mod keyring {
 
     pub async fn store(label: &str, uuid: &str, setting: &str, key: &str, secret: &str) {
         let result = async {
-            let conn = zbus::Connection::session().await?;
+            let conn = crate::bus::session().await?;
             let session = session(&conn).await?;
             let props = HashMap::from([
                 (

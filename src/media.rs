@@ -31,7 +31,7 @@ async fn props(conn: &zbus::Connection, bus: &str) -> zbus::Result<HashMap<Strin
 }
 
 pub async fn read() -> Option<Media> {
-    let conn = zbus::Connection::session().await.ok()?;
+    let conn = crate::bus::session().await.ok()?;
     let names = zbus::fdo::DBusProxy::new(&conn).await.ok()?.list_names().await.ok()?;
     let mut best: Option<(Media, String)> = None;
     for name in names.iter().filter(|n| n.starts_with("org.mpris.MediaPlayer2.")) {
@@ -201,7 +201,7 @@ fn percent_decoded(path: &str) -> PathBuf {
 }
 
 pub async fn control(bus: String, method: &'static str) {
-    if let Ok(conn) = zbus::Connection::session().await {
+    if let Ok(conn) = crate::bus::session().await {
         _ = conn.call_method(Some(bus.as_str()), PATH, Some(PLAYER), method, &()).await;
     }
 }

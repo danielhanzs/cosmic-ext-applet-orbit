@@ -134,6 +134,12 @@ fn rows(tiles: &[Tile], small: &[Tile]) -> Vec<Vec<(usize, Tile)>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slider {
+    Volume,
+    Brightness,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Main,
     Wifi,
@@ -166,8 +172,11 @@ pub struct App {
     visible: civil::Date,
     /// The shown month's events by day; None: no calendar service.
     events: Option<HashMap<civil::Date, Vec<Event>>>,
+    /// Today's events, for the calendar's closed line.
+    today: Option<Vec<Event>>,
     /// Apps using a camera.
     camera: Vec<String>,
+    camera_checking: bool,
     a11y: Option<desktop::A11ySender>,
     magnifier: Option<bool>,
     /// Inverted colors, and the color filter kept as it is.
@@ -176,6 +185,7 @@ pub struct App {
     reader: Option<tokio::sync::mpsc::UnboundedSender<desktop::ReaderRequest>>,
     /// Keeping awake: the inhibition's cookie.
     inhibit: Option<u32>,
+    inhibiting: bool,
     workspaces: Option<cosmic::cctk::sctk::reexports::calloop::channel::Sender<bool>>,
     /// Whether the active workspace tiles.
     tiling: Option<bool>,
@@ -183,9 +193,14 @@ pub struct App {
     /// A tile being dragged in the editor, and where it would go.
     drag: Option<usize>,
     drag_over: Option<usize>,
-    /// Refreshes on their way: more news of the same is let be.
+    /// Reads on their way, and those with news since they began.
     pending: HashSet<Source>,
+    dirty: HashSet<Source>,
+    /// Per slider: the value waiting to be set, and whether a set runs.
+    waiting: [Option<f32>; 2],
+    writing: [bool; 2],
     audio_pending: bool,
+    audio_dirty: bool,
     /// The month the events were read for, and when.
     events_read: Option<(civil::Date, Instant)>,
     /// A slider being dragged: refreshes don't move it meanwhile.
@@ -230,6 +245,7 @@ pub enum Message {
     TileClick(Tile),
     Volume(f32),
     SetBrightness(f32),
+    Written(Slider),
     Released,
     Mute,
     Output(String),
@@ -244,7 +260,7 @@ pub enum Message {
     Day(jiff::civil::Date),
     PrevMonth,
     NextMonth,
-    Secret(agent::Request),
+    Secret(agent::Event),
     PasswordInput(String),
     Remember(bool),
     PasswordSubmit,
@@ -306,6 +322,8 @@ struct TileView {
 impl App {
     fn refresh(&mut self, source: Source) -> app::Task<Message> {
         if !self.pending.insert(source) {
+            // News during a read: read again once this one is in.
+            self.dirty.insert(source);
             return Task::none();
         }
         // Signals come in bursts: wait for the burst to pass.
@@ -336,6 +354,35 @@ impl App {
                 Message::Media(media::read().await)
             }),
         }
+    }
+
+    /// Sets a slider's value: one write at a time each, always the latest
+    /// value, so a drag's steps can't land out of order. `None`: a write is
+    /// done, start the next if one waits.
+    fn write(&mut self, slider: Slider, level: Option<f32>) -> app::Task<Message> {
+        let index = slider as usize;
+        match level {
+            Some(level) => self.waiting[index] = Some(level),
+            None => self.writing[index] = false,
+        }
+        if self.writing[index] {
+            return Task::none();
+        }
+        let Some(level) = self.waiting[index].take() else { return Task::none() };
+        self.writing[index] = true;
+        run(async move {
+            match slider {
+                Slider::Volume => audio::set_volume(level).await,
+                Slider::Brightness => log("brightness", sys::set_brightness(level).await),
+            }
+            Message::Written(slider)
+        })
+    }
+
+    /// A read is in: another, if news came meanwhile.
+    fn settled(&mut self, source: Source) -> app::Task<Message> {
+        self.pending.remove(&source);
+        if self.dirty.remove(&source) { self.refresh(source) } else { Task::none() }
     }
 
     /// The shown month's events, unless read in the last few minutes.
@@ -506,9 +553,15 @@ impl App {
                 })
             }
             Tile::Mic => fire(audio::toggle_mute(true)),
+            // One request at a time: a double click would leave an
+            // inhibition no one releases.
+            Tile::KeepAwake if self.inhibiting => Task::none(),
             Tile::KeepAwake => match self.inhibit.take() {
                 Some(cookie) => fire(desktop::allow_idle(cookie)),
-                None => run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) }),
+                None => {
+                    self.inhibiting = true;
+                    run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) })
+                }
             },
             Tile::Tiling => {
                 let on = !self.tiling.unwrap_or_else(desktop::autotile);
@@ -562,6 +615,12 @@ impl App {
         self.opened = Instant::now();
         if self.page != Page::Password {
             self.page = Page::Main;
+        }
+        // The calendar opens on today, whatever month was left shown.
+        let today = self.now.date();
+        if self.visible != today.first_of_month() {
+            self.selected = today;
+            self.visible = today.first_of_month();
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
         if let Some(device) = self.net.wifi_device.clone() {
@@ -787,7 +846,7 @@ impl App {
     fn calendar_view(&self) -> Element<'_, Message> {
         // Closed: today, and what's next today.
         let today = self.now.date();
-        let next = self.events.as_ref().and_then(|days| days.get(&today)).and_then(|events| {
+        let next = self.today.as_ref().and_then(|events| {
             let now = self.now.time();
             events.iter().find(|e| e.end.or(e.start).is_none_or(|t| t >= now))
         });
@@ -1193,7 +1252,8 @@ impl App {
                         widget::mouse_area(cell)
                             .interaction(iced::mouse::Interaction::Grab)
                             .on_press(Message::DragStart(i))
-                            .on_enter(Message::DragOver(i)),
+                            .on_enter(Message::DragOver(i))
+                            .on_release(Message::DragEnd),
                     )
                     .width(Length::FillPortion(width)),
                 );
@@ -1408,21 +1468,28 @@ impl cosmic::Application for App {
             selected: Zoned::now().date(),
             visible: Zoned::now().date().first_of_month(),
             events: None,
+            today: None,
             camera: Vec::new(),
+            camera_checking: false,
             a11y: None,
             magnifier: None,
             screen_filter: None,
             screen_reader: None,
             reader: None,
             inhibit: None,
+            inhibiting: false,
             workspaces: None,
             tiling: None,
             touchpad: desktop::touchpad(),
             drag: None,
             drag_over: None,
             pending: HashSet::new(),
+            dirty: HashSet::new(),
             adjusting: None,
+            waiting: [None; 2],
+            writing: [false; 2],
             audio_pending: false,
+            audio_dirty: false,
             events_read: None,
             password: None,
             remember: true,
@@ -1469,6 +1536,8 @@ impl cosmic::Application for App {
             }
             Message::Page(page) => {
                 self.page = page;
+                self.drag = None;
+                self.drag_over = None;
                 if page == Page::Wifi {
                     if let Some(device) = self.net.wifi_device.clone() {
                         return fire(async move { _ = sys::scan_wifi(device).await });
@@ -1496,7 +1565,9 @@ impl cosmic::Application for App {
             Message::Changed(source) => return self.refresh(source),
             Message::AudioChanged => {
                 // pactl reports in bursts (a slider drag sends dozens): read once.
-                if !self.audio_pending {
+                if self.audio_pending {
+                    self.audio_dirty = true;
+                } else {
                     self.audio_pending = true;
                     return run(async {
                         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -1509,28 +1580,28 @@ impl cosmic::Application for App {
                 self.dark = DARK.get();
             }
             Message::Network(net) => {
-                self.pending.remove(&Source::Network);
                 if let Some(net) = net {
                     self.net = net;
                 }
+                return self.settled(Source::Network);
             }
             Message::Bluetooth(bt) => {
-                self.pending.remove(&Source::Bluetooth);
                 self.bt = bt.unwrap_or_default();
+                return self.settled(Source::Bluetooth);
             }
             Message::Battery(battery) => {
-                self.pending.remove(&Source::Battery);
                 self.battery = battery;
+                return self.settled(Source::Battery);
             }
             Message::Profiles(profiles) => {
-                self.pending.remove(&Source::Profiles);
                 self.profiles = profiles.unwrap_or_default();
+                return self.settled(Source::Profiles);
             }
             Message::Brightness(level) => {
-                self.pending.remove(&Source::Brightness);
                 if !self.adjusting() {
                     self.brightness = level;
                 }
+                return self.settled(Source::Brightness);
             }
             Message::Audio(audio) => {
                 self.audio_pending = false;
@@ -1539,12 +1610,20 @@ impl cosmic::Application for App {
                 if self.adjusting() {
                     self.audio.volume = volume;
                 }
+                if std::mem::take(&mut self.audio_dirty) {
+                    return self.update(Message::AudioChanged);
+                }
             }
             Message::Media(media) => {
-                self.pending.remove(&Source::Media);
                 self.media = media;
+                return self.settled(Source::Media);
             }
             Message::Events(first, events) => {
+                // Today's line keeps today's events, whatever month is shown.
+                let today = self.now.date();
+                if first == today.first_of_month() {
+                    self.today = events.as_ref().map(|days| days.get(&today).cloned().unwrap_or_default());
+                }
                 if first == self.visible {
                     self.events = events;
                 }
@@ -1553,19 +1632,27 @@ impl cosmic::Application for App {
                 self.prefs.calendar_open = !self.prefs.calendar_open;
                 self.prefs.save();
             }
-            Message::CheckCamera => return run(async { Message::Camera(audio::camera().await) }),
-            Message::Camera(apps) => self.camera = apps,
+            Message::CheckCamera if self.camera_checking => {}
+            Message::CheckCamera => {
+                self.camera_checking = true;
+                return run(async { Message::Camera(audio::camera().await) });
+            }
+            Message::Camera(apps) => {
+                self.camera_checking = false;
+                self.camera = apps;
+            }
             Message::TileClick(tile) => return self.click(tile),
             Message::Volume(level) => {
                 self.audio.volume = level;
                 self.adjusting = Some(Instant::now());
-                return fire(audio::set_volume(level));
+                return self.write(Slider::Volume, Some(level));
             }
             Message::SetBrightness(level) => {
                 self.brightness = Some(level);
                 self.adjusting = Some(Instant::now());
-                return fire(async move { log("brightness", sys::set_brightness(level).await) });
+                return self.write(Slider::Brightness, Some(level));
             }
+            Message::Written(slider) => return self.write(slider, None),
             Message::Released => self.adjusting = None,
             Message::Mute => return fire(audio::toggle_mute(false)),
             Message::Output(name) => return fire(audio::set_output(name)),
@@ -1600,7 +1687,17 @@ impl cosmic::Application for App {
                 self.visible = self.visible.saturating_add(step);
                 return self.load_events();
             }
-            Message::Secret(request) => {
+            Message::Secret(agent::Event::Cancel(path)) => {
+                if self.password.as_ref().is_some_and(|(r, _)| r.path == path) {
+                    if let Some((request, _)) = self.password.take() {
+                        request.answer(None);
+                    }
+                    if self.page == Page::Password {
+                        self.page = Page::Main;
+                    }
+                }
+            }
+            Message::Secret(agent::Event::Ask(request)) => {
                 if let Some((old, _)) = self.password.take() {
                     old.answer(None);
                 }
@@ -1693,7 +1790,10 @@ impl cosmic::Application for App {
             Message::Workspaces(workspaces::Event::Ready(tx)) => self.workspaces = Some(tx),
             Message::Workspaces(workspaces::Event::Tiling(on)) => self.tiling = Some(on),
             Message::CompChanged => self.touchpad = desktop::touchpad(),
-            Message::Inhibited(cookie) => self.inhibit = cookie,
+            Message::Inhibited(cookie) => {
+                self.inhibiting = false;
+                self.inhibit = cookie;
+            }
             Message::ShowTile(tile, on) => {
                 self.prefs.tiles.retain(|t| *t != tile);
                 if on {

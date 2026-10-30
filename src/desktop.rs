@@ -9,7 +9,6 @@ use cosmic::{
     iced::{Subscription, stream},
 };
 use futures::SinkExt;
-use tokio::sync::OnceCell;
 
 pub use cosmic_settings_a11y_manager_subscription::{AccessibilityEvent, AccessibilityRequest, ColorFilter};
 pub use cosmic_settings_accessibility_subscription::{Request as ReaderRequest, Response as ReaderResponse};
@@ -158,17 +157,13 @@ pub fn comp_changes() -> Subscription<()> {
 
 // ---------------------------------------------------------------- keep awake
 
-/// Inhibitions end with the bus connection that made them: keep one.
-async fn session() -> zbus::Result<zbus::Connection> {
-    static BUS: OnceCell<zbus::Connection> = OnceCell::const_new();
-    BUS.get_or_try_init(zbus::Connection::session).await.cloned()
-}
 
 const SCREENSAVER: &str = "org.freedesktop.ScreenSaver";
 
 /// Keeps the screen on and the computer awake; the cookie ends it.
 pub async fn inhibit_idle(reason: &str) -> Option<u32> {
-    let conn = session().await.ok()?;
+    // Inhibitions end with the connection that made them: the shared one lives on.
+    let conn = crate::bus::session().await.ok()?;
     let reply = conn
         .call_method(Some(SCREENSAVER), "/org/freedesktop/ScreenSaver", Some(SCREENSAVER), "Inhibit", &(crate::APP_ID, reason))
         .await
@@ -178,7 +173,7 @@ pub async fn inhibit_idle(reason: &str) -> Option<u32> {
 }
 
 pub async fn allow_idle(cookie: u32) {
-    if let Ok(conn) = session().await {
+    if let Ok(conn) = crate::bus::session().await {
         _ = conn
             .call_method(Some(SCREENSAVER), "/org/freedesktop/ScreenSaver", Some(SCREENSAVER), "UnInhibit", &(cookie,))
             .await;

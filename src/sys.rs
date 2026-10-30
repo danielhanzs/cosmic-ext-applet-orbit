@@ -176,7 +176,7 @@ fn text(settings: &Settings, group: &str, key: &str) -> Option<String> {
 }
 
 pub async fn network() -> zbus::Result<Network> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let nm: NmProxy = proxy(&conn, None).await?;
     let mut net = Network {
         wifi_enabled: nm.wireless_enabled().await?,
@@ -187,11 +187,11 @@ pub async fn network() -> zbus::Result<Network> {
     let mut saved_wifi = HashMap::new();
     let mut vpns = HashMap::new();
     let list: NmSettingsProxy = proxy(&conn, None).await?;
+    // Objects can go between listing and reading them: those are skipped,
+    // not the whole snapshot.
     for path in list.list_connections().await? {
-        let settings = proxy::<NmConnectionProxy>(&conn, Some(path.clone()))
-            .await?
-            .get_settings()
-            .await?;
+        let Ok(connection) = proxy::<NmConnectionProxy>(&conn, Some(path.clone())).await else { continue };
+        let Ok(settings) = connection.get_settings().await else { continue };
         let name = text(&settings, "connection", "id").unwrap_or_default();
         let last_used = settings
             .get("connection")
@@ -216,12 +216,14 @@ pub async fn network() -> zbus::Result<Network> {
     }
 
     for path in nm.active_connections().await? {
-        let active: NmActiveProxy = proxy(&conn, Some(path.clone())).await?;
+        let Ok(active) = proxy::<NmActiveProxy>(&conn, Some(path.clone())).await else { continue };
         let Ok(kind) = active.kind().await else { continue };
         let up = active.state().await.unwrap_or(0) == 2;
         match kind.as_str() {
             "vpn" | "wireguard" => {
-                if let Some(vpn) = vpns.get_mut(&active.connection().await?) {
+                if let Ok(saved) = active.connection().await
+                    && let Some(vpn) = vpns.get_mut(&saved)
+                {
                     vpn.active = Some((path, up));
                 }
             }
@@ -238,16 +240,17 @@ pub async fn network() -> zbus::Result<Network> {
     net.vpns.sort_by_key(|v| (std::cmp::Reverse(v.last_used), v.name.clone()));
 
     for device in nm.get_devices().await? {
-        let kind = proxy::<NmDeviceProxy>(&conn, Some(device.clone())).await?.device_type().await?;
+        let Ok(device_proxy) = proxy::<NmDeviceProxy>(&conn, Some(device.clone())).await else { continue };
+        let Ok(kind) = device_proxy.device_type().await else { continue };
         // 2: Wi-Fi.
         if kind != 2 {
             continue;
         }
-        let wireless: NmWirelessProxy = proxy(&conn, Some(device.clone())).await?;
+        let Ok(wireless) = proxy::<NmWirelessProxy>(&conn, Some(device.clone())).await else { continue };
         let current = wireless.active_access_point().await.ok();
         let mut seen = HashMap::<String, AccessPoint>::new();
         for ap_path in wireless.access_points().await.unwrap_or_default() {
-            let ap: NmAccessPointProxy = proxy(&conn, Some(ap_path.clone())).await?;
+            let Ok(ap) = proxy::<NmAccessPointProxy>(&conn, Some(ap_path.clone())).await else { continue };
             let Ok(ssid) = ap.ssid().await else { continue };
             if ssid.is_empty() {
                 continue;
@@ -273,19 +276,19 @@ pub async fn network() -> zbus::Result<Network> {
 }
 
 pub async fn set_wifi(on: bool) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     proxy::<NmProxy>(&conn, None).await?.set_wireless_enabled(on).await
 }
 
 pub async fn scan_wifi(device: OwnedObjectPath) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     proxy::<NmWirelessProxy>(&conn, Some(device)).await?.request_scan(HashMap::new()).await
 }
 
 /// Join a network: its saved connection, or a new one; NetworkManager asks
 /// our secret agent for the password if it needs one.
 pub async fn join_wifi(device: OwnedObjectPath, ap: AccessPoint) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let nm: NmProxy = proxy(&conn, None).await?;
     match ap.saved {
         Some(saved) => nm.activate_connection(&saved, &device, &ap.path).await.map(drop),
@@ -294,12 +297,12 @@ pub async fn join_wifi(device: OwnedObjectPath, ap: AccessPoint) -> zbus::Result
 }
 
 pub async fn disconnect(active: OwnedObjectPath) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     proxy::<NmProxy>(&conn, None).await?.deactivate_connection(&active).await
 }
 
 pub async fn connect(saved: OwnedObjectPath) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     proxy::<NmProxy>(&conn, None).await?.activate_connection(&saved, &root(), &root()).await.map(drop)
 }
 
@@ -324,7 +327,7 @@ pub struct BtDevice {
 type Objects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>>;
 
 pub async fn bluetooth() -> zbus::Result<Bluetooth> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let objects: Objects = zbus::fdo::ObjectManagerProxy::builder(&conn)
         .destination("org.bluez")?
         .path("/")?
@@ -388,12 +391,12 @@ async fn set_property(
 }
 
 pub async fn set_bluetooth(adapter: OwnedObjectPath, on: bool) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     set_property(&conn, "org.bluez", &adapter, "org.bluez.Adapter1", "Powered", on.into()).await
 }
 
 pub async fn bt_connect(device: OwnedObjectPath, connect: bool) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let method = if connect { "Connect" } else { "Disconnect" };
     conn.call_method(Some("org.bluez"), &device, Some("org.bluez.Device1"), method, &())
         .await
@@ -424,7 +427,7 @@ pub struct BatteryState {
 }
 
 pub async fn battery() -> zbus::Result<Option<BatteryState>> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let battery: BatteryProxy = proxy(&conn, None).await?;
     if !battery.is_present().await? {
         return Ok(None);
@@ -457,7 +460,7 @@ pub struct Profiles {
 }
 
 pub async fn profiles() -> zbus::Result<Profiles> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     let ppd: PowerProfilesProxy = proxy(&conn, None).await?;
     let available = ppd
         .profiles()
@@ -469,7 +472,7 @@ pub async fn profiles() -> zbus::Result<Profiles> {
 }
 
 pub async fn set_profile(profile: String) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::bus::system().await?;
     proxy::<PowerProfilesProxy>(&conn, None).await?.set_active_profile(&profile).await
 }
 
@@ -489,7 +492,7 @@ trait SettingsDaemon {
 
 /// The screen's brightness, 0 to 1, if it can be set.
 pub async fn brightness() -> zbus::Result<Option<f32>> {
-    let conn = zbus::Connection::session().await?;
+    let conn = crate::bus::session().await?;
     let daemon: SettingsDaemonProxy = proxy(&conn, None).await?;
     let max = daemon.max_display_brightness().await?;
     if max <= 0 {
@@ -499,7 +502,7 @@ pub async fn brightness() -> zbus::Result<Option<f32>> {
 }
 
 pub async fn set_brightness(level: f32) -> zbus::Result<()> {
-    let conn = zbus::Connection::session().await?;
+    let conn = crate::bus::session().await?;
     let daemon: SettingsDaemonProxy = proxy(&conn, None).await?;
     let max = daemon.max_display_brightness().await?;
     daemon.set_display_brightness((level * max as f32).round().max(1.0) as i32).await
@@ -522,7 +525,7 @@ pub fn changes() -> Subscription<Source> {
     Subscription::run(|| {
         stream::channel(16, async |mut out| {
             let (Ok(system), Ok(session)) =
-                (zbus::Connection::system().await, zbus::Connection::session().await)
+                (crate::bus::system().await, crate::bus::session().await)
             else {
                 tracing::error!("no D-Bus connection");
                 return futures::future::pending().await;

@@ -3,6 +3,7 @@
 mod agent;
 mod app;
 mod audio;
+mod bus;
 mod calendar;
 mod config;
 mod desktop;

@@ -141,7 +141,8 @@ pub async fn camera() -> Vec<String> {
 
 /// The same, asked of the host: a sandbox sees only its own processes.
 async fn host_camera_holders() -> Vec<String> {
-    const SCRIPT: &str = "for p in /proc/[0-9]*; do ls -l \"$p/fd\" 2>/dev/null | grep -q /dev/video && cat \"$p/comm\"; done";
+    // One find over all fds, not a process per process; then the names.
+    const SCRIPT: &str = "find /proc/[0-9]*/fd -lname '/dev/video*' 2>/dev/null | cut -d/ -f3 | sort -u | while read p; do cat /proc/$p/comm; done";
     run("sh", &["-c", SCRIPT])
         .await
         .map(|out| out.lines().map(str::to_string).collect())

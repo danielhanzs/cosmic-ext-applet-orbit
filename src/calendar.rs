@@ -18,6 +18,8 @@ pub struct Event {
     pub start: Option<civil::Time>,
     pub end: Option<civil::Time>,
     pub location: String,
+    /// A video meeting to join, found in the event's text.
+    pub link: Option<String>,
 }
 
 /// Each day's events of the month `first` starts; None: no calendar service
@@ -33,7 +35,7 @@ pub async fn month(first: civil::Date) -> Option<HashMap<civil::Date, Vec<Event>
 }
 
 async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event>>> {
-    let conn = zbus::Connection::session().await?;
+    let conn = crate::bus::session().await?;
     let objects = zbus::fdo::ObjectManagerProxy::builder(&conn)
         .destination(SOURCES)?
         .path("/org/gnome/evolution/dataserver/SourceManager")?
@@ -150,17 +152,40 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
     let unfolded = ics.replace("\r\n ", "").replace("\n ", "").replace('\r', "");
     let mut events = Vec::new();
     let mut current: Option<Event> = None;
+    // Components inside the event (alarms…) have SUMMARYs of their own.
+    let mut depth = 0;
+    let mut texts = String::new();
     for line in unfolded.lines() {
         match line {
             "BEGIN:VEVENT" => {
-                current = Some(Event { summary: String::new(), start: None, end: None, location: String::new() })
+                current = Some(Event {
+                    summary: String::new(),
+                    start: None,
+                    end: None,
+                    location: String::new(),
+                    link: None,
+                });
+                depth = 0;
+                texts.clear();
             }
-            "END:VEVENT" => events.extend(current.take()),
+            "END:VEVENT" => {
+                if let Some(mut event) = current.take() {
+                    event.link = meeting_link(&texts);
+                    events.push(event);
+                }
+            }
+            _ if current.is_some() && line.starts_with("BEGIN:") => depth += 1,
+            _ if current.is_some() && line.starts_with("END:") => depth -= 1,
+            _ if depth > 0 => {}
             _ => {
                 let Some(event) = current.as_mut() else { continue };
                 let Some((name, value)) = line.split_once(':') else { continue };
                 let (key, params) = name.split_once(';').unwrap_or((name, ""));
                 let value = value.replace("\\,", ",").replace("\\;", ";").replace("\\n", " ");
+                if matches!(key, "LOCATION" | "DESCRIPTION" | "URL" | "X-GOOGLE-CONFERENCE") {
+                    texts.push_str(&value);
+                    texts.push(' ');
+                }
                 match key {
                     "SUMMARY" => event.summary = value,
                     "LOCATION" => event.location = value,
@@ -172,6 +197,28 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
         }
     }
     events
+}
+
+/// The first video-meeting address in a text.
+fn meeting_link(text: &str) -> Option<String> {
+    const SERVICES: [&str; 8] = [
+        "meet.google.com/",
+        "zoom.us/",
+        "teams.microsoft.com/",
+        "teams.live.com/",
+        "meet.jit.si/",
+        "whereby.com/",
+        "webex.com/",
+        "gotomeeting.com/",
+    ];
+    text.match_indices("https://")
+        .map(|(at, _)| {
+            let rest = &text[at..];
+            let end = rest.find(|c: char| c.is_whitespace() || "<>\"'(),;".contains(c)).unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .find(|url| SERVICES.iter().any(|s| url.contains(s)))
+        .map(str::to_string)
 }
 
 /// The local time of day of an iCalendar date-time; None for a whole day.
@@ -206,6 +253,24 @@ mod tests {
         assert_eq!(events[0].end, Some(civil::time(15, 0, 0, 0)));
         assert_eq!(events[0].location, "Meet");
         assert_eq!(events[1].start, None);
+    }
+
+    #[test]
+    fn alarms_keep_their_own_summary() {
+        let ics = "BEGIN:VEVENT\r\nSUMMARY:Standup\r\nDESCRIPTION:Join: https://meet.google.com/abc-defg-hij\\nor call\r\nDTSTART:20261029T090000Z\r\nBEGIN:VALARM\r\nACTION:EMAIL\r\nSUMMARY:Alarm notification\r\nEND:VALARM\r\nEND:VEVENT\r\n";
+        let events = parse(ics, &TimeZone::UTC);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "Standup");
+        assert_eq!(events[0].link.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+    }
+
+    #[test]
+    fn meeting_links() {
+        assert_eq!(meeting_link("Room 4, https://example.com/x"), None);
+        assert_eq!(
+            meeting_link("<https://us02web.zoom.us/j/123?pwd=x>"),
+            Some("https://us02web.zoom.us/j/123?pwd=x".into())
+        );
     }
 
     #[test]
