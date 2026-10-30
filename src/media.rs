@@ -104,7 +104,17 @@ async fn read_cover(path: PathBuf) -> Option<Vec<u8>> {
         out.status.success().then_some(out.stdout)?
     } else {
         use tokio::io::AsyncReadExt;
-        let file = tokio::fs::File::open(&path).await.ok()?;
+        // Checked before opening: opening a FIFO would block for good. Then
+        // opened without blocking, should it have been swapped meanwhile.
+        if !tokio::fs::metadata(&path).await.ok()?.is_file() {
+            return None;
+        }
+        let file = tokio::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&path)
+            .await
+            .ok()?;
         if !file.metadata().await.ok()?.is_file() {
             return None;
         }
@@ -207,6 +217,12 @@ mod tests {
     #[tokio::test]
     async fn covers_are_regular_small_files() {
         assert!(super::read_cover("/dev/zero".into()).await.is_none());
+        let dir0 = std::env::temp_dir().join(format!("orbit-fifo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir0).unwrap();
+        let fifo = dir0.join("cover.jpg");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        assert!(super::read_cover(fifo).await.is_none(), "a FIFO is not a cover");
+        std::fs::remove_dir_all(dir0).unwrap();
         let dir = std::env::temp_dir().join(format!("orbit-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let small = dir.join("cover.jpg");

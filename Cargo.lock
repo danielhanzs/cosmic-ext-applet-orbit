@@ -972,6 +972,7 @@ dependencies = [
  "icu",
  "image",
  "jiff",
+ "libc",
  "libcosmic",
  "rust-embed",
  "serde",

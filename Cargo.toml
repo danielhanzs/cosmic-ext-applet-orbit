@@ -7,6 +7,7 @@ description = "Orbit: a control panel applet for COSMIC — quick toggles, slide
 
 [dependencies]
 jiff = "0.2"
+libc = "0.2"
 cosmic-settings-a11y-manager-subscription = { git = "https://github.com/pop-os/cosmic-settings", rev = "f1d00fc" }
 cosmic-settings-accessibility-subscription = { git = "https://github.com/pop-os/cosmic-settings", rev = "f1d00fc" }
 futures = "0.3"
