@@ -158,6 +158,8 @@ owner="$(git remote get-url origin | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#'
 say "Done"
 echo "   GitHub release:  https://github.com/danielhanzs/cosmic-orbit/releases/new?tag=$tag"
 if [ "$branch" = add-cosmic-orbit ]; then
-    echo "   Pull request:    the open one from $owner:$branch is updated (or open it:"
+    echo "   Pull request:    an open one from $owner:$branch is updated; if none is open:"
+else
+    echo "   Pull request:"
 fi
 echo "                    https://github.com/pop-os/cosmic-flatpak/compare/master...$owner:cosmic-flatpak:$branch?expand=1"
