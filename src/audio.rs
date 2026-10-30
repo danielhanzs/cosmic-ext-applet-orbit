@@ -13,8 +13,21 @@ pub struct Audio {
     pub muted: bool,
     pub mic_muted: bool,
     pub outputs: Vec<Output>,
+    /// Microphones and other inputs, not the outputs' monitors.
+    pub inputs: Vec<Output>,
+    /// What apps play, each with its own volume.
+    pub streams: Vec<Stream>,
     /// Apps using the microphone right now.
     pub recording: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Stream {
+    pub index: u32,
+    pub app: String,
+    pub icon: String,
+    pub volume: f32,
+    pub muted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -36,12 +49,15 @@ fn parse_volume(text: &str) -> Option<(f32, bool)> {
 }
 
 pub async fn read() -> Audio {
-    let (sink, source, sinks, default, outputs) = tokio::join!(
+    let (sink, source, sinks, default, outputs, sources, default_source, sink_inputs) = tokio::join!(
         run("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"]),
         run("wpctl", &["get-volume", "@DEFAULT_AUDIO_SOURCE@"]),
         run("pactl", &["-f", "json", "list", "sinks"]),
         run("pactl", &["get-default-sink"]),
         run("pactl", &["-f", "json", "list", "source-outputs"]),
+        run("pactl", &["-f", "json", "list", "sources"]),
+        run("pactl", &["get-default-source"]),
+        run("pactl", &["-f", "json", "list", "sink-inputs"]),
     );
     let (volume, muted) = sink.as_deref().and_then(parse_volume).unwrap_or((0.0, true));
     let mic_muted = source.as_deref().and_then(parse_volume).is_none_or(|(_, m)| m);
@@ -67,7 +83,54 @@ pub async fn read() -> Audio {
         .collect();
     recording.sort();
     recording.dedup();
-    Audio { volume, muted, mic_muted, outputs: outputs_list, recording }
+    let default_source = default_source.unwrap_or_default();
+    let inputs = json(sources)
+        .iter()
+        .filter(|s| s["properties"]["device.class"].as_str() != Some("monitor"))
+        .filter_map(|s| {
+            let name = s["name"].as_str()?.to_string();
+            Some(Output {
+                default: name == default_source.trim(),
+                description: s["description"].as_str().unwrap_or(&name).to_string(),
+                name,
+            })
+        })
+        .collect();
+    let streams = json(sink_inputs)
+        .iter()
+        .filter_map(|s| {
+            let props = &s["properties"];
+            let app = props["application.name"].as_str().or(props["media.name"].as_str())?.to_string();
+            // The loudest channel, as a 0..1 level.
+            let volume = s["volume"]
+                .as_object()?
+                .values()
+                .filter_map(|c| c["value_percent"].as_str()?.trim_end_matches('%').parse::<f32>().ok())
+                .fold(0.0, f32::max)
+                / 100.0;
+            Some(Stream {
+                index: s["index"].as_u64()? as u32,
+                icon: props["application.icon_name"].as_str().unwrap_or("audio-x-generic").to_string(),
+                app,
+                volume,
+                muted: s["mute"].as_bool().unwrap_or(false),
+            })
+        })
+        .collect();
+    Audio { volume, muted, mic_muted, outputs: outputs_list, inputs, streams, recording }
+}
+
+pub async fn set_stream_volume(index: u32, level: f32) {
+    let percent = format!("{}%", (level * 100.0).round() as u32);
+    _ = run("pactl", &["set-sink-input-volume", &index.to_string(), &percent]).await;
+}
+
+pub async fn toggle_stream_mute(index: u32) {
+    _ = run("pactl", &["set-sink-input-mute", &index.to_string(), "toggle"]).await;
+}
+
+pub async fn set_input(name: String) {
+    _ = run("pactl", &["set-default-source", &name]).await;
 }
 
 pub async fn set_volume(level: f32) {

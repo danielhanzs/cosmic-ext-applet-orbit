@@ -218,6 +218,8 @@ pub struct App {
     hotspot_password: Option<String>,
     /// Updates waiting.
     updates: usize,
+    /// An app's volume slider being dragged: its index and level.
+    stream_drag: Option<(u32, f32)>,
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +269,11 @@ pub enum Message {
     SetHotspot(bool),
     HotspotPassword(Option<String>),
     CheckUpdates,
+    Input(String),
+    StreamVolume(u32, f32),
+    StreamRelease,
+    StreamMute(u32),
+    ToggleMixer,
     Updates(usize),
     BtConnect(OwnedObjectPath, bool),
     Profile(String),
@@ -1219,6 +1226,19 @@ impl App {
                         Some(Message::Output(output.name.clone())),
                     ));
                 }
+                if !self.audio.inputs.is_empty() {
+                    column = column.push(container(text::heading(T.mic)).padding([12, 10, 4, 10]));
+                    for input in &self.audio.inputs {
+                        column = column.push(self.item(
+                            named("audio-input-microphone-symbolic"),
+                            input.description.clone(),
+                            None,
+                            input.default,
+                            Some(Message::Input(input.name.clone())),
+                        ));
+                    }
+                }
+                column = column.push(self.mixer());
                 column = column.push(self.more("sound"));
             }
             Page::Hotspot => {
@@ -1245,6 +1265,59 @@ impl App {
             Page::Edit => column = column.push(self.edit_page()),
             Page::Password => column = column.push(self.password_page()),
             Page::Main => {}
+        }
+        column.into()
+    }
+
+    /// Each app's volume, folded away unless opened (remembered).
+    fn mixer(&self) -> Element<'_, Message> {
+        let chevron = if self.prefs.mixer_open { "go-up-symbolic" } else { "go-down-symbolic" };
+        let head = button::custom(
+            widget::Row::new()
+                .align_y(Alignment::Center)
+                .push(text::heading(T.applications).width(Length::Fill))
+                .push(icon::from_name(chevron).size(16)),
+        )
+        .class(style::flat())
+        .padding([10, 10])
+        .width(Length::Fill)
+        .on_press(Message::ToggleMixer);
+        let mut column = widget::Column::new().spacing(6).push(head);
+        if !self.prefs.mixer_open {
+            return column.into();
+        }
+        if self.audio.streams.is_empty() {
+            column = column.push(container(text::caption(T.no_apps_playing)).padding([0, 10]));
+        }
+        for stream in &self.audio.streams {
+            let level = match self.stream_drag {
+                Some((index, level)) if index == stream.index => level,
+                _ => stream.volume,
+            };
+            let mute = if stream.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" };
+            let index = stream.index;
+            column = column.push(
+                widget::Column::new()
+                    .padding([0, 10])
+                    .push(
+                        widget::Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(icon::from_name(stream.icon.as_str()).size(18))
+                            .push(text::caption(stream.app.as_str())),
+                    )
+                    .push(
+                        widget::Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(button::icon(icon::from_name(mute)).padding(4).on_press(Message::StreamMute(index)))
+                            .push(
+                                widget::slider(0.0..=1.0, level, move |v| Message::StreamVolume(index, v))
+                                    .step(0.01_f32)
+                                    .on_release(Message::StreamRelease),
+                            ),
+                    ),
+            );
         }
         column.into()
     }
@@ -1565,6 +1638,7 @@ impl cosmic::Application for App {
             screen: (1920, 1080),
             hotspot_password: None,
             updates: 0,
+            stream_drag: None,
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -1758,6 +1832,23 @@ impl cosmic::Application for App {
                 }
             }
             Message::HotspotPassword(password) => self.hotspot_password = password,
+            Message::Input(name) => return fire(audio::set_input(name)),
+            // A drag only moves the slider; the level is set once, on release.
+            Message::StreamVolume(index, level) => self.stream_drag = Some((index, level)),
+            Message::StreamRelease => {
+                if let Some((index, level)) = self.stream_drag {
+                    if let Some(stream) = self.audio.streams.iter_mut().find(|s| s.index == index) {
+                        stream.volume = level;
+                    }
+                    self.stream_drag = None;
+                    return fire(audio::set_stream_volume(index, level));
+                }
+            }
+            Message::StreamMute(index) => return fire(audio::toggle_stream_mute(index)),
+            Message::ToggleMixer => {
+                self.prefs.mixer_open = !self.prefs.mixer_open;
+                self.prefs.save();
+            }
             Message::CheckUpdates => return run(async { Message::Updates(updates::count().await) }),
             Message::Updates(count) => self.updates = count,
             Message::SetBluetooth(on) => {

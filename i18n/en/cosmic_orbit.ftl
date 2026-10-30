@@ -61,3 +61,5 @@ hotspot = Hotspot
 network-name = Network name
 hotspot-hint = Share this computer's connection over Wi-Fi. Turn it on to create the network.
 updates = Updates available
+applications = Applications
+no-apps-playing = No apps playing

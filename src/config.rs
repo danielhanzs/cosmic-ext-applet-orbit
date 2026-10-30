@@ -55,6 +55,8 @@ pub struct Prefs {
     /// Each part of the popup on its own, or all on one surface.
     pub islands: bool,
     pub spacing: Spacing,
+    /// The sound page's per-app volumes open.
+    pub mixer_open: bool,
 }
 
 impl Default for Prefs {
@@ -69,6 +71,7 @@ impl Default for Prefs {
             calendar_open: false,
             islands: false,
             spacing: Spacing::Medium,
+            mixer_open: false,
         }
     }
 }
@@ -108,6 +111,9 @@ impl Prefs {
             if let Ok(v) = c.get("spacing") {
                 prefs.spacing = v;
             }
+            if let Ok(v) = c.get("mixer_open") {
+                prefs.mixer_open = v;
+            }
         }
         prefs
     }
@@ -124,7 +130,8 @@ impl Prefs {
             .and(c.set("panel_icons", self.panel_icons))
             .and(c.set("calendar_open", self.calendar_open))
             .and(c.set("islands", self.islands))
-            .and(c.set("spacing", self.spacing));
+            .and(c.set("spacing", self.spacing))
+            .and(c.set("mixer_open", self.mixer_open));
         if let Err(err) = result {
             tracing::warn!("cannot save settings: {err}");
         }

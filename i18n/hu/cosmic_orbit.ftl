@@ -61,3 +61,5 @@ hotspot = Hotspot
 network-name = Hálózat neve
 hotspot-hint = A gép kapcsolatának megosztása Wi-Fi-n. Bekapcsolva létrejön a hálózat.
 updates = Frissítések érhetők el
+applications = Alkalmazások
+no-apps-playing = Nem szól alkalmazás
