@@ -46,7 +46,8 @@
         {
           "type": "git",
           "url": "https://github.com/danielhanzs/cosmic-orbit.git",
-          "tag": "v0.1.1"
+          "tag": "v0.1.1",
+          "commit": "a9162add01c7a1f6665a3c51420cda53578674d4"
         },
         "cargo-sources.json"
       ]

@@ -1,304 +1,299 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! The applet's words: Hungarian when the system speaks it, else English.
+//! The applet's words, in the interface language (Fluent files under
+//! `i18n/`, English where a translation lacks one), and dates in the region's
+//! format (ICU, as COSMIC's own clock formats them).
 
 use std::sync::LazyLock;
 
-pub struct Strings {
-    pub wifi: &'static str,
-    pub wired: &'static str,
-    pub bluetooth: &'static str,
-    pub vpn: &'static str,
-    pub power: &'static str,
-    pub dnd: &'static str,
-    pub dark: &'static str,
-    pub airplane: &'static str,
-    pub mic: &'static str,
-    pub on: &'static str,
-    pub off: &'static str,
-    pub not_connected: &'static str,
-    pub connecting: &'static str,
-    pub connected: &'static str,
-    pub muted: &'static str,
-    pub more_settings: &'static str,
-    pub sound_output: &'static str,
-    pub no_events: &'static str,
-    pub no_calendar: &'static str,
-    pub add_accounts: &'static str,
-    pub all_day: &'static str,
-    pub recording: &'static str,
-    pub filming: &'static str,
-    pub password_for: &'static str,
-    pub password: &'static str,
-    pub remember: &'static str,
-    pub connect: &'static str,
-    pub cancel: &'static str,
-    pub edit: &'static str,
-    pub layout: &'static str,
-    pub dropdown: &'static str,
-    pub side: &'static str,
-    pub fullscreen: &'static str,
-    pub show_calendar: &'static str,
-    pub show_clock: &'static str,
-    pub performance: &'static str,
-    pub balanced: &'static str,
-    pub power_saver: &'static str,
-    pub keep_awake: &'static str,
-    pub tiling: &'static str,
-    pub magnifier: &'static str,
-    pub invert_colors: &'static str,
-    pub screen_reader: &'static str,
-    pub high_contrast: &'static str,
-    pub screenshot: &'static str,
-    pub workspaces: &'static str,
-    pub touchpad: &'static str,
-    pub add: &'static str,
-    pub reset: &'static str,
-    pub edit_hint: &'static str,
-    pub panel_icons: &'static str,
-    pub islands: &'static str,
-    pub panel_spacing: &'static str,
-    pub small: &'static str,
-    pub medium: &'static str,
-    pub large: &'static str,
-    pub icons_none: &'static str,
-    pub icons_active: &'static str,
-    pub icons_all: &'static str,
-    pub months: [&'static str; 12],
-    pub weekdays: [&'static str; 7],
-}
-
-const EN: Strings = Strings {
-    wifi: "Wi-Fi",
-    wired: "Wired",
-    bluetooth: "Bluetooth",
-    vpn: "VPN",
-    power: "Power mode",
-    dnd: "Do not disturb",
-    dark: "Dark style",
-    airplane: "Airplane mode",
-    mic: "Microphone",
-    on: "On",
-    off: "Off",
-    not_connected: "Not connected",
-    connecting: "Connecting…",
-    connected: "Connected",
-    muted: "Muted",
-    more_settings: "More settings",
-    sound_output: "Sound output",
-    no_events: "No events",
-    no_calendar: "No synced calendars",
-    add_accounts: "Add accounts",
-    all_day: "All day",
-    recording: "using the microphone",
-    filming: "using the camera",
-    password_for: "Password for",
-    password: "Password",
-    remember: "Remember",
-    connect: "Connect",
-    cancel: "Cancel",
-    edit: "Edit",
-    layout: "Opens as",
-    dropdown: "Dropdown",
-    side: "Side panel",
-    fullscreen: "Fullscreen",
-    show_calendar: "Show calendar",
-    show_clock: "Show clock on the panel",
-    keep_awake: "Keep awake",
-    tiling: "Tiling",
-    magnifier: "Magnifier",
-    invert_colors: "Invert colors",
-    screen_reader: "Screen reader",
-    high_contrast: "High contrast",
-    screenshot: "Screenshot",
-    workspaces: "Workspaces",
-    touchpad: "Touchpad",
-    add: "Add",
-    reset: "Reset tiles",
-    edit_hint: "Drag tiles to reorder them; click one to resize it",
-    panel_icons: "Tile icons on the panel",
-    islands: "Separate islands",
-    panel_spacing: "Space between the panel icons",
-    small: "Small",
-    medium: "Medium",
-    large: "Large",
-    icons_none: "None",
-    icons_active: "Active",
-    icons_all: "All",
-    performance: "Performance",
-    balanced: "Balanced",
-    power_saver: "Power saver",
-    months: [
-        "January", "February", "March", "April", "May", "June", "July", "August", "September",
-        "October", "November", "December",
-    ],
-    weekdays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+use i18n_embed::{
+    DesktopLanguageRequester,
+    fluent::{FluentLanguageLoader, fluent_language_loader},
+};
+use icu::{
+    calendar::{Gregorian, week::WeekInformation},
+    datetime::{
+        DateTimeFormatter, DateTimeFormatterPreferences, fieldsets,
+        input::{Date as IcuDate, DateTime, Time},
+        options::TimePrecision,
+    },
+    locale::Locale,
 };
 
-const HU: Strings = Strings {
-    wifi: "Wi-Fi",
-    wired: "Vezetékes",
-    bluetooth: "Bluetooth",
-    vpn: "VPN",
-    power: "Energiamód",
-    dnd: "Ne zavarjanak",
-    dark: "Sötét stílus",
-    airplane: "Repülőgép mód",
-    mic: "Mikrofon",
-    on: "Be",
-    off: "Ki",
-    not_connected: "Nincs kapcsolat",
-    connecting: "Csatlakozás…",
-    connected: "Csatlakoztatva",
-    muted: "Némítva",
-    more_settings: "További beállítások",
-    sound_output: "Hangkimenet",
-    no_events: "Nincs esemény",
-    no_calendar: "Nincs szinkronizált naptár",
-    add_accounts: "Fiókok hozzáadása",
-    all_day: "Egész nap",
-    recording: "használja a mikrofont",
-    filming: "használja a kamerát",
-    password_for: "Jelszó:",
-    password: "Jelszó",
-    remember: "Megjegyzés",
-    connect: "Csatlakozás",
-    cancel: "Mégse",
-    edit: "Szerkesztés",
-    layout: "Megjelenés",
-    dropdown: "Lenyíló",
-    side: "Oldalsáv",
-    fullscreen: "Teljes képernyő",
-    show_calendar: "Naptár mutatása",
-    show_clock: "Óra a panelen",
-    keep_awake: "Ébren tartás",
-    tiling: "Csempézés",
-    magnifier: "Nagyító",
-    invert_colors: "Színek invertálása",
-    screen_reader: "Képernyőolvasó",
-    high_contrast: "Nagy kontraszt",
-    screenshot: "Képernyőkép",
-    workspaces: "Munkaterületek",
-    touchpad: "Érintőpad",
-    add: "Hozzáadás",
-    reset: "Csempék visszaállítása",
-    edit_hint: "Húzd a csempéket az átrendezéshez; kattints egyre az átméretezéshez",
-    panel_icons: "Csempék ikonja a panelen",
-    islands: "Külön szigetek",
-    panel_spacing: "Térköz a panel ikonjai között",
-    small: "Kicsi",
-    medium: "Közepes",
-    large: "Nagy",
-    icons_none: "Nincs",
-    icons_active: "Aktívak",
-    icons_all: "Összes",
-    performance: "Teljesítmény",
-    balanced: "Kiegyensúlyozott",
-    power_saver: "Energiatakarékos",
-    months: [
-        "január", "február", "március", "április", "május", "június", "július", "augusztus",
-        "szeptember", "október", "november", "december",
-    ],
-    weekdays: ["hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap"],
-};
+#[derive(rust_embed::RustEmbed)]
+#[folder = "i18n/"]
+struct Localizations;
 
-fn locale(keys: [&str; 3]) -> String {
-    keys.iter()
-        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
-        .unwrap_or_default()
+static LOADER: LazyLock<FluentLanguageLoader> = LazyLock::new(|| {
+    let loader: FluentLanguageLoader = fluent_language_loader!();
+    // No invisible direction marks around the app names put into a message.
+    loader.set_use_isolating(false);
+    let requested = DesktopLanguageRequester::requested_languages();
+    if let Err(err) = i18n_embed::select(&loader, &Localizations, &requested) {
+        tracing::warn!("cannot load translations: {err}");
+    }
+    loader
+});
+
+/// The words, as fields: `T.wifi`. Fluent ids are the field names with
+/// dashes for underscores.
+macro_rules! strings {
+    ($($field:ident),* $(,)?) => {
+        pub struct Strings {
+            $(pub $field: &'static str,)*
+        }
+
+        fn load(loader: &FluentLanguageLoader) -> Strings {
+            // Loaded once, kept for the applet's life.
+            let text = |id: &str| -> &'static str { Box::leak(loader.get(id).into_boxed_str()) };
+            Strings { $($field: text(&stringify!($field).replace('_', "-")),)* }
+        }
+
+        #[cfg(test)]
+        const KEYS: &[&str] = &[$(stringify!($field)),*];
+    };
 }
 
-/// The words, in the language (LC_MESSAGES).
-pub static T: LazyLock<&'static Strings> =
-    LazyLock::new(|| if locale(["LC_ALL", "LC_MESSAGES", "LANG"]).starts_with("hu") { &HU } else { &EN });
+strings!(
+    wifi,
+    wired,
+    bluetooth,
+    vpn,
+    power,
+    dnd,
+    dark,
+    airplane,
+    mic,
+    on,
+    off,
+    not_connected,
+    connecting,
+    connected,
+    muted,
+    more_settings,
+    sound_output,
+    no_events,
+    no_calendar,
+    add_accounts,
+    all_day,
+    password_for,
+    password,
+    remember,
+    connect,
+    cancel,
+    edit,
+    layout,
+    dropdown,
+    side,
+    fullscreen,
+    show_calendar,
+    show_clock,
+    performance,
+    balanced,
+    power_saver,
+    keep_awake,
+    tiling,
+    magnifier,
+    invert_colors,
+    screen_reader,
+    high_contrast,
+    screenshot,
+    workspaces,
+    touchpad,
+    add,
+    reset,
+    edit_hint,
+    panel_icons,
+    islands,
+    panel_spacing,
+    small,
+    medium,
+    large,
+    icons_none,
+    icons_active,
+    icons_all,
+);
 
-/// Dates follow the region (LC_TIME), which may differ from the language:
-/// English words with Hungarian dates is common.
-static REGION: LazyLock<String> = LazyLock::new(|| locale(["LC_ALL", "LC_TIME", "LANG"]));
+pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));
 
-fn hungarian() -> bool {
-    REGION.starts_with("hu")
+/// Messages that take the names of apps, placed where the language puts them.
+const WITH_APPS: [&str; 2] = ["recording", "filming"];
+
+/// "Discord, Zoom using the microphone": `what` is "recording" or "filming".
+pub fn using(what: &str, apps: &[String]) -> String {
+    debug_assert!(WITH_APPS.contains(&what));
+    LOADER.get_args(what, std::collections::HashMap::from([("apps", apps.join(", "))]))
 }
 
-/// The US: 12-hour clock, weeks from Sunday, month before day.
-fn us() -> bool {
-    REGION.starts_with("en_US")
+// ---------------------------------------------------------------- dates
+
+/// The region's locale: LC_TIME may differ from the language, as English
+/// words with Hungarian dates.
+static LOCALE: LazyLock<Locale> = LazyLock::new(|| {
+    ["LC_ALL", "LC_TIME", "LANG"]
+        .iter()
+        .find_map(|var| parse(&std::env::var(var).ok()?))
+        .unwrap_or_else(|| Locale::try_from_str("en-US").expect("a valid locale"))
+});
+
+/// "hu_HU.UTF-8" → hu-HU; None for C, POSIX or nothing.
+fn parse(value: &str) -> Option<Locale> {
+    let tag = value.split(['.', '@']).next()?.replace('_', "-");
+    if tag.is_empty() || tag == "C" || tag == "POSIX" {
+        return None;
+    }
+    Locale::try_from_str(&tag).ok()
 }
 
-fn names() -> &'static Strings {
-    if hungarian() { &HU } else { &EN }
+fn prefs() -> DateTimeFormatterPreferences {
+    (&*LOCALE).into()
 }
 
-fn month(date: jiff::civil::Date) -> &'static str {
-    names().months[date.month() as usize - 1]
+fn datetime(date: jiff::civil::Date, time: jiff::civil::Time) -> Option<DateTime<Gregorian>> {
+    Some(DateTime {
+        date: IcuDate::try_new_gregorian(date.year() as i32, date.month() as u8, date.day() as u8).ok()?,
+        time: Time::try_new(time.hour() as u8, time.minute() as u8, 0, 0).ok()?,
+    })
 }
 
-fn weekday(date: jiff::civil::Date) -> &'static str {
-    names().weekdays[date.weekday().to_monday_zero_offset() as usize]
+/// A function formatting a date and time with one ICU field set.
+macro_rules! formatted {
+    ($name:ident, $fieldset:ty, $make:expr) => {
+        fn $name(date: jiff::civil::Date, time: jiff::civil::Time) -> String {
+            // ICU's formatters aren't shared between threads: one each.
+            thread_local! {
+                static FORMATTER: Option<DateTimeFormatter<$fieldset>> =
+                    DateTimeFormatter::try_new(prefs(), $make).ok();
+            }
+            FORMATTER.with(|formatter| match (formatter, datetime(date, time)) {
+                (Some(formatter), Some(dt)) => formatter.format(&dt).to_string(),
+                _ => date.to_string(),
+            })
+        }
+    };
+}
+
+formatted!(long, fieldsets::MDE, fieldsets::MDE::long());
+formatted!(short, fieldsets::MD, fieldsets::MD::medium());
+formatted!(month, fieldsets::YM, fieldsets::YM::long());
+formatted!(weekday, fieldsets::E, fieldsets::E::short());
+formatted!(hour_minute, fieldsets::T, {
+    let mut fs = fieldsets::T::medium();
+    fs.time_precision = Some(TimePrecision::Minute);
+    fs
+});
+
+/// "Thursday, October 29" or "október 29., csütörtök"
+pub fn long_date(date: jiff::civil::Date) -> String {
+    long(date, jiff::civil::Time::midnight())
+}
+
+/// "Oct 29" or "okt. 29."
+pub fn short_date(date: jiff::civil::Date) -> String {
+    short(date, jiff::civil::Time::midnight())
+}
+
+/// "October 2026" or "2026. október"
+pub fn month_title(date: jiff::civil::Date) -> String {
+    month(date, jiff::civil::Time::midnight())
+}
+
+/// "2:05 PM" or "14:05", as the region keeps time.
+pub fn clock(time: jiff::civil::Time) -> String {
+    hour_minute(jiff::civil::date(2026, 1, 1), time)
+}
+
+/// The weekday a locale's weeks start on, Monday as 0.
+fn first_weekday_of(locale: &Locale) -> i64 {
+    WeekInformation::try_new(locale.into()).map(|w| w.first_weekday as i64 - 1).unwrap_or(0)
+}
+
+fn first_weekday() -> i64 {
+    static FIRST: LazyLock<i64> = LazyLock::new(|| first_weekday_of(&LOCALE));
+    *FIRST
 }
 
 /// Days before `date` in its week.
 pub fn week_offset(date: jiff::civil::Date) -> i64 {
-    if us() { date.weekday().to_sunday_zero_offset() as i64 } else { date.weekday().to_monday_zero_offset() as i64 }
+    (date.weekday().to_monday_zero_offset() as i64 - first_weekday()).rem_euclid(7)
 }
 
 /// The calendar's column heads, from the first day of the week.
 pub fn weekday_heads() -> Vec<String> {
-    let mut days: Vec<String> = if hungarian() {
-        ["H", "K", "Sze", "Cs", "P", "Szo", "V"].map(String::from).to_vec()
-    } else {
-        EN.weekdays.iter().map(|d| d.chars().take(2).collect()).collect()
-    };
-    if us() {
-        days.rotate_right(1);
-    }
-    days
-}
-
-/// "2026. október" or "October 2026"
-pub fn month_title(date: jiff::civil::Date) -> String {
-    if hungarian() { format!("{}. {}", date.year(), month(date)) } else { format!("{} {}", month(date), date.year()) }
-}
-
-/// "október 29., csütörtök", "Thursday, October 29" or "Thursday 29 October"
-pub fn long_date(date: jiff::civil::Date) -> String {
-    let (m, w, d) = (month(date), weekday(date), date.day());
-    if hungarian() {
-        format!("{m} {d}., {w}")
-    } else if us() {
-        format!("{w}, {m} {d}")
-    } else {
-        format!("{w} {d} {m}")
-    }
-}
-
-/// "okt. 29.", "Oct 29" or "29 Oct"
-pub fn short_date(date: jiff::civil::Date) -> String {
-    let m: String = month(date).chars().take(3).collect();
-    let d = date.day();
-    if hungarian() {
-        format!("{m}. {d}.")
-    } else if us() {
-        format!("{m} {d}")
-    } else {
-        format!("{d} {m}")
-    }
-}
-
-/// "14:05", or "2:05 PM" in the US.
-pub fn clock(time: jiff::civil::Time) -> String {
-    time.strftime(if us() { "%-I:%M %p" } else { "%H:%M" }).to_string()
+    // 2024-01-01 was a Monday.
+    (0..7)
+        .map(|i| {
+            let day = jiff::civil::date(2024, 1, 1 + ((i + first_weekday()) % 7) as i8);
+            weekday(day, jiff::civil::Time::midnight())
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn long_in(tag: &str) -> String {
+        let locale = parse(tag).expect("a locale");
+        let formatter = DateTimeFormatter::try_new((&locale).into(), fieldsets::MDE::long()).expect("data");
+        let dt = datetime(jiff::civil::date(2026, 10, 29), jiff::civil::Time::midnight()).expect("a date");
+        formatter.format(&dt).to_string()
+    }
+
     #[test]
-    fn dates_follow_region() {
-        // The test runs in whatever locale the machine has: check only shapes.
-        let date = jiff::civil::date(2026, 10, 29);
-        assert!(super::long_date(date).contains("29"));
-        assert_eq!(super::weekday_heads().len(), 7);
-        let offset = super::week_offset(date);
-        assert!(offset == 3 || offset == 4);
+    fn locales() {
+        assert_eq!(parse("hu_HU.UTF-8").map(|l| l.to_string()), Some("hu-HU".into()));
+        assert_eq!(parse("sr_RS@latin").map(|l| l.to_string()), Some("sr-RS".into()));
+        assert!(parse("C").is_none() && parse("POSIX").is_none() && parse("").is_none());
+    }
+
+    #[test]
+    fn dates_in_their_region() {
+        assert_eq!(long_in("en_US.UTF-8"), "Thursday, October 29");
+        assert!(long_in("hu_HU.UTF-8").starts_with("október 29."), "{}", long_in("hu_HU.UTF-8"));
+        assert!(long_in("de_DE.UTF-8").contains("29. Oktober"), "{}", long_in("de_DE.UTF-8"));
+        assert!(long_in("ja_JP.UTF-8").contains("10月29日"), "{}", long_in("ja_JP.UTF-8"));
+    }
+
+    #[test]
+    fn weeks_start_where_the_region_says() {
+        assert_eq!(first_weekday_of(&parse("en_US").unwrap()), 6, "Sunday");
+        assert_eq!(first_weekday_of(&parse("hu_HU").unwrap()), 0, "Monday");
+        assert_eq!(first_weekday_of(&parse("en_GB").unwrap()), 0, "Monday");
+    }
+
+    /// The ids in a Fluent file.
+    fn ids(ftl: &str) -> Vec<String> {
+        ftl.lines()
+            .filter_map(|l| l.split_once(" = ").map(|(id, _)| id.trim().to_string()))
+            .filter(|id| !id.starts_with('#') && !id.is_empty())
+            .collect()
+    }
+
+    #[test]
+    fn every_translation_is_whole_and_parses() {
+        let english: Vec<String> =
+            KEYS.iter().chain(WITH_APPS.iter()).map(|k| k.replace('_', "-")).collect();
+        let mut languages = 0;
+        for file in Localizations::iter() {
+            let text = Localizations::get(&file).expect("embedded");
+            let text = std::str::from_utf8(&text.data).expect("UTF-8");
+            let found = ids(text);
+            for id in &english {
+                assert!(found.contains(id), "{file} lacks {id}");
+            }
+            for id in &found {
+                assert!(english.contains(id), "{file} has unknown {id}");
+            }
+            for id in WITH_APPS {
+                let line = text.lines().find(|l| l.starts_with(&format!("{id} ="))).expect("there");
+                assert!(line.contains("{ $apps }"), "{file}: {id} lacks the app names");
+            }
+            let lang: unic_langid::LanguageIdentifier = file.split('/').next().unwrap().parse().expect("a language");
+            i18n_embed::select(&*LOADER, &Localizations, &[lang.clone()]).expect("loads");
+            assert!(LOADER.has("wifi"), "{file} does not load");
+            languages += 1;
+        }
+        assert!(languages >= 2);
     }
 }

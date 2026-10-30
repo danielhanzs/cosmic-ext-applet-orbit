@@ -185,6 +185,9 @@ pub struct App {
     drag_over: Option<usize>,
     /// Refreshes on their way: more news of the same is let be.
     pending: HashSet<Source>,
+    audio_pending: bool,
+    /// The month the events were read for, and when.
+    events_read: Option<(civil::Date, Instant)>,
     /// A slider being dragged: refreshes don't move it meanwhile.
     adjusting: Option<Instant>,
     password: Option<(agent::Request, String)>,
@@ -335,8 +338,13 @@ impl App {
         }
     }
 
-    fn load_events(&self) -> app::Task<Message> {
+    /// The shown month's events, unless read in the last few minutes.
+    fn load_events(&mut self) -> app::Task<Message> {
         let first = self.visible;
+        if self.events_read.is_some_and(|(month, at)| month == first && at.elapsed() < Duration::from_secs(300)) {
+            return Task::none();
+        }
+        self.events_read = Some((first, Instant::now()));
         run(async move { Message::Events(first, calendar::month(first).await) })
     }
 
@@ -859,7 +867,7 @@ impl App {
         if let Some(media) = &self.media {
             any = true;
             let art: Element<'_, Message> = match &media.art {
-                Some(path) => widget::image(path.as_path()).width(44).height(44).into(),
+                Some(handle) => widget::image(handle.clone()).width(44).height(44).into(),
                 None => icon::from_name("audio-x-generic-symbolic").size(44).into(),
             };
             let play = if media.playing { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" };
@@ -887,8 +895,8 @@ impl App {
         }
         // In the colors phones use: green camera, orange microphone.
         let privacy = [
-            (&self.camera, "camera-web-symbolic", T.filming, Color::from_rgb(0.3, 0.85, 0.4)),
-            (&self.audio.recording, "audio-input-microphone-symbolic", T.recording, Color::from_rgb(1.0, 0.65, 0.2)),
+            (&self.camera, "camera-web-symbolic", "filming", Color::from_rgb(0.3, 0.85, 0.4)),
+            (&self.audio.recording, "audio-input-microphone-symbolic", "recording", Color::from_rgb(1.0, 0.65, 0.2)),
         ];
         for (apps, icon_name, what, color) in privacy {
             if apps.is_empty() {
@@ -900,7 +908,7 @@ impl App {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(icon::from_name(icon_name).size(16))
-                    .push(text::caption(format!("{} {what}", apps.join(", "))).class(theme::Text::Color(color))),
+                    .push(text::caption(i18n::using(what, apps)).class(theme::Text::Color(color))),
             );
         }
         any.then(|| {
@@ -1353,8 +1361,9 @@ fn frame<'a>(parts: Vec<Element<'a, Message>>, islands: bool) -> Element<'a, Mes
             .fold(widget::Column::new().spacing(8), |c, part| c.push(panel(container(part).padding(14).into(), WIDTH)))
             .into()
     } else {
+        // One surface: view_window puts it around everything.
         let column = parts.into_iter().fold(widget::Column::new().spacing(14), |c, p| c.push(p));
-        panel(container(column).padding(14).into(), WIDTH).into()
+        container(column).padding(14).into()
     }
 }
 
@@ -1413,6 +1422,8 @@ impl cosmic::Application for App {
             drag_over: None,
             pending: HashSet::new(),
             adjusting: None,
+            audio_pending: false,
+            events_read: None,
             password: None,
             remember: true,
             screen: (1920, 1080),
@@ -1484,7 +1495,14 @@ impl cosmic::Application for App {
             Message::Frame => {}
             Message::Changed(source) => return self.refresh(source),
             Message::AudioChanged => {
-                return run(async { Message::Audio(audio::read().await) });
+                // pactl reports in bursts (a slider drag sends dozens): read once.
+                if !self.audio_pending {
+                    self.audio_pending = true;
+                    return run(async {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        Message::Audio(audio::read().await)
+                    });
+                }
             }
             Message::FlagsChanged => {
                 self.dnd = DND.get();
@@ -1515,6 +1533,7 @@ impl cosmic::Application for App {
                 }
             }
             Message::Audio(audio) => {
+                self.audio_pending = false;
                 let volume = self.audio.volume;
                 self.audio = audio;
                 if self.adjusting() {
@@ -1824,9 +1843,16 @@ impl cosmic::Application for App {
         let content = if self.page == Page::Main {
             self.main_page(wide)
         } else {
-            panel(container(self.sub_page()).padding(14).into(), WIDTH).into()
+            container(self.sub_page()).padding(14).into()
         };
-        let body = widget::scrollable(content);
+        let body: Element<'_, Message> = if self.prefs.islands && self.page == Page::Main {
+            widget::scrollable(content).into()
+        } else {
+            // One surface, outside the scrolling, so a side panel runs the
+            // screen's full height.
+            let surface = panel(widget::scrollable(content).into(), if wide { WIDTH * 2.0 + 60.0 } else { WIDTH });
+            if layout == Layout::Side { surface.height(Length::Fill).into() } else { surface.into() }
+        };
         match layout {
             Layout::Dropdown => cosmic::widget::autosize::autosize(
                 container(body).width(Length::Fixed(WIDTH)),

@@ -67,37 +67,43 @@ async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event
             .unwrap_or_default()
     };
     // One query a day: EDS works out which repeating events fall on it.
-    let mut days = HashMap::new();
-    for offset in 0..first.days_in_month() {
-        let day = first.saturating_add(jiff::Span::new().days(offset));
-        let start = day.to_datetime(civil::Time::midnight());
-        let query = format!(
-            "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
-            utc(start),
-            utc(start.saturating_add(jiff::Span::new().days(1))),
-        );
-        let mut events = Vec::new();
-        for (bus, path) in &calendars {
-            let reply = conn
-                .call_method(
-                    Some(bus.as_str()),
-                    path,
-                    Some("org.gnome.evolution.dataserver.Calendar"),
-                    "GetObjectList",
-                    &(query.as_str(),),
-                )
-                .await;
-            match reply.and_then(|r| r.body().deserialize::<Vec<String>>().map_err(Into::into)) {
-                Ok(objects) => events.extend(objects.iter().flat_map(|ics| parse(ics, &tz))),
-                Err(err) => tracing::warn!("calendar query: {err}"),
+    // The days are asked all at once.
+    let day_events = |offset: i8| {
+        let (conn, calendars, tz, utc) = (&conn, &calendars, &tz, &utc);
+        async move {
+            let day = first.saturating_add(jiff::Span::new().days(offset));
+            let start = day.to_datetime(civil::Time::midnight());
+            let query = format!(
+                "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
+                utc(start),
+                utc(start.saturating_add(jiff::Span::new().days(1))),
+            );
+            let mut events = Vec::new();
+            for (bus, path) in calendars {
+                let reply = conn
+                    .call_method(
+                        Some(bus.as_str()),
+                        path,
+                        Some("org.gnome.evolution.dataserver.Calendar"),
+                        "GetObjectList",
+                        &(query.as_str(),),
+                    )
+                    .await;
+                match reply.and_then(|r| r.body().deserialize::<Vec<String>>().map_err(Into::into)) {
+                    Ok(objects) => events.extend(objects.iter().flat_map(|ics| parse(ics, tz))),
+                    Err(err) => tracing::warn!("calendar query: {err}"),
+                }
             }
-        }
-        if !events.is_empty() {
             events.sort_by_key(|e| e.start);
             events.dedup();
-            days.insert(day, events);
+            (day, events)
         }
-    }
+    };
+    let days: HashMap<_, _> = futures::future::join_all((0..first.days_in_month()).map(day_events))
+        .await
+        .into_iter()
+        .filter(|(_, events)| !events.is_empty())
+        .collect();
     Ok(days)
 }
 

@@ -71,10 +71,15 @@ Open Orbit as a **dropdown** under the panel, a **side panel** sliding in from
 the edge, or **fullscreen** with a two-column layout.
 
 ### Localization
-English and Hungarian. The interface follows your language
-(`LC_MESSAGES`), while dates, month names, the first day of the week and the
-12/24-hour clock follow your **region format** (`LC_TIME`) — so an English
-system with Hungarian formats shows "október 29., csütörtök".
+Orbit speaks the 76 languages COSMIC itself is translated into, following
+your interface language (`LC_MESSAGES`), with English for anything a
+translation lacks. Dates, month and day names, the first day of the week and
+the 12/24-hour clock follow your **region format** (`LC_TIME`) through ICU,
+as COSMIC's own clock does — so an English system with Hungarian formats
+shows "október 29., csütörtök".
+
+Most translations are machine-made to start with: corrections from native
+speakers are very welcome (see *Translations* below).
 
 ### VPN and Wi-Fi passwords that just work
 Connections whose password is stored "for this user only" (agent-owned)
@@ -215,10 +220,16 @@ cargo test
 | `src/media.rs` | MPRIS player and cover art |
 | `src/calendar.rs` | Evolution Data Server events |
 | `src/config.rs` | saved preferences and COSMIC settings |
-| `src/i18n.rs` | translations and date formats |
+| `src/i18n.rs` | loading translations, date formats |
+| `i18n/<language>/cosmic_orbit.ftl` | the words, one file per language |
 
-Translations are plain structs in `src/i18n.rs`: copy `EN`, translate, and
-pick it by locale.
+### Translations
+
+The words live in [Fluent](https://projectfluent.org) files,
+`i18n/<language>/cosmic_orbit.ftl`, one `id = text` per line, as in COSMIC's
+own applets. To fix or add a language, edit or copy `i18n/en/cosmic_orbit.ftl`,
+keep the ids, translate the text, and open a pull request; `cargo test`
+checks every file has every id and loads.
 
 ## Credits
 

@@ -2,20 +2,23 @@
 
 //! The media player to show: MPRIS, the one playing, else the one paused.
 
-use std::{collections::HashMap, hash::{Hash, Hasher}, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
+use cosmic::widget::image;
 use zbus::zvariant::OwnedValue;
 
 const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 const PATH: &str = "/org/mpris/MediaPlayer2";
+/// Covers kept in the cache; older ones go.
+const CACHED_COVERS: usize = 100;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Media {
     pub bus: String,
     pub title: String,
     pub artist: String,
     pub playing: bool,
-    pub art: Option<PathBuf>,
+    pub art: Option<image::Handle>,
 }
 
 async fn props(conn: &zbus::Connection, bus: &str) -> zbus::Result<HashMap<String, OwnedValue>> {
@@ -28,7 +31,7 @@ async fn props(conn: &zbus::Connection, bus: &str) -> zbus::Result<HashMap<Strin
 pub async fn read() -> Option<Media> {
     let conn = zbus::Connection::session().await.ok()?;
     let names = zbus::fdo::DBusProxy::new(&conn).await.ok()?.list_names().await.ok()?;
-    let mut best: Option<Media> = None;
+    let mut best: Option<(Media, String)> = None;
     for name in names.iter().filter(|n| n.starts_with("org.mpris.MediaPlayer2.")) {
         let Ok(props) = props(&conn, name).await else { continue };
         let status = props
@@ -55,56 +58,133 @@ pub async fn read() -> Option<Media> {
             title: string("xesam:title"),
             artist,
             playing: status == "Playing",
-            art: art(&string("mpris:artUrl")).await,
+            art: None,
         };
         if media.title.is_empty() {
             continue;
         }
-        let better = best.as_ref().is_none_or(|b| media.playing && !b.playing);
-        if better {
-            best = Some(media);
+        if best.as_ref().is_none_or(|(b, _)| media.playing && !b.playing) {
+            best = Some((media, string("mpris:artUrl")));
         }
     }
-    best
+    // Only the shown player's cover is fetched.
+    let (mut media, url) = best?;
+    media.art = art(&url).await;
+    Some(media)
 }
 
-/// The cover as a local file: as given, or downloaded once into the cache.
-async fn art(url: &str) -> Option<PathBuf> {
-    if let Some(path) = url.strip_prefix("file://") {
-        return Some(PathBuf::from(path));
-    }
-    // The player is a local app the user runs; its URL is trusted as much
-    // as the app, but curl still gets only plain HTTPS, small files.
-    if !url.starts_with("https://") {
+/// The cover, read anew each time: players that rewrite one file for every
+/// track show the right one.
+async fn art(url: &str) -> Option<image::Handle> {
+    let bytes = if let Some(path) = url.strip_prefix("file://") {
+        let path = percent_decoded(path);
+        if crate::host::in_flatpak() {
+            // A sandbox doesn't see the player's files (its /tmp, its home).
+            let out = crate::host::command("cat").arg(&path).output().await.ok()?;
+            out.status.success().then_some(out.stdout)?
+        } else {
+            tokio::fs::read(&path).await.ok()?
+        }
+    } else if url.starts_with("https://") {
+        tokio::fs::read(download(url).await?).await.ok()?
+    } else {
         return None;
-    }
-    let mut hasher = std::hash::DefaultHasher::new();
-    url.hash(&mut hasher);
+    };
+    Some(image::Handle::from_bytes(bytes))
+}
+
+/// An HTTPS cover, downloaded once into the cache.
+async fn download(url: &str) -> Option<PathBuf> {
     let dir = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?
         .join(crate::APP_ID);
-    let file = dir.join(format!("{:x}", hasher.finish()));
-    if !file.exists() {
-        tokio::fs::create_dir_all(&dir).await.ok()?;
-        let ok = crate::host::command("curl")
-            .args(["-sfL", "--globoff", "--proto", "=https", "--proto-redir", "=https"])
-            .args(["--max-time", "5", "--max-filesize", "5000000", "-o"])
-            .arg(&file)
-            .arg(url)
-            .status()
-            .await
-            .ok()?
-            .success();
-        if !ok {
-            return None;
+    let file = dir.join(format!("{:016x}", fnv1a(url.as_bytes())));
+    if file.exists() {
+        return Some(file);
+    }
+    tokio::fs::create_dir_all(&dir).await.ok()?;
+    // Into a part file first: a cut-off download never passes for a cover.
+    let part = file.with_extension("part");
+    // The player is a local app the user runs; its URL is trusted as much
+    // as the app, but curl still gets only plain HTTPS, small files.
+    let ok = crate::host::command("curl")
+        .args(["-sfL", "--globoff", "--proto", "=https", "--proto-redir", "=https"])
+        .args(["--max-time", "5", "--max-filesize", "5000000", "-o"])
+        .arg(&part)
+        .arg(url)
+        .status()
+        .await
+        .is_ok_and(|s| s.success());
+    if !ok || tokio::fs::rename(&part, &file).await.is_err() {
+        _ = tokio::fs::remove_file(&part).await;
+        return None;
+    }
+    prune(&dir).await;
+    Some(file)
+}
+
+/// Keeps the newest covers only.
+async fn prune(dir: &std::path::Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else { return };
+    let mut files = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(modified) = entry.metadata().await.and_then(|m| m.modified()) {
+            files.push((modified, entry.path()));
         }
     }
-    Some(file)
+    if files.len() > CACHED_COVERS {
+        files.sort();
+        for (_, path) in &files[..files.len() - CACHED_COVERS] {
+            _ = tokio::fs::remove_file(path).await;
+        }
+    }
+}
+
+/// A hash that stays the same across Rust versions, for file names.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// "My%20Album/c%C3%B3ver.jpg" → "My Album/cóver.jpg"
+fn percent_decoded(path: &str) -> PathBuf {
+    use std::os::unix::ffi::OsStringExt;
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (bytes[i], bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(hi), Some(lo)) => {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    PathBuf::from(std::ffi::OsString::from_vec(out))
 }
 
 pub async fn control(bus: String, method: &'static str) {
     if let Ok(conn) = zbus::Connection::session().await {
         _ = conn.call_method(Some(bus.as_str()), PATH, Some(PLAYER), method, &()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn decodes_paths() {
+        assert_eq!(super::percent_decoded("/m/My%20Album/c%C3%B3ver.jpg"), std::path::PathBuf::from("/m/My Album/cóver.jpg"));
+        assert_eq!(super::percent_decoded("/a/100%/b%2"), std::path::PathBuf::from("/a/100%/b%2"));
+    }
+
+    #[test]
+    fn stable_names() {
+        assert_eq!(super::fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(super::fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     }
 }
