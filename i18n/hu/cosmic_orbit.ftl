@@ -70,3 +70,4 @@ long-break = Hosszú szünet
 show-on-panel = Mutatás a panelen
 pomodoro-break-time = Ideje szünetet tartani
 pomodoro-focus-again = Vége a szünetnek
+join = Csatlakozás

@@ -125,6 +125,7 @@ strings!(
     show_on_panel,
     pomodoro_break_time,
     pomodoro_focus_again,
+    join,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));

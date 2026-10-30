@@ -70,3 +70,4 @@ long-break = Long break
 show-on-panel = Show on the panel
 pomodoro-break-time = Time for a break
 pomodoro-focus-again = Break's over
+join = Join

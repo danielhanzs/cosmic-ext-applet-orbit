@@ -276,6 +276,7 @@ pub enum Message {
     HotspotPassword(Option<String>),
     CheckUpdates,
     Input(String),
+    OpenUrl(String),
     PomodoroToggle,
     PomodoroSkip,
     PomodoroReset,
@@ -943,6 +944,7 @@ impl App {
                         .push(text::caption(summary).wrapping(iced::widget::text::Wrapping::None))
                         .width(Length::Fill),
                 )
+                .push_maybe(self.meeting().and_then(|m| self.join_button(m)))
                 .push(icon::from_name(chevron).size(16)),
         )
         .class(style::flat())
@@ -981,8 +983,10 @@ impl App {
                     column = column.push(
                         widget::Row::new()
                             .spacing(12)
+                            .align_y(Alignment::Center)
                             .push(text::caption(when).width(Length::Fixed(90.0)))
-                            .push(info),
+                            .push(container(info).width(Length::Fill))
+                            .push_maybe(self.join_button(event)),
                     );
                 }
             }
@@ -1024,6 +1028,22 @@ impl App {
                     .push(control("media-skip-backward-symbolic", "Previous"))
                     .push(control(play, "PlayPause"))
                     .push(control("media-skip-forward-symbolic", "Next")),
+            );
+        }
+        if let Some(meeting) = self.meeting() {
+            any = true;
+            let when = meeting.start.map(i18n::clock).unwrap_or_default();
+            column = column.push(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("x-office-calendar-symbolic").size(16))
+                    .push(
+                        container(text::body(format!("{when} {}", meeting.summary)).wrapping(iced::widget::text::Wrapping::None))
+                            .width(Length::Fill)
+                            .clip(true),
+                    )
+                    .push_maybe(self.join_button(meeting)),
             );
         }
         if self.pomodoro.started() {
@@ -1326,6 +1346,35 @@ impl App {
             Page::Main => {}
         }
         column.into()
+    }
+
+    /// Today's next video meeting, from ten minutes before it starts until
+    /// it ends.
+    fn meeting(&self) -> Option<&Event> {
+        let now = self.now.time();
+        let soon = now.saturating_add(jiff::Span::new().minutes(10));
+        self.today.as_ref()?.iter().find(|e| {
+            e.link.is_some()
+                && e.start.is_some_and(|start| start <= soon)
+                && e.end.or(e.start).is_some_and(|end| end >= now)
+        })
+    }
+
+    fn join_button(&self, event: &Event) -> Option<Element<'_, Message>> {
+        let link = event.link.clone()?;
+        Some(
+            button::custom(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("camera-video-symbolic").size(14))
+                    .push(text::caption(T.join)),
+            )
+            .class(style::picked())
+            .padding([4, 10])
+            .on_press(Message::OpenUrl(link))
+            .into(),
+        )
     }
 
     fn phase_name(&self) -> &'static str {
@@ -1919,6 +1968,10 @@ impl cosmic::Application for App {
             }
             Message::HotspotPassword(password) => self.hotspot_password = password,
             Message::Input(name) => return fire(audio::set_input(name)),
+            Message::OpenUrl(url) => {
+                crate::host::spawn("xdg-open", &[url.as_str()]);
+                return self.close();
+            }
             Message::PomodoroToggle => {
                 let now = Instant::now();
                 if self.pomodoro.running() { self.pomodoro.pause(now) } else { self.pomodoro.start(now) }
