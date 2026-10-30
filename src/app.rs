@@ -27,6 +27,7 @@ use crate::{
     workspaces,
     i18n::{self, T},
     media::{self, Media},
+    updates,
     sys::{self, AccessPoint, BatteryState, Bluetooth, Network, Profiles, Source},
 };
 
@@ -215,6 +216,8 @@ pub struct App {
     screen: (u32, u32),
     /// The hotspot's password, read when its page opens.
     hotspot_password: Option<String>,
+    /// Updates waiting.
+    updates: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +266,8 @@ pub enum Message {
     SetBluetooth(bool),
     SetHotspot(bool),
     HotspotPassword(Option<String>),
+    CheckUpdates,
+    Updates(usize),
     BtConnect(OwnedObjectPath, bool),
     Profile(String),
     MediaControl(&'static str),
@@ -715,7 +720,20 @@ impl App {
         let action = |name: &'static str, message: Message| {
             button::icon(icon::from_name(name)).padding(8).on_press(message)
         };
-        row.push(widget::space().width(Length::Fill))
+        let mut row = row.push(widget::space().width(Length::Fill));
+        if self.updates > 0 {
+            let badge = widget::Row::new()
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .push(icon::from_name("software-update-available-symbolic").size(16))
+                .push(text::caption(self.updates.to_string()));
+            row = row.push(widget::tooltip(
+                button::custom(badge).class(theme::Button::Icon).padding(8).on_press(Message::Spawn("cosmic-store", &[])),
+                text::caption(T.updates),
+                widget::tooltip::Position::Bottom,
+            ));
+        }
+        row
             .push(action("edit-symbolic", Message::Page(Page::Edit)))
             .push(action("emblem-system-symbolic", Message::Spawn("cosmic-settings", &[])))
             .push(action("system-lock-screen-symbolic", Message::Spawn("loginctl", &["lock-session"])))
@@ -1546,6 +1564,7 @@ impl cosmic::Application for App {
             remember: true,
             screen: (1920, 1080),
             hotspot_password: None,
+            updates: 0,
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -1559,6 +1578,11 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
+        // Not at once: the session is still starting.
+        tasks.push(run(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            Message::CheckUpdates
+        }));
         (app, Task::batch(tasks))
     }
 
@@ -1734,6 +1758,8 @@ impl cosmic::Application for App {
                 }
             }
             Message::HotspotPassword(password) => self.hotspot_password = password,
+            Message::CheckUpdates => return run(async { Message::Updates(updates::count().await) }),
+            Message::Updates(count) => self.updates = count,
             Message::SetBluetooth(on) => {
                 if let Some(adapter) = self.bt.adapter.clone() {
                     return fire(async move { log("bluetooth", sys::set_bluetooth(adapter, on).await) });
@@ -1920,6 +1946,8 @@ impl cosmic::Application for App {
                 }
             }),
         ];
+        // Updates: hourly; the system's updater refreshes the package lists.
+        subs.push(iced::time::every(Duration::from_secs(3600)).map(|_| Message::CheckUpdates));
         // ponytail: polls /proc for cameras every 3 s; inotify on /dev/video* if that costs.
         subs.push(iced::time::every(Duration::from_secs(3)).map(|_| Message::CheckCamera));
         if self.drag.is_some() {

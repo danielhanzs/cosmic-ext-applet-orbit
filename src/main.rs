@@ -13,6 +13,7 @@ mod icons;
 mod media;
 mod style;
 mod sys;
+mod updates;
 mod workspaces;
 
 pub const APP_ID: &str = "io.github.danielhanzs.CosmicOrbit";

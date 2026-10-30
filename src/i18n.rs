@@ -115,6 +115,7 @@ strings!(
     hotspot,
     network_name,
     hotspot_hint,
+    updates,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));
