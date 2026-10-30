@@ -27,6 +27,7 @@ use crate::{
     workspaces,
     i18n::{self, T},
     media::{self, Media},
+    pomodoro,
     updates,
     sys::{self, AccessPoint, BatteryState, Bluetooth, Network, Profiles, Source},
 };
@@ -54,10 +55,11 @@ pub enum Tile {
     Workspaces,
     Touchpad,
     Hotspot,
+    Pomodoro,
 }
 
 impl Tile {
-    pub const ALL: [Tile; 18] = [
+    pub const ALL: [Tile; 19] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -76,6 +78,7 @@ impl Tile {
         Tile::Workspaces,
         Tile::Touchpad,
         Tile::Hotspot,
+        Tile::Pomodoro,
     ];
 
     /// Shown at first, and after a reset.
@@ -110,6 +113,7 @@ impl Tile {
             Tile::Workspaces => T.workspaces,
             Tile::Touchpad => T.touchpad,
             Tile::Hotspot => T.hotspot,
+            Tile::Pomodoro => T.pomodoro,
         }
     }
 
@@ -152,6 +156,7 @@ pub enum Page {
     Power,
     Sound,
     Hotspot,
+    Pomodoro,
     Edit,
     Password,
 }
@@ -220,6 +225,7 @@ pub struct App {
     updates: usize,
     /// An app's volume slider being dragged: its index and level.
     stream_drag: Option<(u32, f32)>,
+    pomodoro: pomodoro::Pomodoro,
 }
 
 #[derive(Debug, Clone)]
@@ -270,6 +276,10 @@ pub enum Message {
     HotspotPassword(Option<String>),
     CheckUpdates,
     Input(String),
+    PomodoroToggle,
+    PomodoroSkip,
+    PomodoroReset,
+    PomodoroPanel(bool),
     StreamVolume(u32, f32),
     StreamRelease,
     StreamMute(u32),
@@ -518,6 +528,15 @@ impl App {
             // Shortcuts: never lit.
             Tile::Screenshot => (named("accessories-screenshot-symbolic"), false, String::new(), None),
             Tile::Workspaces => (named("view-app-grid-symbolic"), false, String::new(), None),
+            Tile::Pomodoro => {
+                let timer = &self.pomodoro;
+                let subtitle = if timer.started() {
+                    format!("{} · {}", self.phase_name(), pomodoro::clock(timer.remaining(Instant::now())))
+                } else {
+                    on_off(false)
+                };
+                (named("alarm-symbolic"), timer.running(), subtitle, Some(Page::Pomodoro))
+            }
             Tile::Hotspot => {
                 let hotspot = self.net.hotspot.as_ref();
                 let on = hotspot.is_some_and(|h| h.active.is_some());
@@ -628,6 +647,7 @@ impl App {
             }
             Tile::Screenshot => self.update(Message::Spawn("cosmic-screenshot", &[])),
             Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
+            Tile::Pomodoro => self.update(Message::PomodoroToggle),
             Tile::Hotspot => self.update(Message::SetHotspot(!self.net.hotspot.as_ref().is_some_and(|h| h.active.is_some()))),
             Tile::Touchpad => {
                 let on = !self.touchpad.unwrap_or(false);
@@ -1006,6 +1026,24 @@ impl App {
                     .push(control("media-skip-forward-symbolic", "Next")),
             );
         }
+        if self.pomodoro.started() {
+            any = true;
+            column = column.push(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("alarm-symbolic").size(16))
+                    .push(
+                        text::body(format!(
+                            "{} · {}",
+                            self.phase_name(),
+                            pomodoro::clock(self.pomodoro.remaining(Instant::now()))
+                        ))
+                        .width(Length::Fill),
+                    )
+                    .push(self.pomodoro_controls()),
+            );
+        }
         // In the colors phones use: green camera, orange microphone.
         let privacy = [
             (&self.camera, "camera-web-symbolic", "filming", Color::from_rgb(0.3, 0.85, 0.4)),
@@ -1241,6 +1279,27 @@ impl App {
                 column = column.push(self.mixer());
                 column = column.push(self.more("sound"));
             }
+            Page::Pomodoro => {
+                column = column.push(self.page_header(T.pomodoro, None));
+                let left = pomodoro::clock(self.pomodoro.remaining(Instant::now()));
+                column = column.push(
+                    widget::Column::new()
+                        .spacing(8)
+                        .padding([8, 10])
+                        .align_x(Alignment::Center)
+                        .width(Length::Fill)
+                        .push(text::title1(left))
+                        .push(text::body(self.phase_name()))
+                        .push(self.pomodoro_controls()),
+                );
+                column = column.push(
+                    widget::Row::new()
+                        .padding([8, 10])
+                        .align_y(Alignment::Center)
+                        .push(text::body(T.show_on_panel).width(Length::Fill))
+                        .push(widget::toggler(self.prefs.pomodoro_panel).on_toggle(Message::PomodoroPanel)),
+                );
+            }
             Page::Hotspot => {
                 let hotspot = self.net.hotspot.as_ref();
                 let on = hotspot.is_some_and(|h| h.active.is_some());
@@ -1267,6 +1326,25 @@ impl App {
             Page::Main => {}
         }
         column.into()
+    }
+
+    fn phase_name(&self) -> &'static str {
+        match self.pomodoro.phase {
+            pomodoro::Phase::Focus => T.focus,
+            pomodoro::Phase::Break => T.short_break,
+            pomodoro::Phase::LongBreak => T.long_break,
+        }
+    }
+
+    /// The pomodoro's controls: start or pause, skip, reset.
+    fn pomodoro_controls(&self) -> Element<'_, Message> {
+        let play = if self.pomodoro.running() { "media-playback-pause-symbolic" } else { "media-playback-start-symbolic" };
+        widget::Row::new()
+            .spacing(4)
+            .push(button::icon(icon::from_name(play)).padding(6).on_press(Message::PomodoroToggle))
+            .push(button::icon(icon::from_name("media-skip-forward-symbolic")).padding(6).on_press(Message::PomodoroSkip))
+            .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(6).on_press(Message::PomodoroReset))
+            .into()
     }
 
     /// Each app's volume, folded away unless opened (remembered).
@@ -1639,6 +1717,7 @@ impl cosmic::Application for App {
             hotspot_password: None,
             updates: 0,
             stream_drag: None,
+            pomodoro: pomodoro::Pomodoro::default(),
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -1707,6 +1786,13 @@ impl cosmic::Application for App {
                 }
             }
             Message::Tick => {
+                if let Some(phase) = self.pomodoro.tick(Instant::now()) {
+                    let (summary, body) = match phase {
+                        pomodoro::Phase::Focus => (T.pomodoro_focus_again, T.focus),
+                        _ => (T.pomodoro_break_time, self.phase_name()),
+                    };
+                    return fire(desktop::notify(summary.to_string(), body.to_string()));
+                }
                 let now = Zoned::now();
                 if now.date() != self.now.date() {
                     self.selected = now.date();
@@ -1833,6 +1919,16 @@ impl cosmic::Application for App {
             }
             Message::HotspotPassword(password) => self.hotspot_password = password,
             Message::Input(name) => return fire(audio::set_input(name)),
+            Message::PomodoroToggle => {
+                let now = Instant::now();
+                if self.pomodoro.running() { self.pomodoro.pause(now) } else { self.pomodoro.start(now) }
+            }
+            Message::PomodoroSkip => self.pomodoro.skip(Instant::now()),
+            Message::PomodoroReset => self.pomodoro.reset(),
+            Message::PomodoroPanel(on) => {
+                self.prefs.pomodoro_panel = on;
+                self.prefs.save();
+            }
             // A drag only moves the slider; the level is set once, on release.
             Message::StreamVolume(index, level) => self.stream_drag = Some((index, level)),
             Message::StreamRelease => {
@@ -2101,6 +2197,9 @@ impl cosmic::Application for App {
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
         let gap = self.prefs.spacing.gap();
+        if self.prefs.pomodoro_panel && self.pomodoro.started() {
+            icons.push(applet.text(pomodoro::clock(self.pomodoro.remaining(Instant::now()))).into());
+        }
         if self.prefs.clock {
             let date = self.now.date();
             let clock = if horizontal {

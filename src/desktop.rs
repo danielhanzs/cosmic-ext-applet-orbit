@@ -202,3 +202,19 @@ mod tests {
         assert_eq!(&text[super::state_value(text).unwrap()], "DisabledOnExternalMouse");
     }
 }
+
+/// A desktop notification, as any app sends one.
+pub async fn notify(summary: String, body: String) {
+    let Ok(conn) = crate::bus::session().await else { return };
+    let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+        std::collections::HashMap::from([("desktop-entry", crate::APP_ID.into())]);
+    _ = conn
+        .call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &("Orbit", 0u32, "alarm-symbolic", summary, body, Vec::<&str>::new(), hints, -1i32),
+        )
+        .await;
+}

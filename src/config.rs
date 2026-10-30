@@ -57,6 +57,8 @@ pub struct Prefs {
     pub spacing: Spacing,
     /// The sound page's per-app volumes open.
     pub mixer_open: bool,
+    /// The pomodoro's time left on the panel while it runs.
+    pub pomodoro_panel: bool,
 }
 
 impl Default for Prefs {
@@ -72,6 +74,7 @@ impl Default for Prefs {
             islands: false,
             spacing: Spacing::Medium,
             mixer_open: false,
+            pomodoro_panel: true,
         }
     }
 }
@@ -114,6 +117,9 @@ impl Prefs {
             if let Ok(v) = c.get("mixer_open") {
                 prefs.mixer_open = v;
             }
+            if let Ok(v) = c.get("pomodoro_panel") {
+                prefs.pomodoro_panel = v;
+            }
         }
         prefs
     }
@@ -131,7 +137,8 @@ impl Prefs {
             .and(c.set("calendar_open", self.calendar_open))
             .and(c.set("islands", self.islands))
             .and(c.set("spacing", self.spacing))
-            .and(c.set("mixer_open", self.mixer_open));
+            .and(c.set("mixer_open", self.mixer_open))
+            .and(c.set("pomodoro_panel", self.pomodoro_panel));
         if let Err(err) = result {
             tracing::warn!("cannot save settings: {err}");
         }

@@ -11,6 +11,7 @@ mod host;
 mod i18n;
 mod icons;
 mod media;
+mod pomodoro;
 mod style;
 mod sys;
 mod updates;

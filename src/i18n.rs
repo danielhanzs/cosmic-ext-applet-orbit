@@ -118,6 +118,13 @@ strings!(
     updates,
     applications,
     no_apps_playing,
+    pomodoro,
+    focus,
+    short_break,
+    long_break,
+    show_on_panel,
+    pomodoro_break_time,
+    pomodoro_focus_again,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));
