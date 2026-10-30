@@ -31,7 +31,6 @@ layout = 打开方式
 dropdown = 下拉菜单
 side = 侧边面板
 fullscreen = 全屏
-show-calendar = 显示日历
 show-clock = 在面板上显示时钟
 performance = 高性能
 balanced = 平衡

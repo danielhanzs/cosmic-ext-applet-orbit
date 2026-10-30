@@ -31,7 +31,6 @@ layout = Se deschide ca
 dropdown = Meniu derulant
 side = Panou lateral
 fullscreen = Ecran complet
-show-calendar = Afișează calendarul
 show-clock = Afișează ceasul pe panou
 performance = Performanță ridicată
 balanced = Echilibrat

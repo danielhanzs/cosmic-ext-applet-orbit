@@ -31,7 +31,6 @@ layout = იხსნება როგორც
 dropdown = ჩამოსაშლელი
 side = გვერდითი პანელი
 fullscreen = მთელ ეკრანზე
-show-calendar = კალენდრის ჩვენება
 show-clock = საათის ჩვენება პანელზე
 performance = წარმადობა
 balanced = დაბალანსებული

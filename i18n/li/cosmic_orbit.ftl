@@ -31,7 +31,6 @@ layout = Geit aope as
 dropdown = Oetklapmenu
 side = Zijpaneel
 fullscreen = Volledig sjerm
-show-calendar = Agenda toeane
 show-clock = Klok op 't paneel toeane
 performance = Prestaties
 balanced = Gebalanceerd

@@ -31,7 +31,6 @@ layout = Άνοιγμα ως
 dropdown = Αναπτυσσόμενο μενού
 side = Πλευρικό πάνελ
 fullscreen = Πλήρης οθόνη
-show-calendar = Εμφάνιση ημερολογίου
 show-clock = Εμφάνιση ρολογιού στο πάνελ
 performance = Υψηλές επιδόσεις
 balanced = Ισορροπημένη

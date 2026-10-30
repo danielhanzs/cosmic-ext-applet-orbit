@@ -31,7 +31,6 @@ layout = S'ouvre en
 dropdown = Menu déroulant
 side = Panneau latéral
 fullscreen = Plein écran
-show-calendar = Afficher l'agenda
 show-clock = Afficher l'horloge dans le panneau
 performance = Performances
 balanced = Équilibré

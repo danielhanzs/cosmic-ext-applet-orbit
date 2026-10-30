@@ -31,7 +31,6 @@ layout = Irekitzeko modua
 dropdown = Goitibeherakoa
 side = Alboko panela
 fullscreen = Pantaila osoa
-show-calendar = Erakutsi egutegia
 show-clock = Erakutsi erlojua panelean
 performance = Errendimendua
 balanced = Orekatua

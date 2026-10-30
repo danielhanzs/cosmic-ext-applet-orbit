@@ -31,7 +31,6 @@ layout = S'obrís coma
 dropdown = Menú desenrotlant
 side = Panèl lateral
 fullscreen = Ecran complet
-show-calendar = Afichar lo calendièr
 show-clock = Afichar l'ora sul panèl
 performance = Performança
 balanced = Equilibrat

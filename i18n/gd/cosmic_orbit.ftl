@@ -31,7 +31,6 @@ layout = Fosglaidh e mar
 dropdown = Clàr-taice teàrnach
 side = Panail taoibh
 fullscreen = Làn-sgrìn
-show-calendar = Seall am mìosachan
 show-clock = Seall an gleoc air a' phanail
 performance = Dèanadas
 balanced = Cothromaichte

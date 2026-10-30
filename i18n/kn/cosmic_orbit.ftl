@@ -31,7 +31,6 @@ layout = ತೆರೆಯುವ ವಿಧ
 dropdown = ಡ್ರಾಪ್‌ಡೌನ್
 side = ಪಕ್ಕದ ಫಲಕ
 fullscreen = ಪೂರ್ಣ ಪರದೆ
-show-calendar = ಕ್ಯಾಲೆಂಡರ್ ತೋರಿಸಿ
 show-clock = ಪ್ಯಾನೆಲ್‌ನಲ್ಲಿ ಗಡಿಯಾರ ತೋರಿಸಿ
 performance = ಹೆಚ್ಚಿನ ಕಾರ್ಯಕ್ಷಮತೆ
 balanced = ಸಮಬಲ

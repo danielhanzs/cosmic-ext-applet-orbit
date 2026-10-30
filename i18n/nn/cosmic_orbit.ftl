@@ -31,7 +31,6 @@ layout = Opnast som
 dropdown = Nedtrekksmeny
 side = Sidepanel
 fullscreen = Fullskjerm
-show-calendar = Vis kalender
 show-clock = Vis klokke på panelet
 performance = Yting
 balanced = Balansert

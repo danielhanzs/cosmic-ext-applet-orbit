@@ -11,10 +11,12 @@ mod host;
 mod i18n;
 mod icons;
 mod media;
+mod notifications;
 mod pomodoro;
 mod style;
 mod sys;
 mod updates;
+mod weather;
 mod workspaces;
 
 pub const APP_ID: &str = "io.github.danielhanzs.CosmicOrbit";

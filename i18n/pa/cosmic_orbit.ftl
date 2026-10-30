@@ -31,7 +31,6 @@ layout = ਇੰਝ ਖੁੱਲ੍ਹਦਾ ਹੈ
 dropdown = ਡਰਾਪਡਾਊਨ
 side = ਪਾਸੇ ਵਾਲਾ ਪੈਨਲ
 fullscreen = ਪੂਰੀ ਸਕਰੀਨ
-show-calendar = ਕੈਲੰਡਰ ਵੇਖਾਓ
 show-clock = ਪੈਨਲ ਉੱਤੇ ਘੜੀ ਵੇਖਾਓ
 performance = ਵੱਧ ਕਾਰਗੁਜ਼ਾਰੀ
 balanced = ਸੰਤੁਲਤ

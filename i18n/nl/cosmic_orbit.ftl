@@ -31,7 +31,6 @@ layout = Opent als
 dropdown = Uitklapmenu
 side = Zijpaneel
 fullscreen = Volledig scherm
-show-calendar = Agenda tonen
 show-clock = Klok op het paneel tonen
 performance = Hoge prestaties
 balanced = Gebalanceerd

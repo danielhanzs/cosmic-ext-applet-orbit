@@ -11,3 +11,4 @@ Icon=io.github.danielhanzs.CosmicOrbit
 NoDisplay=true
 X-CosmicApplet=true
 X-HostWaylandDisplay=true
+X-NotificationsApplet=true

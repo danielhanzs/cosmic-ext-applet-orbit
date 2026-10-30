@@ -31,7 +31,6 @@ layout = ဖွင့်ပုံ
 dropdown = ဆွဲချမီနူး
 side = ဘေးဘောင်
 fullscreen = မျက်နှာပြင်အပြည့်
-show-calendar = ပြက္ခဒိန်ပြရန်
 show-clock = ဘောင်ပေါ်တွင် နာရီပြရန်
 performance = စွမ်းဆောင်ရည်
 balanced = မျှတသော

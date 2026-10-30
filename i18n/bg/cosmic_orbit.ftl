@@ -31,7 +31,6 @@ layout = Отваря се като
 dropdown = Падащо меню
 side = Странична лента
 fullscreen = Цял екран
-show-calendar = Показване на календара
 show-clock = Часовник на панела
 performance = Висока производителност
 balanced = Балансиран

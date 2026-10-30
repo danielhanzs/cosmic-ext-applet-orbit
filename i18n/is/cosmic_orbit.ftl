@@ -31,7 +31,6 @@ layout = Opnast sem
 dropdown = Fellivalmynd
 side = Hliðarspjald
 fullscreen = Heilskjár
-show-calendar = Sýna dagatal
 show-clock = Sýna klukku á spjaldinu
 performance = Mikil afköst
 balanced = Jafnvægi

@@ -31,7 +31,6 @@ layout = Atsidaro kaip
 dropdown = Išskleidžiamasis meniu
 side = Šoninis skydelis
 fullscreen = Visas ekranas
-show-calendar = Rodyti kalendorių
 show-clock = Rodyti laikrodį skydelyje
 performance = Didelis našumas
 balanced = Subalansuotas

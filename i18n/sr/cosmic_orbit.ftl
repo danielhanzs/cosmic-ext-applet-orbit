@@ -31,7 +31,6 @@ layout = Отвара се као
 dropdown = Падајући мени
 side = Бочни панел
 fullscreen = Цео екран
-show-calendar = Прикажи календар
 show-clock = Прикажи сат на панелу
 performance = Најбрже
 balanced = Уравнотежено

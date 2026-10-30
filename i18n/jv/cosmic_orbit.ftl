@@ -31,7 +31,6 @@ layout = Dibukak minangka
 dropdown = Dhaptar mudhun
 side = Panel pinggir
 fullscreen = Layar kebak
-show-calendar = Tampilake tanggalan
 show-clock = Tampilake jam ing panel
 performance = Kinerja
 balanced = Seimbang

@@ -31,7 +31,6 @@ layout = Maak oop as
 dropdown = Aftrekkieslys
 side = Sypaneel
 fullscreen = Volskerm
-show-calendar = Wys kalender
 show-clock = Wys horlosie op die paneel
 performance = Werkverrigting
 balanced = Gebalanseerd

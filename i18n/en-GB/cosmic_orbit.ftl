@@ -31,7 +31,6 @@ layout = Opens as
 dropdown = Dropdown
 side = Side panel
 fullscreen = Fullscreen
-show-calendar = Show calendar
 show-clock = Show clock on the panel
 performance = Performance
 balanced = Balanced

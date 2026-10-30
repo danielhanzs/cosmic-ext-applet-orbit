@@ -31,7 +31,6 @@ layout = Адкрываецца як
 dropdown = Выпадальнае меню
 side = Бакавая панэль
 fullscreen = На ўвесь экран
-show-calendar = Паказваць каляндар
 show-clock = Паказваць гадзіннік на панэлі
 performance = Высокая прадукцыйнасць
 balanced = Збалансаваны

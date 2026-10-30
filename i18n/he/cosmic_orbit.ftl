@@ -31,7 +31,6 @@ layout = נפתח בתור
 dropdown = תפריט נפתח
 side = לוח צדדי
 fullscreen = מסך מלא
-show-calendar = הצגת לוח שנה
 show-clock = הצגת שעון בלוח
 performance = ביצועים
 balanced = מאוזן

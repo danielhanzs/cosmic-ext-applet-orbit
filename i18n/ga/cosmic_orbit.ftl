@@ -31,7 +31,6 @@ layout = Osclaítear mar
 dropdown = Roghchlár anuas
 side = Painéal taoibh
 fullscreen = Lánscáileán
-show-calendar = Taispeáin an féilire
 show-clock = Taispeáin an clog ar an bpainéal
 performance = Feidhmíocht
 balanced = Cothromaithe

@@ -31,7 +31,6 @@ layout = Otvara se kao
 dropdown = Padajući meni
 side = Bočni panel
 fullscreen = Ceo ekran
-show-calendar = Prikaži kalendar
 show-clock = Prikaži sat na panelu
 performance = Visoke performanse
 balanced = Balansirano

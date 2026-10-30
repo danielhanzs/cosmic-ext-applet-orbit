@@ -31,7 +31,6 @@ layout = Dibuka sebagai
 dropdown = Tarik-turun
 side = Panel samping
 fullscreen = Layar penuh
-show-calendar = Tampilkan kalender
 show-clock = Tampilkan jam di panel
 performance = Kinerja Tinggi
 balanced = Seimbang

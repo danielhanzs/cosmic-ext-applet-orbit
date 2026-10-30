@@ -31,7 +31,6 @@ layout = Ochilish usuli
 dropdown = Ochiluvchi menyu
 side = Yon panel
 fullscreen = Toʻliq ekran
-show-calendar = Taqvimni koʻrsatish
 show-clock = Panelda soatni koʻrsatish
 performance = Yuqori unumdorlik
 balanced = Muvozanatli

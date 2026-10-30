@@ -31,7 +31,6 @@ layout = Odpre se kot
 dropdown = Spustni meni
 side = Stranska plošča
 fullscreen = Celozaslonsko
-show-calendar = Prikaži koledar
 show-clock = Prikaži uro na plošči
 performance = Zmogljivost
 balanced = Uravnoteženo

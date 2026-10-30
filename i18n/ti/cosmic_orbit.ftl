@@ -31,7 +31,6 @@ layout = ከም ይኽፈት
 dropdown = ዝወርድ ዝርዝር
 side = ናይ ጎኒ ፓነል
 fullscreen = ምሉእ ስክሪን
-show-calendar = ዓውደ-ኣዋርሕ ኣርኢ
 show-clock = ኣብ ፓነል ሰዓት ኣርኢ
 performance = ብቕዓት
 balanced = ሚዛናዊ

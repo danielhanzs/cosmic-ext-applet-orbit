@@ -40,12 +40,34 @@ pub enum PanelIcons {
     All,
 }
 
-#[derive(Debug, Clone)]
+/// A part of the popup, shown or not, in an order of the user's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Section {
+    Status,
+    Controls,
+    Calendar,
+    Weather,
+    Notifications,
+    Island,
+}
+
+impl Section {
+    pub const ALL: [Section; 6] = [
+        Section::Status,
+        Section::Controls,
+        Section::Calendar,
+        Section::Weather,
+        Section::Notifications,
+        Section::Island,
+    ];
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Prefs {
     /// Shown tiles, in order; the rest are hidden.
     pub tiles: Vec<Tile>,
     pub layout: Layout,
-    pub calendar: bool,
     pub clock: bool,
     /// Tiles shown as only their icon, a quarter wide.
     pub small: Vec<Tile>,
@@ -59,6 +81,14 @@ pub struct Prefs {
     pub mixer_open: bool,
     /// The pomodoro's time left on the panel while it runs.
     pub pomodoro_panel: bool,
+    /// Shown parts of the popup, in order; the rest are hidden.
+    pub sections: Vec<Section>,
+    /// The weather's place; empty: the time zone's city.
+    pub weather_city: String,
+    /// The forecast open, or only today's line.
+    pub weather_open: bool,
+    /// The notifications' list open, or only their count.
+    pub notifications_open: bool,
 }
 
 impl Default for Prefs {
@@ -66,7 +96,6 @@ impl Default for Prefs {
         Self {
             tiles: Tile::DEFAULT.to_vec(),
             layout: Layout::Dropdown,
-            calendar: true,
             clock: true,
             small: Vec::new(),
             panel_icons: PanelIcons::Active,
@@ -75,6 +104,10 @@ impl Default for Prefs {
             spacing: Spacing::Medium,
             mixer_open: false,
             pomodoro_panel: true,
+            sections: Section::ALL.to_vec(),
+            weather_city: String::new(),
+            weather_open: false,
+            notifications_open: true,
         }
     }
 }
@@ -85,16 +118,21 @@ fn config() -> Option<Config> {
 
 impl Prefs {
     pub fn load() -> Self {
+        let Some(c) = config() else { return Self::default() };
+        if let Ok(prefs) = c.get::<Prefs>("prefs") {
+            return prefs;
+        }
+        // Kept a key each before 0.2.
         let mut prefs = Self::default();
-        if let Some(c) = config() {
+        {
             if let Ok(v) = c.get("tiles") {
                 prefs.tiles = v;
             }
             if let Ok(v) = c.get("layout") {
                 prefs.layout = v;
             }
-            if let Ok(v) = c.get("calendar") {
-                prefs.calendar = v;
+            if let Ok(false) = c.get::<bool>("calendar") {
+                prefs.sections.retain(|s| *s != Section::Calendar);
             }
             if let Ok(v) = c.get("clock") {
                 prefs.clock = v;
@@ -126,20 +164,7 @@ impl Prefs {
 
     pub fn save(&self) {
         let Some(c) = config() else { return };
-        let result = c
-            .set("tiles", &self.tiles)
-            .and(c.set("layout", self.layout))
-
-            .and(c.set("calendar", self.calendar))
-            .and(c.set("clock", self.clock))
-            .and(c.set("small", &self.small))
-            .and(c.set("panel_icons", self.panel_icons))
-            .and(c.set("calendar_open", self.calendar_open))
-            .and(c.set("islands", self.islands))
-            .and(c.set("spacing", self.spacing))
-            .and(c.set("mixer_open", self.mixer_open))
-            .and(c.set("pomodoro_panel", self.pomodoro_panel));
-        if let Err(err) = result {
+        if let Err(err) = c.set("prefs", self) {
             tracing::warn!("cannot save settings: {err}");
         }
     }

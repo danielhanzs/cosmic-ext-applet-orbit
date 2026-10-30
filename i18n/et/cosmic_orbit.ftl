@@ -31,7 +31,6 @@ layout = Avamisviis
 dropdown = Rippmenüü
 side = Külgpaneel
 fullscreen = Täisekraan
-show-calendar = Näita kalendrit
 show-clock = Näita kella paneelil
 performance = Jõudlus
 balanced = Tasakaalustatud

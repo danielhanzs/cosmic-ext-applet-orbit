@@ -31,7 +31,6 @@ layout = Wekî vedibe
 dropdown = Menûya daketî
 side = Panela kêlekê
 fullscreen = Dîmendera tije
-show-calendar = Salnameyê nîşan bide
 show-clock = Demjimêrê li ser panelê nîşan bide
 performance = Performansa bilind
 balanced = Hevseng

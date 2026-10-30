@@ -31,7 +31,6 @@ layout = Mở dưới dạng
 dropdown = Menu thả xuống
 side = Bảng bên
 fullscreen = Toàn màn hình
-show-calendar = Hiện lịch
 show-clock = Hiện đồng hồ trên bảng điều khiển
 performance = Hiệu năng cao
 balanced = Cân bằng

@@ -31,7 +31,6 @@ layout = 열기 방식
 dropdown = 드롭다운
 side = 사이드 패널
 fullscreen = 전체 화면
-show-calendar = 캘린더 표시
 show-clock = 패널에 시계 표시
 performance = 고성능
 balanced = 균형

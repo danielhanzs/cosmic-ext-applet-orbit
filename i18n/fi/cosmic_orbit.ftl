@@ -31,7 +31,6 @@ layout = Avautumistapa
 dropdown = Pudotusvalikko
 side = Sivupaneeli
 fullscreen = Koko näyttö
-show-calendar = Näytä kalenteri
 show-clock = Näytä kello paneelissa
 performance = Suorituskyky
 balanced = Tasapainotettu

@@ -31,7 +31,6 @@ layout = Öppnas som
 dropdown = Rullgardinsmeny
 side = Sidopanel
 fullscreen = Helskärm
-show-calendar = Visa kalender
 show-clock = Visa klockan i panelen
 performance = Hög prestanda
 balanced = Balanserad

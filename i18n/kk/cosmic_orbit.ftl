@@ -31,7 +31,6 @@ layout = Ашылу түрі
 dropdown = Ашылмалы мәзір
 side = Бүйір панелі
 fullscreen = Толық экран
-show-calendar = Күнтізбені көрсету
 show-clock = Панельде сағатты көрсету
 performance = Жоғары өнімділік
 balanced = Теңгерілген

@@ -31,7 +31,6 @@ layout = இவ்வாறு திறக்கும்
 dropdown = கீழ்தோன்றல்
 side = பக்கப் பலகம்
 fullscreen = முழுத்திரை
-show-calendar = நாட்காட்டியைக் காட்டு
 show-clock = பலகத்தில் கடிகாரத்தைக் காட்டு
 performance = செயல்திறன்
 balanced = சமநிலை

@@ -31,7 +31,6 @@ layout = Otwiera się jako
 dropdown = Menu rozwijane
 side = Panel boczny
 fullscreen = Pełny ekran
-show-calendar = Pokaż kalendarz
 show-clock = Pokaż zegar na panelu
 performance = Wysoka wydajność
 balanced = Zrównoważony

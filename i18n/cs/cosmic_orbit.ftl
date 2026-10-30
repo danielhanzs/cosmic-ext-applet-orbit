@@ -31,7 +31,6 @@ layout = Otevírat jako
 dropdown = Rozbalovací nabídka
 side = Postranní panel
 fullscreen = Celá obrazovka
-show-calendar = Zobrazit kalendář
 show-clock = Zobrazit hodiny na panelu
 performance = Vysoký výkon
 balanced = Vyvážený

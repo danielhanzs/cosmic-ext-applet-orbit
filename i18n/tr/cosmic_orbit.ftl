@@ -31,7 +31,6 @@ layout = Açılış biçimi
 dropdown = Açılır menü
 side = Yan panel
 fullscreen = Tam ekran
-show-calendar = Takvimi göster
 show-clock = Saati panelde göster
 performance = Yüksek Performans
 balanced = Dengeli

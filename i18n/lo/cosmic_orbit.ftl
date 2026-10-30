@@ -31,7 +31,6 @@ layout = ເປີດເປັນ
 dropdown = ເມນູເລື່ອນລົງ
 side = ແຜງດ້ານຂ້າງ
 fullscreen = ເຕັມຈໍ
-show-calendar = ສະແດງປະຕິທິນ
 show-clock = ສະແດງໂມງໃນແຜງ
 performance = ປະສິດທິພາບ
 balanced = ສົມດຸນ

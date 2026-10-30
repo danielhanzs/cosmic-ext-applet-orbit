@@ -31,7 +31,6 @@ layout = 表示方法
 dropdown = ドロップダウン
 side = サイドパネル
 fullscreen = 全画面
-show-calendar = カレンダーを表示
 show-clock = パネルに時計を表示
 performance = ハイパフォーマンス
 balanced = バランス

@@ -31,7 +31,6 @@ layout = S'obre com a
 dropdown = Desplegable
 side = Plafó lateral
 fullscreen = Pantalla completa
-show-calendar = Mostra el calendari
 show-clock = Mostra el rellotge al plafó
 performance = Rendiment
 balanced = Equilibrat

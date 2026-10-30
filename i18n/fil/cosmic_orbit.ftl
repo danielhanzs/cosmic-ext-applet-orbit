@@ -31,7 +31,6 @@ layout = Bubukas bilang
 dropdown = Dropdown
 side = Side panel
 fullscreen = Full screen
-show-calendar = Ipakita ang kalendaryo
 show-clock = Ipakita ang orasan sa panel
 performance = Performance
 balanced = Balanse

@@ -31,7 +31,6 @@ layout = Ábrese como
 dropdown = Despregable
 side = Panel lateral
 fullscreen = Pantalla completa
-show-calendar = Amosar o calendario
 show-clock = Amosar o reloxo no panel
 performance = Rendemento
 balanced = Balanceado

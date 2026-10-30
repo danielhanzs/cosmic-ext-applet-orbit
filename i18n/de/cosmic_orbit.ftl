@@ -31,7 +31,6 @@ layout = Öffnet als
 dropdown = Aufklappmenü
 side = Seitenleiste
 fullscreen = Vollbild
-show-calendar = Kalender anzeigen
 show-clock = Uhr im Panel anzeigen
 performance = Hohe Leistung
 balanced = Ausgeglichen

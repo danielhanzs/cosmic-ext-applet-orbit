@@ -31,7 +31,6 @@ layout = इस रूप में खुलता है
 dropdown = ड्रॉपडाउन
 side = साइड पैनल
 fullscreen = पूर्ण स्क्रीन
-show-calendar = कैलेंडर दिखाएँ
 show-clock = पैनल पर घड़ी दिखाएँ
 performance = उच्च प्रदर्शन
 balanced = संतुलित

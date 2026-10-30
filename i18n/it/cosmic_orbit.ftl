@@ -31,7 +31,6 @@ layout = Si apre come
 dropdown = Menu a tendina
 side = Pannello laterale
 fullscreen = Schermo intero
-show-calendar = Mostra calendario
 show-clock = Mostra l'orologio nel pannello
 performance = Prestazioni elevate
 balanced = Equilibrato

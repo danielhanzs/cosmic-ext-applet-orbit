@@ -31,7 +31,6 @@ layout = نحوه باز شدن
 dropdown = منوی کشویی
 side = پنل کناری
 fullscreen = تمام‌صفحه
-show-calendar = نمایش تقویم
 show-clock = نمایش ساعت در پنل
 performance = عملکرد
 balanced = متعادل

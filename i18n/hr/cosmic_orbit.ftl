@@ -31,7 +31,6 @@ layout = Otvara se kao
 dropdown = Padajući izbornik
 side = Bočna ploča
 fullscreen = Cijeli zaslon
-show-calendar = Prikaži kalendar
 show-clock = Prikaži sat na ploči
 performance = Performanse
 balanced = Uravnoteženo

@@ -20,15 +20,17 @@ use crate::{
     agent,
     audio::{self, Audio},
     calendar::{self, Event},
-    config::{DARK, DND, Layout, PanelIcons, Prefs, Spacing},
+    config::{DARK, DND, Layout, PanelIcons, Prefs, Section, Spacing},
     icons,
     desktop,
     style,
     workspaces,
     i18n::{self, T},
     media::{self, Media},
+    notifications::{self, Notification},
     pomodoro,
     updates,
+    weather::{self, Weather},
     sys::{self, AccessPoint, BatteryState, Bluetooth, Network, Profiles, Source},
 };
 
@@ -226,6 +228,13 @@ pub struct App {
     /// An app's volume slider being dragged: its index and level.
     stream_drag: Option<(u32, f32)>,
     pomodoro: pomodoro::Pomodoro,
+    weather: Option<Weather>,
+    /// When the weather was last asked for.
+    weather_read: Option<Instant>,
+    /// The city being typed in the editor.
+    city_input: String,
+    /// Newest first.
+    notifications: Vec<Notification>,
 }
 
 #[derive(Debug, Clone)]
@@ -302,7 +311,18 @@ pub enum Message {
     DragEnd,
     ShowTile(Tile, bool),
     SetLayout(Layout),
-    ShowCalendar(bool),
+    CheckWeather,
+    Weather(Option<Weather>),
+    City(String),
+    CitySubmit,
+    ToggleWeather,
+    Notification(notifications::Event),
+    NotificationOpen(u32),
+    NotificationDismiss(u32),
+    NotificationsClear,
+    ToggleNotifications,
+    MoveSection(usize, bool),
+    ShowSection(Section, bool),
     ShowClock(bool),
     Spawn(&'static str, &'static [&'static str]),
     None,
@@ -676,6 +696,9 @@ impl App {
             self.visible = today.first_of_month();
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
+        if self.weather_read.is_none_or(|at| at.elapsed() > Duration::from_secs(30 * 60)) {
+            tasks.push(self.update(Message::CheckWeather));
+        }
         if let Some(device) = self.net.wifi_device.clone() {
             tasks.push(fire(async move { _ = sys::scan_wifi(device).await }));
         }
@@ -1100,53 +1123,170 @@ impl App {
         })
     }
 
-    /// The popup's parts: on one surface, or each an island of its own.
+    /// A section as shown: padded, flush to its edges (its head lights
+    /// edge to edge on hover), or with a surface of its own (the island).
+    fn section(&self, section: Section) -> Option<(Element<'_, Message>, Look)> {
+        Some(match section {
+            Section::Status => (self.header(), Look::Padded),
+            Section::Controls => (
+                widget::Column::new().spacing(14).push(self.sliders()).push(self.tiles()).into(),
+                Look::Padded,
+            ),
+            Section::Calendar => (self.calendar_view(), Look::Flush),
+            Section::Weather => (self.weather_view(), Look::Flush),
+            Section::Notifications => (self.notifications_view(), Look::Flush),
+            Section::Island => (self.island()?, Look::Own),
+        })
+    }
+
+    /// The popup's parts, in the user's order: on one surface, or each an
+    /// island of its own. Fullscreen puts status and tiles on the left.
     fn main_page(&self, wide: bool) -> Element<'_, Message> {
         let islands = self.prefs.islands;
-        let width = Length::Fixed(WIDTH);
-        let frame = |parts| frame(parts, islands);
-        let mut left = vec![self.header(), widget::Column::new().spacing(14).push(self.sliders()).push(self.tiles()).into()];
-        let mut right: Vec<Element<'_, Message>> = Vec::new();
-        if self.prefs.calendar {
-            // Flush to its edges, so the whole line lights on hover.
-            let calendar = self.calendar_view();
-            right.push(if islands {
-                panel(calendar, WIDTH).padding(0).into()
-            } else {
-                container(calendar).width(Length::Fill).class(theme::Container::Card).into()
-            });
-        }
-        let island = self.island();
+        let shape = |part| shape(part, islands);
+        let stack = |parts| stack(parts, islands);
+        let shown = self.prefs.sections.iter().filter_map(|s| Some((*s, self.section(*s)?)));
         if wide {
-            let mut side = widget::Column::new().spacing(if islands { 8 } else { 14 });
-            side = side.push(if islands {
-                right.into_iter().fold(widget::Column::new().spacing(8), |c, p| c.push(p)).into()
-            } else {
-                frame(right)
-            });
-            if let Some(island) = island {
-                side = side.push(island);
-            }
+            let (left, right): (Vec<_>, Vec<_>) =
+                shown.partition(|(s, _)| matches!(s, Section::Status | Section::Controls));
+            let side = |parts: Vec<(Section, _)>| stack(parts.into_iter().map(|(_, p)| shape(p)).collect());
             return widget::Row::new()
                 .spacing(24)
-                .push(container(frame(left)).width(width))
-                .push(container(side).width(width))
+                .push(container(side(left)).width(Length::Fixed(WIDTH)))
+                .push(container(side(right)).width(Length::Fixed(WIDTH)))
                 .into();
         }
-        if islands {
-            let mut column = widget::Column::new().spacing(8).push(frame(left));
-            for part in right {
-                column = column.push(part);
-            }
-            if let Some(island) = island {
-                column = column.push(island);
-            }
-            column.into()
-        } else {
-            left.extend(right);
-            left.extend(island);
-            frame(left)
+        stack(shown.map(|(_, p)| shape(p)).collect())
+    }
+
+    fn weather_view(&self) -> Element<'_, Message> {
+        let chevron = if self.prefs.weather_open { "go-up-symbolic" } else { "go-down-symbolic" };
+        let degrees = |t: f64| format!("{:.0}°", t);
+        let Some(w) = &self.weather else {
+            // Not yet read, offline, or no place found.
+            return container(
+                widget::Row::new()
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("weather-overcast-symbolic").size(24))
+                    .push(text::caption(T.weather_unavailable).width(Length::Fill))
+                    .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(4).on_press(Message::CheckWeather)),
+            )
+            .padding(12)
+            .into();
+        };
+        let wind = if w.fahrenheit { "mph" } else { "km/h" };
+        let head = button::custom(
+            widget::Row::new()
+                .spacing(12)
+                .align_y(Alignment::Center)
+                .push(icon::from_name(w.condition.icon(w.day)).size(32))
+                .push(
+                    widget::Column::new()
+                        .push(
+                            widget::Row::new()
+                                .spacing(8)
+                                .align_y(Alignment::Center)
+                                .push(text::title4(degrees(w.temperature)))
+                                .push(text::body(condition_name(w.condition))),
+                        )
+                        .push(text::caption(format!(
+                            "{} · {} {} · {} {:.0} {wind}",
+                            w.place,
+                            T.feels_like,
+                            degrees(w.feels_like),
+                            T.wind,
+                            w.wind
+                        )).wrapping(iced::widget::text::Wrapping::None))
+                        .width(Length::Fill),
+                )
+                .push(icon::from_name(chevron).size(16)),
+        )
+        .class(style::flat())
+        .padding(12)
+        .width(Length::Fill)
+        .on_press(Message::ToggleWeather);
+        if !self.prefs.weather_open {
+            return head.into();
         }
+        let mut days = widget::Row::new().spacing(4);
+        // Today is in the head: the days after it.
+        for day in w.days.iter().skip(1).take(5) {
+            days = days.push(
+                widget::Column::new()
+                    .spacing(4)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill)
+                    .push(text::caption(i18n::weekday_short(day.date)))
+                    .push(icon::from_name(day.condition.icon(true)).size(24))
+                    .push(text::caption(format!("{} / {}", degrees(day.high), degrees(day.low)))),
+            );
+        }
+        widget::Column::new().push(head).push(container(days).padding([0, 12, 12, 12])).into()
+    }
+
+    fn notifications_view(&self) -> Element<'_, Message> {
+        let chevron = if self.prefs.notifications_open { "go-up-symbolic" } else { "go-down-symbolic" };
+        let count = self.notifications.len();
+        let mut head_row = widget::Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(icon::from_name(if count > 0 { "notification-new-symbolic" } else { "notification-symbolic" }).size(18))
+            .push(text::heading(T.notifications))
+            .push(text::caption(if count > 0 { count.to_string() } else { String::new() }).width(Length::Fill));
+        if count > 0 && self.prefs.notifications_open {
+            head_row = head_row.push(button::text(T.clear_all).on_press(Message::NotificationsClear));
+        }
+        let head = button::custom(head_row.push(icon::from_name(chevron).size(16)))
+            .class(style::flat())
+            .padding(12)
+            .width(Length::Fill)
+            .on_press(Message::ToggleNotifications);
+        if !self.prefs.notifications_open {
+            return head.into();
+        }
+        let mut list = widget::Column::new().spacing(4).padding([0, 8, 8, 8]);
+        if count == 0 {
+            list = list.push(container(text::caption(T.no_notifications)).padding([0, 4, 4, 4]));
+        }
+        for n in self.notifications.iter().take(20) {
+            let image: Element<'_, Message> = if n.icon.starts_with('/') {
+                widget::image(n.icon.as_str()).width(24).height(24).into()
+            } else if n.icon.is_empty() {
+                icon::from_name("dialog-information-symbolic").size(24).into()
+            } else {
+                icon::from_name(n.icon.as_str()).size(24).into()
+            };
+            let when = jiff::Timestamp::try_from(n.time)
+                .ok()
+                .map(|t| t.to_zoned(jiff::tz::TimeZone::system()))
+                .map(|z| if z.date() == self.now.date() { i18n::clock(z.time()) } else { i18n::short_date(z.date()) })
+                .unwrap_or_default();
+            let mut info = widget::Column::new()
+                .push(
+                    widget::Row::new()
+                        .spacing(6)
+                        .push(text::caption(n.app.as_str()).width(Length::Fill))
+                        .push(text::caption(when)),
+                )
+                .push(text::body(n.summary.as_str()).font(cosmic::font::bold()));
+            if !n.body.is_empty() {
+                info = info.push(text::caption(n.body.as_str()));
+            }
+            let card = button::custom(
+                widget::Row::new()
+                    .spacing(10)
+                    .push(image)
+                    .push(container(info).width(Length::Fill))
+                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(2).on_press(Message::NotificationDismiss(n.id))),
+            )
+            .class(style::flat())
+            .padding(8)
+            .width(Length::Fill)
+            .on_press(Message::NotificationOpen(n.id));
+            list = list.push(card);
+        }
+        widget::Column::new().push(head).push(list).into()
     }
 
     fn page_header(&self, title: &str, toggle: Option<(bool, fn(bool) -> Message)>) -> Element<'_, Message> {
@@ -1589,6 +1729,31 @@ impl App {
         for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
             icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
         }
+        // The popup's parts: shown or not, moved up and down.
+        let mut sections = widget::Column::new().spacing(2);
+        let count = self.prefs.sections.len();
+        for (i, section) in self.prefs.sections.iter().enumerate() {
+            sections = sections.push(
+                widget::Row::new()
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .push(text::body(section_name(*section)).width(Length::Fill))
+                    .push(button::icon(icon::from_name("go-up-symbolic")).on_press_maybe((i > 0).then_some(Message::MoveSection(i, true))))
+                    .push(button::icon(icon::from_name("go-down-symbolic")).on_press_maybe((i + 1 < count).then_some(Message::MoveSection(i, false))))
+                    .push(widget::toggler(true).on_toggle(|on| Message::ShowSection(*section, on))),
+            );
+        }
+        for section in Section::ALL.iter().filter(|s| !self.prefs.sections.contains(s)) {
+            sections = sections.push(
+                widget::Row::new()
+                    .align_y(Alignment::Center)
+                    .push(text::body(section_name(*section)).width(Length::Fill))
+                    .push(widget::toggler(false).on_toggle(|on| Message::ShowSection(*section, on))),
+            );
+        }
+        let city = widget::text_input(T.city_auto, self.city_input.as_str())
+            .on_input(Message::City)
+            .on_submit(|_| Message::CitySubmit);
         let mut spacing = widget::Row::new().spacing(4);
         for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
             spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
@@ -1601,10 +1766,13 @@ impl App {
         };
         column
             .push(widget::divider::horizontal::default())
+            .push(text::heading(T.sections))
+            .push(sections)
+            .push(widget::Row::new().spacing(8).align_y(Alignment::Center).push(text::body(T.city)).push(city))
+            .push(widget::divider::horizontal::default())
             .push(text::heading(T.layout))
             .push(layouts)
             .push(widget::divider::horizontal::default())
-            .push(switch(T.show_calendar, self.prefs.calendar, Message::ShowCalendar))
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
             .push(text::body(T.panel_icons))
             .push(icons)
@@ -1681,17 +1849,53 @@ fn dot<'a>(on_accent: bool) -> Element<'a, Message> {
         .into()
 }
 
-/// Padded parts, framed together on one surface or each as an island.
-fn frame<'a>(parts: Vec<Element<'a, Message>>, islands: bool) -> Element<'a, Message> {
-    if islands {
-        parts
-            .into_iter()
-            .fold(widget::Column::new().spacing(8), |c, part| c.push(panel(container(part).padding(14).into(), WIDTH)))
-            .into()
-    } else {
-        // One surface: view_window puts it around everything.
-        let column = parts.into_iter().fold(widget::Column::new().spacing(14), |c, p| c.push(p));
-        container(column).padding(14).into()
+/// A section on its own surface (islands), or as part of the one.
+fn shape<'a>((element, look): (Element<'a, Message>, Look), islands: bool) -> Element<'a, Message> {
+    match (look, islands) {
+        (Look::Own, _) => element,
+        (Look::Padded, true) => panel(container(element).padding(14).into(), WIDTH).into(),
+        (Look::Padded, false) => element,
+        (Look::Flush, true) => panel(element, WIDTH).padding(0).into(),
+        (Look::Flush, false) => container(element).width(Length::Fill).class(theme::Container::Card).into(),
+    }
+}
+
+/// Sections one under the other: apart as islands, or padded on the one surface.
+fn stack<'a>(parts: Vec<Element<'a, Message>>, islands: bool) -> Element<'a, Message> {
+    let column = parts.into_iter().fold(widget::Column::new().spacing(if islands { 8 } else { 14 }), |c, p| c.push(p));
+    if islands { column.into() } else { container(column).padding(14).into() }
+}
+
+/// How a section sits in the popup.
+#[derive(Clone, Copy)]
+enum Look {
+    Padded,
+    Flush,
+    Own,
+}
+
+fn section_name(section: Section) -> &'static str {
+    match section {
+        Section::Status => T.section_status,
+        Section::Controls => T.section_controls,
+        Section::Calendar => T.calendar,
+        Section::Weather => T.weather,
+        Section::Notifications => T.notifications,
+        Section::Island => T.section_island,
+    }
+}
+
+fn condition_name(condition: weather::Condition) -> &'static str {
+    use weather::Condition::*;
+    match condition {
+        Clear => T.weather_clear,
+        PartlyCloudy => T.weather_partly_cloudy,
+        Cloudy => T.weather_cloudy,
+        Fog => T.weather_fog,
+        Drizzle => T.weather_drizzle,
+        Rain => T.weather_rain,
+        Snow => T.weather_snow,
+        Storm => T.weather_storm,
     }
 }
 
@@ -1767,6 +1971,10 @@ impl cosmic::Application for App {
             updates: 0,
             stream_drag: None,
             pomodoro: pomodoro::Pomodoro::default(),
+            weather: None,
+            weather_read: None,
+            city_input: String::new(),
+            notifications: notifications::load(),
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -1780,6 +1988,11 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
+        app.city_input = app.prefs.weather_city.clone();
+        tasks.push(run(async {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            Message::CheckWeather
+        }));
         // Not at once: the session is still starting.
         tasks.push(run(async {
             tokio::time::sleep(Duration::from_secs(60)).await;
@@ -1968,6 +2181,82 @@ impl cosmic::Application for App {
             }
             Message::HotspotPassword(password) => self.hotspot_password = password,
             Message::Input(name) => return fire(audio::set_input(name)),
+            Message::CheckWeather => {
+                self.weather_read = Some(Instant::now());
+                let (city, language, fahrenheit) = (self.prefs.weather_city.clone(), i18n::language(), i18n::fahrenheit());
+                return run(async move { Message::Weather(weather::read(city, language, fahrenheit).await) });
+            }
+            Message::Weather(weather) => {
+                // A failed read keeps what was shown.
+                if weather.is_some() || self.weather.is_none() {
+                    self.weather = weather;
+                }
+            }
+            Message::City(city) => self.city_input = city,
+            Message::CitySubmit => {
+                self.prefs.weather_city = self.city_input.trim().to_string();
+                self.prefs.save();
+                self.weather = None;
+                return self.update(Message::CheckWeather);
+            }
+            Message::ToggleWeather => {
+                self.prefs.weather_open = !self.prefs.weather_open;
+                self.prefs.save();
+            }
+            Message::Notification(event) => {
+                match event {
+                    notifications::Event::New(n) => {
+                        self.notifications.retain(|old| old.id != n.id);
+                        self.notifications.insert(0, n);
+                        self.notifications.truncate(50);
+                    }
+                    notifications::Event::Closed(id) => self.notifications.retain(|n| n.id != id),
+                    // Swiped off its popup: kept here, as phones keep them.
+                    notifications::Event::Dismissed(id) => {
+                        tracing::debug!("notification {id} swiped off its popup, kept");
+                        return Task::none();
+                    }
+                }
+                notifications::save(&self.notifications);
+            }
+            Message::NotificationOpen(id) => {
+                let Some(n) = self.notifications.iter().find(|n| n.id == id).cloned() else { return Task::none() };
+                self.notifications.retain(|n| n.id != id);
+                notifications::save(&self.notifications);
+                let close = self.close();
+                if n.restored || !n.actions.iter().any(|(key, _)| key == "default") {
+                    return Task::batch([close, fire(notifications::dismiss(vec![id]))]);
+                }
+                return Task::batch([close, fire(notifications::invoke(id, "default".into()))]);
+            }
+            Message::NotificationDismiss(id) => {
+                self.notifications.retain(|n| n.id != id);
+                notifications::save(&self.notifications);
+                return fire(notifications::dismiss(vec![id]));
+            }
+            Message::NotificationsClear => {
+                let ids = self.notifications.drain(..).map(|n| n.id).collect();
+                notifications::save(&self.notifications);
+                return fire(notifications::dismiss(ids));
+            }
+            Message::ToggleNotifications => {
+                self.prefs.notifications_open = !self.prefs.notifications_open;
+                self.prefs.save();
+            }
+            Message::MoveSection(i, up) => {
+                let j = if up { i.wrapping_sub(1) } else { i + 1 };
+                if j < self.prefs.sections.len() {
+                    self.prefs.sections.swap(i, j);
+                    self.prefs.save();
+                }
+            }
+            Message::ShowSection(section, on) => {
+                self.prefs.sections.retain(|s| *s != section);
+                if on {
+                    self.prefs.sections.push(section);
+                }
+                self.prefs.save();
+            }
             Message::OpenUrl(url) => {
                 crate::host::spawn("xdg-open", &[url.as_str()]);
                 return self.close();
@@ -2144,10 +2433,6 @@ impl cosmic::Application for App {
                 let close = self.close();
                 return Task::batch([close, self.open()]).chain(self.update(Message::Page(Page::Edit)));
             }
-            Message::ShowCalendar(on) => {
-                self.prefs.calendar = on;
-                self.prefs.save();
-            }
             Message::ShowClock(on) => {
                 self.prefs.clock = on;
                 self.prefs.save();
@@ -2186,6 +2471,8 @@ impl cosmic::Application for App {
                 }
             }),
         ];
+        subs.push(notifications::subscription().map(Message::Notification));
+        subs.push(iced::time::every(Duration::from_secs(30 * 60)).map(|_| Message::CheckWeather));
         // Updates: hourly; the system's updater refreshes the package lists.
         subs.push(iced::time::every(Duration::from_secs(3600)).map(|_| Message::CheckUpdates));
         // ponytail: polls /proc for cameras every 3 s; inotify on /dev/video* if that costs.
@@ -2210,6 +2497,9 @@ impl cosmic::Application for App {
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
         let mut push = |name: &str| icons.push(status_icon(named(name), size, false));
+        if !self.notifications.is_empty() {
+            push("notification-new-symbolic");
+        }
         if !self.camera.is_empty() {
             push("camera-web-symbolic");
         }

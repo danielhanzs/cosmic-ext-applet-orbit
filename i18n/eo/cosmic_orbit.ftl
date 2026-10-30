@@ -31,7 +31,6 @@ layout = Malfermiĝas kiel
 dropdown = Falmenuo
 side = Flanka panelo
 fullscreen = Plenekrane
-show-calendar = Montri kalendaron
 show-clock = Montri horloĝon sur la panelo
 performance = Alta rendimento
 balanced = Ekvilibra

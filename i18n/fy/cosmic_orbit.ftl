@@ -31,7 +31,6 @@ layout = Iepenet as
 dropdown = Útklapmenu
 side = Sydpaniel
 fullscreen = Folslein skerm
-show-calendar = Aginda toane
 show-clock = Klok op it paniel toane
 performance = Prestaasjes
 balanced = Lykwichtich

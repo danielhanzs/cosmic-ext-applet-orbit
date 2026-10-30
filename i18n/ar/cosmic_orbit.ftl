@@ -31,7 +31,6 @@ layout = يُفتح كـ
 dropdown = قائمة منسدلة
 side = لوحة جانبية
 fullscreen = ملء الشاشة
-show-calendar = إظهار التقويم
 show-clock = إظهار الساعة على اللوحة
 performance = أداء عالي
 balanced = متوازن

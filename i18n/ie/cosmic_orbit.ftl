@@ -31,7 +31,6 @@ layout = Aperter quam
 dropdown = Menú ad-bass
 side = Panel lateral
 fullscreen = Plen ecran
-show-calendar = Monstrar li calendarium
 show-clock = Monstrar li horloge in li panel
 performance = Performantie
 balanced = Equilibrat

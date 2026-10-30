@@ -31,7 +31,6 @@ layout = ᱠᱷᱩᱞᱟᱹ ᱦᱚᱨᱟ
 dropdown = ᱰᱨᱚᱯᱰᱟᱣᱩᱱ
 side = ᱥᱟᱭᱤᱰ ᱯᱮᱱᱮᱞ
 fullscreen = ᱯᱩᱨᱟᱹ ᱥᱠᱨᱤᱱ
-show-calendar = ᱠᱟᱞᱮᱱᱰᱟᱨ ᱫᱮᱠᱷᱟᱣ ᱢᱮ
 show-clock = ᱯᱮᱱᱮᱞ ᱨᱮ ᱜᱷᱚᱰᱤ ᱫᱮᱠᱷᱟᱣ ᱢᱮ
 performance = ᱯᱟᱨᱯᱷᱚᱨᱢᱮᱱᱥ
 balanced = ᱵᱮᱞᱮᱱᱥᱰ

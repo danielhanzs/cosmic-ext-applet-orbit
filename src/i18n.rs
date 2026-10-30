@@ -86,7 +86,6 @@ strings!(
     dropdown,
     side,
     fullscreen,
-    show_calendar,
     show_clock,
     performance,
     balanced,
@@ -126,6 +125,28 @@ strings!(
     pomodoro_break_time,
     pomodoro_focus_again,
     join,
+    weather,
+    weather_unavailable,
+    feels_like,
+    wind,
+    weather_clear,
+    weather_partly_cloudy,
+    weather_cloudy,
+    weather_fog,
+    weather_drizzle,
+    weather_rain,
+    weather_snow,
+    weather_storm,
+    city,
+    city_auto,
+    notifications,
+    clear_all,
+    no_notifications,
+    sections,
+    section_status,
+    section_controls,
+    calendar,
+    section_island,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));
@@ -225,6 +246,24 @@ fn first_weekday_of(locale: &Locale) -> i64 {
 fn first_weekday() -> i64 {
     static FIRST: LazyLock<i64> = LazyLock::new(|| first_weekday_of(&LOCALE));
     *FIRST
+}
+
+/// The interface language's code, as "hu" or "en".
+pub fn language() -> String {
+    DesktopLanguageRequester::requested_languages()
+        .first()
+        .map(|l| l.language.to_string())
+        .unwrap_or_else(|| "en".into())
+}
+
+/// Whether the region reads temperatures in Fahrenheit.
+pub fn fahrenheit() -> bool {
+    matches!(LOCALE.id.region.map(|r| r.to_string()).as_deref(), Some("US" | "LR" | "MM" | "BS" | "BZ" | "KY" | "PW"))
+}
+
+/// "Thu", "Cs"
+pub fn weekday_short(date: jiff::civil::Date) -> String {
+    weekday(date, jiff::civil::Time::midnight())
 }
 
 /// Days before `date` in its week.

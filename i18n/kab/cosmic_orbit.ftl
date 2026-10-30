@@ -31,7 +31,6 @@ layout = Yettwaldi am
 dropdown = Umuɣ n wadda
 side = Agalis n yidis
 fullscreen = Agdil ačuran
-show-calendar = Sken awitay
 show-clock = Sken tamrilt deg ugalis
 performance = Timellit tafellayt
 balanced = Awliwal

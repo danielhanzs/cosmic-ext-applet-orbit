@@ -31,7 +31,6 @@ layout = เปิดเป็น
 dropdown = เมนูดรอปดาวน์
 side = แผงด้านข้าง
 fullscreen = เต็มหน้าจอ
-show-calendar = แสดงปฏิทิน
 show-clock = แสดงนาฬิกาบนแผง
 performance = ประสิทธิภาพสูง
 balanced = สมดุล
