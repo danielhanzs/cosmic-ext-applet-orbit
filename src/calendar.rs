@@ -199,17 +199,18 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
     events
 }
 
-/// The first video-meeting address in a text.
+/// The first video-meeting address in a text: HTTPS, on a meeting
+/// service's own domain or a subdomain of it.
 fn meeting_link(text: &str) -> Option<String> {
     const SERVICES: [&str; 8] = [
-        "meet.google.com/",
-        "zoom.us/",
-        "teams.microsoft.com/",
-        "teams.live.com/",
-        "meet.jit.si/",
-        "whereby.com/",
-        "webex.com/",
-        "gotomeeting.com/",
+        "meet.google.com",
+        "zoom.us",
+        "teams.microsoft.com",
+        "teams.live.com",
+        "meet.jit.si",
+        "whereby.com",
+        "webex.com",
+        "gotomeeting.com",
     ];
     text.match_indices("https://")
         .map(|(at, _)| {
@@ -217,7 +218,15 @@ fn meeting_link(text: &str) -> Option<String> {
             let end = rest.find(|c: char| c.is_whitespace() || "<>\"'(),;".contains(c)).unwrap_or(rest.len());
             &rest[..end]
         })
-        .find(|url| SERVICES.iter().any(|s| url.contains(s)))
+        .find(|url| {
+            let authority = url["https://".len()..].split(['/', '?', '#']).next().unwrap_or_default();
+            // Credentials before an @ would hide the real host.
+            if authority.contains('@') {
+                return false;
+            }
+            let host = authority.split(':').next().unwrap_or_default().to_ascii_lowercase();
+            SERVICES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
+        })
         .map(str::to_string)
 }
 
@@ -267,6 +276,10 @@ mod tests {
     #[test]
     fn meeting_links() {
         assert_eq!(meeting_link("Room 4, https://example.com/x"), None);
+        assert_eq!(meeting_link("https://evil.com/?x=meet.google.com/abc"), None);
+        assert_eq!(meeting_link("https://meet.google.com@evil.com/abc"), None);
+        assert_eq!(meeting_link("https://notzoom.us/j/1"), None);
+        assert_eq!(meeting_link("http://zoom.us/j/1"), None);
         assert_eq!(
             meeting_link("<https://us02web.zoom.us/j/123?pwd=x>"),
             Some("https://us02web.zoom.us/j/123?pwd=x".into())
