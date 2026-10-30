@@ -68,9 +68,14 @@ pub fn tile(on: bool) -> theme::Button {
     custom(move |t, s| surface(t, on, s, true))
 }
 
-/// A picked choice (a calendar day, a layout): the accent, readable.
+/// A picked choice (a calendar day, a layout): the accent, readable, as
+/// round as a hovered line.
 pub fn picked() -> theme::Button {
-    custom(|t, s| surface(t, true, s, false))
+    custom(|t, s| {
+        let mut style = surface(t, true, s, false);
+        style.border_radius = t.cosmic().corner_radii.radius_s.into();
+        style
+    })
 }
 
 /// A whole line that lights on hover, edge to edge (the calendar's head).

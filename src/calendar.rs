@@ -20,6 +20,43 @@ pub struct Event {
     pub location: String,
     /// A video meeting to join, found in the event's text.
     pub link: Option<String>,
+    /// For an all-day event: its own dates, which EDS reads as UTC times and
+    /// so lets spill into a neighbouring day.
+    days: Option<AllDay>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct AllDay {
+    start: civil::Date,
+    /// Days it lasts (DTEND is the day after).
+    length: i32,
+    /// How it repeats, from its RRULE.
+    repeats: Option<&'static str>,
+}
+
+impl Event {
+    /// Whether it falls on `day`: always for a timed event, as EDS matched
+    /// it; for an all-day one, by its own dates and how it repeats.
+    fn on(&self, day: civil::Date) -> bool {
+        let Some(d) = &self.days else { return true };
+        // The latest start of an occurrence on or before `day`.
+        let start = match d.repeats {
+            None => d.start,
+            Some("DAILY") => day,
+            Some("WEEKLY") => day.saturating_sub(jiff::Span::new().days(
+                (day.weekday().to_monday_zero_offset() as i64 - d.start.weekday().to_monday_zero_offset() as i64).rem_euclid(7),
+            )),
+            Some("MONTHLY") => {
+                let this = day.with().day(d.start.day()).build().unwrap_or(day);
+                if this <= day { this } else { this.saturating_sub(jiff::Span::new().months(1)) }
+            }
+            Some(_) => {
+                let this = d.start.with().year(day.year()).build().unwrap_or(d.start);
+                if this <= day { this } else { this.saturating_sub(jiff::Span::new().years(1)) }
+            }
+        };
+        start <= day && day < start.saturating_add(jiff::Span::new().days(d.length.max(1) as i64))
+    }
 }
 
 /// Each day's events of the month `first` starts; None: no calendar service
@@ -74,11 +111,13 @@ async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event
         let (conn, calendars, tz, utc) = (&conn, &calendars, &tz, &utc);
         async move {
             let day = first.saturating_add(jiff::Span::new().days(offset));
+            // A second inside each end: an all-day event ends at the next
+            // midnight, and would touch the next day too.
             let start = day.to_datetime(civil::Time::midnight());
             let query = format!(
                 "(occur-in-time-range? (make-time \"{}\") (make-time \"{}\"))",
-                utc(start),
-                utc(start.saturating_add(jiff::Span::new().days(1))),
+                utc(start.saturating_add(jiff::Span::new().seconds(1))),
+                utc(start.saturating_add(jiff::Span::new().days(1)).saturating_sub(jiff::Span::new().seconds(1))),
             );
             let mut events = Vec::new();
             for (bus, path) in calendars {
@@ -92,7 +131,7 @@ async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event
                     )
                     .await;
                 match reply.and_then(|r| r.body().deserialize::<Vec<String>>().map_err(Into::into)) {
-                    Ok(objects) => events.extend(objects.iter().flat_map(|ics| parse(ics, tz))),
+                    Ok(objects) => events.extend(objects.iter().flat_map(|ics| parse(ics, tz)).filter(|e| e.on(day))),
                     Err(err) => tracing::warn!("calendar query: {err}"),
                 }
             }
@@ -139,7 +178,9 @@ async fn open(conn: &zbus::Connection, uid: &str) -> zbus::Result<(String, Owned
             &(uid,),
         )
         .await?;
-    let (path, bus): (OwnedObjectPath, String) = reply.body().deserialize()?;
+    // The path comes as a string, not an object path.
+    let (path, bus): (String, String) = reply.body().deserialize()?;
+    let path = OwnedObjectPath::try_from(path).map_err(zbus::Error::from)?;
     conn.call_method(Some(bus.as_str()), &path, Some("org.gnome.evolution.dataserver.Calendar"), "Open", &())
         .await?;
     Ok((bus, path))
@@ -155,6 +196,8 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
     // Components inside the event (alarms…) have SUMMARYs of their own.
     let mut depth = 0;
     let mut texts = String::new();
+    // An all-day event's start and end dates, and how it repeats.
+    let mut all_day: (Option<civil::Date>, Option<civil::Date>, Option<&'static str>) = (None, None, None);
     for line in unfolded.lines() {
         match line {
             "BEGIN:VEVENT" => {
@@ -164,13 +207,19 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
                     end: None,
                     location: String::new(),
                     link: None,
+                    days: None,
                 });
+                all_day = (None, None, None);
                 depth = 0;
                 texts.clear();
             }
             "END:VEVENT" => {
                 if let Some(mut event) = current.take() {
                     event.link = meeting_link(&texts);
+                    if let (Some(start), end, repeats) = all_day {
+                        let length = end.map_or(1, |end: civil::Date| (end - start).get_days());
+                        event.days = Some(AllDay { start, length, repeats });
+                    }
                     events.push(event);
                 }
             }
@@ -189,8 +238,15 @@ fn parse(ics: &str, tz: &TimeZone) -> Vec<Event> {
                 match key {
                     "SUMMARY" => event.summary = value,
                     "LOCATION" => event.location = value,
-                    "DTSTART" => event.start = time(&value, params, tz),
-                    "DTEND" => event.end = time(&value, params, tz),
+                    "DTSTART" => {
+                        event.start = time(&value, params, tz);
+                        all_day.0 = event.start.is_none().then(|| date(&value)).flatten();
+                    }
+                    "DTEND" => {
+                        event.end = time(&value, params, tz);
+                        all_day.1 = event.end.is_none().then(|| date(&value)).flatten();
+                    }
+                    "RRULE" => all_day.2 = frequency(&value),
                     _ => {}
                 }
             }
@@ -228,6 +284,17 @@ fn meeting_link(text: &str) -> Option<String> {
                 && SERVICES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
         })
         .map(String::from)
+}
+
+/// "20261023" → 2026-10-23
+fn date(value: &str) -> Option<civil::Date> {
+    civil::Date::strptime("%Y%m%d", value.get(..8)?).ok()
+}
+
+/// "FREQ=YEARLY;BYMONTH=10" → "YEARLY"
+fn frequency(rule: &str) -> Option<&'static str> {
+    let freq = rule.split(';').find_map(|part| part.strip_prefix("FREQ="))?;
+    ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].into_iter().find(|f| *f == freq)
 }
 
 /// The local time of day of an iCalendar date-time; None for a whole day.
@@ -271,6 +338,20 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].summary, "Standup");
         assert_eq!(events[0].link.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+    }
+
+    #[test]
+    fn all_day_events_keep_their_days() {
+        let ics = "BEGIN:VEVENT\r\nSUMMARY:Holiday\r\nDTSTART;VALUE=DATE:20261023\r\nDTEND;VALUE=DATE:20261024\r\nEND:VEVENT\r\n\
+                   BEGIN:VEVENT\r\nSUMMARY:Birthday\r\nDTSTART;VALUE=DATE:19900503\r\nRRULE:FREQ=YEARLY\r\nEND:VEVENT\r\n";
+        let events = parse(ics, &TimeZone::UTC);
+        let holiday = &events[0];
+        assert!(holiday.on(civil::date(2026, 10, 23)));
+        assert!(!holiday.on(civil::date(2026, 10, 24)));
+        let birthday = &events[1];
+        assert!(birthday.on(civil::date(2026, 5, 3)));
+        assert!(!birthday.on(civil::date(2026, 5, 4)));
+        assert!(!birthday.on(civil::date(2026, 5, 2)));
     }
 
     #[test]
