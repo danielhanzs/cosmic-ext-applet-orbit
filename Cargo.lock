@@ -962,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-orbit"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "cosmic-settings-a11y-manager-subscription",
  "cosmic-settings-accessibility-subscription",
