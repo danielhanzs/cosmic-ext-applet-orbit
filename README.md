@@ -1,13 +1,13 @@
 # Orbit
 
-**A control panel applet for the COSMIC desktop** — quick toggles, sliders,
+**A control panel applet for the COSMIC™ desktop** — quick toggles, sliders,
 your calendar, the weather, your notifications and a "dynamic island" for
 what's playing, filming or recording, all in one popup on your panel. Think
 the Windows 11 quick settings or a phone's control center, built natively
-for COSMIC with libcosmic, following your system theme.
+for the COSMIC™ desktop with libcosmic, following your system theme.
 
 <p align="center">
-  <img src="data/icons/scalable/apps/io.github.danielhanzs.CosmicOrbit.svg" width="128" alt="Orbit icon">
+  <img src="data/icons/scalable/apps/io.github.danielhanzs.CosmicExtAppletOrbit.svg" width="128" alt="Orbit icon">
 </p>
 
 <p align="center">
@@ -45,7 +45,7 @@ moved up or down in the editor, on one surface or as **separate islands**.
 Open it as a **dropdown** under the panel, a **side panel** sliding in from
 the edge, or **fullscreen** in two columns.
 
-### Looks like COSMIC
+### Follows your appearance settings
 Orbit follows your **Appearance** settings: accent color, dark/light,
 roundness (round, slightly round, square) and **frosted glass** for applet
 popups.
@@ -162,8 +162,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ### 2. Build and install
 
 ```sh
-git clone https://github.com/danielhanzs/cosmic-orbit.git
-cd cosmic-orbit
+git clone https://github.com/danielhanzs/cosmic-ext-applet-orbit.git
+cd cosmic-ext-applet-orbit
 ./install.sh            # installs into ~/.local
 # or system wide:
 # sudo ./install.sh /usr
@@ -195,7 +195,7 @@ flatpak run org.flatpak.Builder --user --install --force-clean \
 ```
 
 `flatpak/local.json` builds the working tree, fetching crates while it
-builds. `flatpak/io.github.danielhanzs.CosmicOrbit.json` is the manifest for
+builds. `flatpak/io.github.danielhanzs.CosmicExtAppletOrbit.json` is the manifest for
 the COSMIC Flatpak repository: it builds the `v0.1.1` tag offline, from
 `flatpak/cargo-sources.json`, which `flatpak/generate-sources.sh` makes from
 `Cargo.lock`.
@@ -219,7 +219,7 @@ for the GitHub release and the pull request.
 ## Updating
 
 ```sh
-cd cosmic-orbit
+cd cosmic-ext-applet-orbit
 git pull
 ./install.sh
 ```
@@ -232,11 +232,11 @@ and in, or remove Orbit from the panel and add it again.
 Remove Orbit from the panel first, then:
 
 ```sh
-rm ~/.local/bin/cosmic-orbit \
-   ~/.local/share/applications/io.github.danielhanzs.CosmicOrbit.desktop \
-   ~/.local/share/icons/hicolor/scalable/apps/io.github.danielhanzs.CosmicOrbit*.svg
-rm -r ~/.config/cosmic/io.github.danielhanzs.CosmicOrbit   # settings
-rm -r ~/.cache/io.github.danielhanzs.CosmicOrbit           # cover art
+rm ~/.local/bin/cosmic-ext-applet-orbit \
+   ~/.local/share/applications/io.github.danielhanzs.CosmicExtAppletOrbit.desktop \
+   ~/.local/share/icons/hicolor/scalable/apps/io.github.danielhanzs.CosmicExtAppletOrbit*.svg
+rm -r ~/.config/cosmic/io.github.danielhanzs.CosmicExtAppletOrbit   # settings
+rm -r ~/.cache/io.github.danielhanzs.CosmicExtAppletOrbit           # cover art
 ```
 
 ## Troubleshooting
@@ -244,10 +244,10 @@ rm -r ~/.cache/io.github.danielhanzs.CosmicOrbit           # cover art
 The panel collects the applet's log:
 
 ```sh
-journalctl --user -f | grep CosmicOrbit
+journalctl --user -f | grep CosmicExtAppletOrbit
 ```
 
-More detail: set `RUST_LOG=cosmic_orbit=debug` in the environment the panel
+More detail: set `RUST_LOG=cosmic_ext_applet_orbit=debug` in the environment the panel
 starts with.
 
 - **No calendar events** — check that `evolution-data-server` is installed
@@ -280,7 +280,7 @@ cargo test
 | `src/desktop.rs` | accessibility, touchpad, keep awake, tiling settings |
 | `src/workspaces.rs` | the active workspace's tiling |
 | `src/host.rs` | host programs and files, from a Flatpak too |
-| `i18n/<language>/cosmic_orbit.ftl` | the words, one file per language |
+| `i18n/<language>/cosmic_ext_applet_orbit.ftl` | the words, one file per language |
 
 ### Screenshots
 
@@ -288,7 +288,7 @@ cargo test
 only (nothing is saved), framed in magenta to cut it out of a screenshot:
 
 ```sh
-ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-orbit
+ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-applet-orbit
 ```
 
 Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
@@ -297,8 +297,8 @@ Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
 ### Translations
 
 The words live in [Fluent](https://projectfluent.org) files,
-`i18n/<language>/cosmic_orbit.ftl`, one `id = text` per line, as in COSMIC's
-own applets. To fix or add a language, edit or copy `i18n/en/cosmic_orbit.ftl`,
+`i18n/<language>/cosmic_ext_applet_orbit.ftl`, one `id = text` per line, as in COSMIC's
+own applets. To fix or add a language, edit or copy `i18n/en/cosmic_ext_applet_orbit.ftl`,
 keep the ids, translate the text, and open a pull request; `cargo test`
 checks every file has every id and loads.
 
@@ -307,6 +307,11 @@ checks every file has every id and loads.
 Inspired by DrakRosmann's
 [cosmic-ext-applet-quick-settings](https://github.com/DrakRosmann/cosmic-ext-applet-quick-settings),
 whose approach to COSMIC's settings and protocols informed this rewrite.
+
+## Trademarks
+
+COSMIC™ is a trademark of System76, Inc. Orbit is an independent project for
+the COSMIC™ desktop, not made or endorsed by System76.
 
 ## License
 

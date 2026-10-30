@@ -4,8 +4,8 @@
 #   sudo ./install.sh /usr  -> system wide
 set -e
 prefix="${1:-$HOME/.local}"
-id=io.github.danielhanzs.CosmicOrbit
-bin=cosmic-orbit
+id=io.github.danielhanzs.CosmicExtAppletOrbit
+bin=cosmic-ext-applet-orbit
 cd "$(dirname "$0")"
 cargo build --release
 install -Dm0755 "target/release/$bin" "$prefix/bin/$bin"

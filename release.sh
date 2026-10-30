@@ -10,7 +10,7 @@
 # (../cosmic-flatpak), or COSMIC_FLATPAK=/path/to/it.
 set -euo pipefail
 
-ID=io.github.danielhanzs.CosmicOrbit
+ID=io.github.danielhanzs.CosmicExtAppletOrbit
 UPSTREAM=https://github.com/pop-os/cosmic-flatpak.git
 GENERATOR=https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
 
@@ -82,7 +82,7 @@ if f'version="{version}"' not in text:
     )
     text = text.replace("  <releases>\n", "  <releases>\n" + release, 1)
 # Screenshots as they are at this release.
-text = re.sub(r"(cosmic-orbit/)(?:main|v[0-9.]+)(/data/screenshots)", rf"\g<1>{tag}\2", text)
+text = re.sub(r"(cosmic-ext-applet-orbit/)(?:main|v[0-9.]+)(/data/screenshots)", rf"\g<1>{tag}\2", text)
 open(path, "w").write(text)
 manifest = f"flatpak/{app}.json"
 data = json.load(open(manifest))
@@ -120,25 +120,19 @@ say "Updating the COSMIC Flatpak repository"
 cd "$flatpak_repo"
 git remote get-url upstream >/dev/null 2>&1 || run git remote add upstream "$UPSTREAM"
 $dry || git fetch -q upstream master
+# The fork's branches as they are, for the force-with-lease below.
+$dry || git fetch -q origin
 if git cat-file -e "upstream/master:app/$ID/$ID.json" 2>/dev/null; then
     # Already in: an update, on a branch of its own.
-    branch="cosmic-orbit-$tag"
-    message="$ID: update to $tag"
-    run git checkout -q -B "$branch" upstream/master
+    branch="cosmic-ext-applet-orbit-$tag"
 else
-    # Not in yet: the submission's branch, which updates its pull request.
+    # Not in yet: the submission's branch (its pull request's head), made
+    # again from upstream as a single commit each time.
     branch=add-cosmic-orbit
-    message="Update $ID to $tag"
-    if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-        $dry || git fetch -q origin "$branch"
-        run git checkout -q -B "$branch" "origin/$branch"
-    else
-        message="Add $ID applet"
-        run git checkout -q -B "$branch" upstream/master
-    fi
 fi
+run git checkout -q -B "$branch" upstream/master
 if $dry; then
-    echo "   (dry run) app/$ID/: manifest at $tag ($commit), cargo-sources.json; commit \"$message\"; push $branch"
+    echo "   (dry run) app/$ID/: manifest at $tag ($commit), cargo-sources.json; you write the commit message; push $branch"
 else
     mkdir -p "app/$ID"
     COMMIT="$commit" SRC="$repo/flatpak/$ID.json" DST="app/$ID/$ID.json" python3 - <<'PY'
@@ -150,13 +144,17 @@ open(os.environ["DST"], "a").write("\n")
 PY
     cp "$repo/flatpak/cargo-sources.json" "app/$ID/cargo-sources.json"
     git add "app/$ID"
-    git commit -q -m "$message"
-    git push -q -u origin "$branch"
+    # The cosmic-flatpak repository wants commit messages people write,
+    # signed off for its Developer Certificate of Origin: your editor opens.
+    echo "   Write the commit message in your editor (e.g. \"$ID: update to $tag\")."
+    git commit -s
+    # The branch is made anew each time: replace what's there.
+    git push -q --force-with-lease -u origin "$branch"
 fi
 
 owner="$(git remote get-url origin | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#')"
 say "Done"
-echo "   GitHub release:  https://github.com/danielhanzs/cosmic-orbit/releases/new?tag=$tag"
+echo "   GitHub release:  https://github.com/danielhanzs/cosmic-ext-applet-orbit/releases/new?tag=$tag"
 if [ "$branch" = add-cosmic-orbit ]; then
     echo "   Pull request:    an open one from $owner:$branch is updated; if none is open:"
 else

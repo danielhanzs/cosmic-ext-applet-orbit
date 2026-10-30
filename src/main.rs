@@ -19,14 +19,14 @@ mod updates;
 mod weather;
 mod workspaces;
 
-pub const APP_ID: &str = "io.github.danielhanzs.CosmicOrbit";
+pub const APP_ID: &str = "io.github.danielhanzs.CosmicExtAppletOrbit";
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn,cosmic_orbit=info".into()),
+                .unwrap_or_else(|_| "warn,cosmic_ext_applet_orbit=info".into()),
         )
         .init();
     cosmic::applet::run::<app::App>(())
