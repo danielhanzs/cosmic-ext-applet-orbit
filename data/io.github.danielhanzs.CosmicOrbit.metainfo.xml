@@ -30,15 +30,15 @@
   <screenshots>
     <screenshot type="default">
       <caption>Quick settings, sliders, calendar and media in one popup</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.1/data/screenshots/dropdown.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.2/data/screenshots/dropdown.png</image>
     </screenshot>
     <screenshot>
       <caption>As separate islands: calendar, weather, notifications, media</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.1/data/screenshots/islands.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.2/data/screenshots/islands.png</image>
     </screenshot>
     <screenshot>
       <caption>Fullscreen, in two columns</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.1/data/screenshots/fullscreen.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.2/data/screenshots/fullscreen.png</image>
     </screenshot>
   </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicOrbit.desktop</launchable>
@@ -60,6 +60,11 @@
   </keywords>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.2" date="2026-10-30">
+      <description>
+        <p>Events from synced calendars, all-day events on their own days.</p>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-10-30">
       <description>
         <p>Calendar events from synced accounts.</p>
