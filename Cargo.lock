@@ -948,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-applet-orbit"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "cosmic-settings-a11y-manager-subscription",
  "cosmic-settings-accessibility-subscription",

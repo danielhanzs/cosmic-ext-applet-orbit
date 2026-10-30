@@ -1,6 +1,6 @@
 [package]
 name = "cosmic-ext-applet-orbit"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Orbit: a control panel applet for the COSMIC™ desktop — quick toggles, sliders, calendar and media in one popup"
