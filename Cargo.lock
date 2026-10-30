@@ -981,6 +981,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unic-langid",
+ "url",
  "zbus",
 ]
 

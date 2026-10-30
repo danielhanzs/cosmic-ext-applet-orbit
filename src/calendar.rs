@@ -218,16 +218,16 @@ fn meeting_link(text: &str) -> Option<String> {
             let end = rest.find(|c: char| c.is_whitespace() || "<>\"'(),;".contains(c)).unwrap_or(rest.len());
             &rest[..end]
         })
+        // Read as browsers read URLs, so the host checked is the one opened.
+        .filter_map(|text| url::Url::parse(text).ok())
         .find(|url| {
-            let authority = url["https://".len()..].split(['/', '?', '#']).next().unwrap_or_default();
-            // Credentials before an @ would hide the real host.
-            if authority.contains('@') {
-                return false;
-            }
-            let host = authority.split(':').next().unwrap_or_default().to_ascii_lowercase();
-            SERVICES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
+            let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+            url.scheme() == "https"
+                && url.username().is_empty()
+                && url.password().is_none()
+                && SERVICES.iter().any(|s| host == *s || host.ends_with(&format!(".{s}")))
         })
-        .map(str::to_string)
+        .map(String::from)
 }
 
 /// The local time of day of an iCalendar date-time; None for a whole day.
@@ -280,6 +280,9 @@ mod tests {
         assert_eq!(meeting_link("https://meet.google.com@evil.com/abc"), None);
         assert_eq!(meeting_link("https://notzoom.us/j/1"), None);
         assert_eq!(meeting_link("http://zoom.us/j/1"), None);
+        // Read as a browser reads it: the host is zoom.us, "@evil.com" is path.
+        assert_eq!(meeting_link("https://zoom.us\\@evil.com/j/1"), Some("https://zoom.us/@evil.com/j/1".into()));
+        assert_eq!(meeting_link("https://evil.com%2Fzoom.us/j/1"), None);
         assert_eq!(
             meeting_link("<https://us02web.zoom.us/j/123?pwd=x>"),
             Some("https://us02web.zoom.us/j/123?pwd=x".into())
