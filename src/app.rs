@@ -229,8 +229,9 @@ pub struct App {
     stream_drag: Option<(u32, f32)>,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
-    /// When the weather was last asked for.
+    /// When the weather was last asked for, and which ask is the latest.
     weather_read: Option<Instant>,
+    weather_asked: u64,
     /// The city being typed in the editor, the places matching it, and
     /// which search is the latest.
     city_input: String,
@@ -238,6 +239,8 @@ pub struct App {
     city_search: u64,
     /// Newest first.
     notifications: Vec<Notification>,
+    /// The last notification key given.
+    keys: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +318,7 @@ pub enum Message {
     ShowTile(Tile, bool),
     SetLayout(Layout),
     CheckWeather,
-    Weather(Option<Weather>),
+    Weather(u64, Option<Weather>),
     City(String),
     SearchCity(u64),
     Places(u64, Vec<weather::Place>),
@@ -324,9 +327,10 @@ pub enum Message {
     CitySubmit,
     ToggleWeather,
     Notification(notifications::Event),
-    NotificationOpen(u32),
-    NotificationDismiss(u32),
+    NotificationOpen(u64),
+    NotificationDismiss(u64),
     NotificationsClear,
+    NotificationsLoaded(Vec<Notification>),
     ToggleNotifications,
     MoveSection(usize, bool),
     ShowSection(Section, bool),
@@ -1285,12 +1289,12 @@ impl App {
                     .spacing(10)
                     .push(image)
                     .push(container(info).width(Length::Fill))
-                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(2).on_press(Message::NotificationDismiss(n.id))),
+                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(2).on_press(Message::NotificationDismiss(n.key))),
             )
             .class(style::flat())
             .padding(8)
             .width(Length::Fill)
-            .on_press(Message::NotificationOpen(n.id));
+            .on_press(Message::NotificationOpen(n.key));
             list = list.push(card);
         }
         widget::Column::new().push(head).push(list).into()
@@ -1493,6 +1497,11 @@ impl App {
             Page::Main => {}
         }
         column.into()
+    }
+
+    fn next_key(&mut self) -> u64 {
+        self.keys += 1;
+        self.keys
     }
 
     /// Today's next video meeting, from ten minutes before it starts until
@@ -1747,7 +1756,7 @@ impl App {
                     .push(text::body(section_name(*section)).width(Length::Fill))
                     .push(button::icon(icon::from_name("go-up-symbolic")).on_press_maybe((i > 0).then_some(Message::MoveSection(i, true))))
                     .push(button::icon(icon::from_name("go-down-symbolic")).on_press_maybe((i + 1 < count).then_some(Message::MoveSection(i, false))))
-                    .push(widget::toggler(true).on_toggle(|on| Message::ShowSection(*section, on))),
+                    .push(widget::toggler(true).on_toggle_maybe((*section != Section::Status).then_some(move |on| Message::ShowSection(*section, on)))),
             );
         }
         for section in Section::ALL.iter().filter(|s| !self.prefs.sections.contains(s)) {
@@ -2016,10 +2025,12 @@ impl cosmic::Application for App {
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
+            weather_asked: 0,
             city_input: String::new(),
             places: Vec::new(),
             city_search: 0,
-            notifications: notifications::load(),
+            notifications: Vec::new(),
+            keys: 0,
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -2033,6 +2044,10 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
+        // Kept notifications: their icons are looked up in the apps' entries, off this thread.
+        tasks.push(run(async {
+            Message::NotificationsLoaded(tokio::task::spawn_blocking(notifications::load).await.unwrap_or_default())
+        }));
         app.city_input = app.prefs.weather_place.as_ref().map(|p| p.name.clone()).unwrap_or_default();
         // ORBIT_PREVIEW=fullscreen,islands,calendar,weather: opens by itself, set
         // so for this run only (nothing is saved), for screenshots.
@@ -2151,6 +2166,15 @@ impl cosmic::Application for App {
                 if let Some(net) = net {
                     self.net = net;
                 }
+                // A hotspot made from its page: show its password once it's there.
+                if self.page == Page::Hotspot && self.hotspot_password.is_none() {
+                    if let Some(path) = self.net.hotspot.as_ref().map(|h| h.path.clone()) {
+                        return Task::batch([
+                            self.settled(Source::Network),
+                            run(async move { Message::HotspotPassword(sys::hotspot_password(path).await) }),
+                        ]);
+                    }
+                }
                 return self.settled(Source::Network);
             }
             Message::Bluetooth(bt) => {
@@ -2248,12 +2272,15 @@ impl cosmic::Application for App {
             Message::Input(name) => return fire(audio::set_input(name)),
             Message::CheckWeather => {
                 self.weather_read = Some(Instant::now());
+                self.weather_asked += 1;
+                let asked = self.weather_asked;
                 let (place, language, fahrenheit) = (self.prefs.weather_place.clone(), i18n::language(), i18n::fahrenheit());
-                return run(async move { Message::Weather(weather::read(place, language, fahrenheit).await) });
+                return run(async move { Message::Weather(asked, weather::read(place, language, fahrenheit).await) });
             }
-            Message::Weather(weather) => {
-                // A failed read keeps what was shown.
-                if weather.is_some() || self.weather.is_none() {
+            Message::Weather(asked, weather) => {
+                // Only the latest answer (an older one may be another place's);
+                // a failed read keeps what was shown.
+                if asked == self.weather_asked && (weather.is_some() || self.weather.is_none()) {
                     self.weather = weather;
                 }
             }
@@ -2314,12 +2341,14 @@ impl cosmic::Application for App {
             }
             Message::Notification(event) => {
                 match event {
-                    notifications::Event::New(n) => {
-                        self.notifications.retain(|old| old.id != n.id);
+                    notifications::Event::New(mut n) => {
+                        // Only a live one with the id is replaced: kept ones' ids are old.
+                        self.notifications.retain(|old| old.restored || old.id != n.id);
+                        n.key = self.next_key();
                         self.notifications.insert(0, n);
                         self.notifications.truncate(50);
                     }
-                    notifications::Event::Closed(id) => self.notifications.retain(|n| n.id != id),
+                    notifications::Event::Closed(id) => self.notifications.retain(|n| n.restored || n.id != id),
                     // Swiped off its popup: kept here, as phones keep them.
                     notifications::Event::Dismissed(id) => {
                         tracing::debug!("notification {id} swiped off its popup, kept");
@@ -2328,25 +2357,38 @@ impl cosmic::Application for App {
                 }
                 notifications::save(&self.notifications);
             }
-            Message::NotificationOpen(id) => {
-                let Some(n) = self.notifications.iter().find(|n| n.id == id).cloned() else { return Task::none() };
-                self.notifications.retain(|n| n.id != id);
+            Message::NotificationOpen(key) => {
+                let Some(n) = self.notifications.iter().find(|n| n.key == key).cloned() else { return Task::none() };
+                self.notifications.retain(|n| n.key != key);
                 notifications::save(&self.notifications);
                 let close = self.close();
-                if n.restored || !n.actions.iter().any(|(key, _)| key == "default") {
-                    return Task::batch([close, fire(notifications::dismiss(vec![id]))]);
+                // A kept one is the daemon's no more: nothing is sent for it.
+                if n.restored {
+                    return close;
                 }
-                return Task::batch([close, fire(notifications::invoke(id, "default".into()))]);
+                if !n.actions.iter().any(|(action, _)| action == "default") {
+                    return Task::batch([close, fire(notifications::dismiss(vec![n.id]))]);
+                }
+                return Task::batch([close, fire(notifications::invoke(n.id, "default".into()))]);
             }
-            Message::NotificationDismiss(id) => {
-                self.notifications.retain(|n| n.id != id);
+            Message::NotificationDismiss(key) => {
+                let live: Vec<u32> = self.notifications.iter().filter(|n| n.key == key && !n.restored).map(|n| n.id).collect();
+                self.notifications.retain(|n| n.key != key);
                 notifications::save(&self.notifications);
-                return fire(notifications::dismiss(vec![id]));
+                return fire(notifications::dismiss(live));
             }
             Message::NotificationsClear => {
-                let ids = self.notifications.drain(..).map(|n| n.id).collect();
+                let live = self.notifications.drain(..).filter(|n| !n.restored).map(|n| n.id).collect();
                 notifications::save(&self.notifications);
-                return fire(notifications::dismiss(ids));
+                return fire(notifications::dismiss(live));
+            }
+            Message::NotificationsLoaded(mut kept) => {
+                for n in &mut kept {
+                    n.key = self.next_key();
+                }
+                // Live ones that came meanwhile stay first.
+                self.notifications.extend(kept);
+                self.notifications.truncate(50);
             }
             Message::ToggleNotifications => {
                 self.prefs.notifications_open = !self.prefs.notifications_open;
@@ -2359,6 +2401,8 @@ impl cosmic::Application for App {
                     self.prefs.save();
                 }
             }
+            // Status holds the editor's button: hidden, there'd be no way back.
+            Message::ShowSection(Section::Status, false) => {}
             Message::ShowSection(section, on) => {
                 self.prefs.sections.retain(|s| *s != section);
                 if on {

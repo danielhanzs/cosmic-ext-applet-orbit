@@ -334,7 +334,11 @@ pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPat
     } else {
         String::new()
     };
-    let ssid = if host.is_empty() { "Orbit".to_string() } else { host };
+    // SSIDs are at most 32 bytes: cut a long host name on a character boundary.
+    let mut ssid = if host.is_empty() { "Orbit".to_string() } else { host };
+    while ssid.len() > 32 {
+        ssid.pop();
+    }
     let settings = HashMap::from([
         (
             "connection",
@@ -676,23 +680,30 @@ pub fn changes() -> Subscription<Source> {
                 tracing::error!("no D-Bus connection");
                 return futures::future::pending().await;
             };
-            let watch = [
-                (&system, "org.freedesktop.NetworkManager", Source::Network),
-                (&system, "org.bluez", Source::Bluetooth),
-                (&system, "org.freedesktop.UPower", Source::Battery),
-                (&system, "net.hadess.PowerProfiles", Source::Profiles),
-                (&session, "com.system76.CosmicSettingsDaemon", Source::Brightness),
+            // By path: zbus can't tell a well-known sender apart on its side,
+            // so a sender rule would let every signal on the bus through.
+            let watch: [(&zbus::Connection, &str, Source); 7] = [
+                (&system, "/org/freedesktop/NetworkManager", Source::Network),
+                (&system, "/org/bluez", Source::Bluetooth),
+                (&system, "/org/freedesktop/UPower/devices", Source::Battery),
+                (&system, "/org/freedesktop/UPower/PowerProfiles", Source::Profiles),
+                (&system, "/net/hadess/PowerProfiles", Source::Profiles),
+                (&session, "/com/system76/CosmicSettingsDaemon", Source::Brightness),
+                // Bluetooth devices come and go through BlueZ's object manager at /.
+                (&system, "/", Source::Bluetooth),
             ];
             let mut streams = Vec::new();
-            for (conn, sender, source) in watch {
-                let rule = MatchRule::builder()
-                    .msg_type(zbus::message::Type::Signal)
-                    .sender(sender)
-                    .expect("valid name")
-                    .build();
+            for (conn, path, source) in watch {
+                let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal);
+                let rule = if path == "/" {
+                    rule.path("/").and_then(|r| r.interface("org.freedesktop.DBus.ObjectManager"))
+                } else {
+                    rule.path_namespace(path)
+                };
+                let Ok(rule) = rule.map(|r| r.build()) else { continue };
                 match MessageStream::for_match_rule(rule, conn, Some(64)).await {
                     Ok(s) => streams.push(s.map(move |_| source).boxed()),
-                    Err(err) => tracing::warn!("cannot watch {sender}: {err}"),
+                    Err(err) => tracing::warn!("cannot watch {path}: {err}"),
                 }
             }
             // MPRIS players have no fixed name: their path is fixed.

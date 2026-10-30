@@ -35,6 +35,10 @@ pub struct Notification {
     /// Asked by its app not to be kept (a transient hint): shown, never saved.
     #[serde(skip)]
     pub transient: bool,
+    /// Orbit's own name for it: daemon ids start over when it restarts, so a
+    /// kept notification's id may be a live one's.
+    #[serde(skip)]
+    pub key: u64,
 }
 
 /// Notifications older than this are not brought back after a restart.
@@ -201,17 +205,24 @@ pub fn subscription() -> Subscription<Event> {
                 Some(Signal::New(Notification {
                     id: args.id,
                     app: args.app_name.to_owned(),
-                    icon: app_icon(
-                        args.app_name,
-                        hint("desktop-entry").as_deref(),
-                        args.app_icon,
-                        hint("image-path").as_deref(),
-                    ),
+                    icon: {
+                        // Looking through the apps' entries reads files: off the async threads.
+                        let (app, entry, icon, image) = (
+                            args.app_name.to_owned(),
+                            hint("desktop-entry"),
+                            args.app_icon.to_owned(),
+                            hint("image-path"),
+                        );
+                        tokio::task::spawn_blocking(move || app_icon(&app, entry.as_deref(), &icon, image.as_deref()))
+                            .await
+                            .unwrap_or_default()
+                    },
                     summary: args.summary.to_owned(),
                     body: plain(args.body),
                     actions,
                     time: SystemTime::now(),
                     restored: false,
+                    key: 0,
                     transient: matches!(args.hints.get("transient"), Some(Value::Bool(true))),
                 }))
             });
@@ -282,7 +293,8 @@ fn desktop_icon(app: &str, desktop_entry: Option<&str>) -> Option<String> {
         wm_class: String,
         icon: String,
     }
-    static ENTRIES: Mutex<Option<Vec<Entry>>> = Mutex::new(None);
+    static ENTRIES: Mutex<Option<(std::time::Instant, Vec<Entry>)>> = Mutex::new(None);
+    // Only what was found: an app installed later may have its entry then.
     static FOUND: Mutex<Option<HashMap<(String, Option<String>), Option<String>>>> =
         Mutex::new(None);
 
@@ -291,7 +303,11 @@ fn desktop_icon(app: &str, desktop_entry: Option<&str>) -> Option<String> {
         return found.clone();
     }
     let mut entries = ENTRIES.lock().ok()?;
-    let entries = entries.get_or_insert_with(|| {
+    // Read again a minute on, for apps installed since.
+    if entries.as_ref().is_some_and(|(at, _)| at.elapsed() > std::time::Duration::from_secs(60)) {
+        *entries = None;
+    }
+    let (_, entries) = entries.get_or_insert_with(|| (std::time::Instant::now(), {
         let home = std::env::var("HOME").unwrap_or_default();
         let data_home = std::env::var("XDG_DATA_HOME")
             .unwrap_or_else(|_| format!("{home}/.local/share"));
@@ -346,7 +362,7 @@ fn desktop_icon(app: &str, desktop_entry: Option<&str>) -> Option<String> {
             }
         }
         entries
-    });
+    }));
     let app = app.trim().to_lowercase();
     let wanted = desktop_entry.map(|e| e.trim_end_matches(".desktop").to_lowercase());
     let found = wanted
@@ -368,11 +384,9 @@ fn desktop_icon(app: &str, desktop_entry: Option<&str>) -> Option<String> {
                 .or_else(|| entries.iter().find(|e| e.id.rsplit('.').next() == Some(&dashed)))
         })
         .map(|e| e.icon.clone());
-    FOUND
-        .lock()
-        .ok()?
-        .get_or_insert_default()
-        .insert(key, found.clone());
+    if found.is_some() {
+        FOUND.lock().ok()?.get_or_insert_default().insert(key, found.clone());
+    }
     found
 }
 
@@ -381,9 +395,13 @@ fn desktop_icon(app: &str, desktop_entry: Option<&str>) -> Option<String> {
 fn plain(body: &str) -> String {
     let mut text = String::with_capacity(body.len());
     let mut in_tag = false;
-    for c in body.chars() {
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
-            '<' => in_tag = true,
+            // A tag starts with a letter, '/' or '!': "I <3 you" is text.
+            '<' if !in_tag && chars.peek().is_some_and(|n| n.is_ascii_alphabetic() || *n == '/' || *n == '!') => {
+                in_tag = true
+            }
             '>' if in_tag => in_tag = false,
             c if !in_tag => text.push(c),
             _ => {}
@@ -430,6 +448,7 @@ mod tests {
             plain("Ready: <a href=\"https://claude.ai/\">claude.ai</a> &amp; <b>more</b>"),
             "Ready: claude.ai & more"
         );
+        assert_eq!(plain("I <3 you, if a < b"), "I <3 you, if a < b");
     }
 
     #[test]

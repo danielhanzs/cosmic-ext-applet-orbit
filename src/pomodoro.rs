@@ -36,11 +36,13 @@ pub struct Pomodoro {
     /// While running: when the phase ends. While paused: what's left.
     ends: Option<Instant>,
     left: Duration,
+    /// Started since the last reset, running or paused.
+    started: bool,
 }
 
 impl Default for Pomodoro {
     fn default() -> Self {
-        Self { phase: Phase::Focus, done: 0, ends: None, left: FOCUS }
+        Self { phase: Phase::Focus, done: 0, ends: None, left: FOCUS, started: false }
     }
 }
 
@@ -51,7 +53,7 @@ impl Pomodoro {
 
     /// Started at all: running, or paused partway.
     pub fn started(&self) -> bool {
-        self.running() || self.left != self.phase.length() || self.done > 0
+        self.started
     }
 
     pub fn remaining(&self, now: Instant) -> Duration {
@@ -65,6 +67,7 @@ impl Pomodoro {
         if self.ends.is_none() {
             self.ends = Some(now + self.left);
         }
+        self.started = true;
     }
 
     pub fn pause(&mut self, now: Instant) {
@@ -80,6 +83,7 @@ impl Pomodoro {
     /// On to the next phase, running on if this one ran.
     pub fn skip(&mut self, now: Instant) {
         let running = self.running();
+        self.started = true;
         self.phase = match self.phase {
             Phase::Focus => {
                 self.done += 1;
@@ -147,5 +151,11 @@ mod tests {
         assert_eq!(clock(Duration::from_secs(25 * 60 - 100)), "23:20");
         p.reset();
         assert!(!p.started());
+        // Skipped into the long break while paused: still on.
+        for _ in 0..7 {
+            p.skip(t0);
+        }
+        assert_eq!(p.phase, Phase::LongBreak);
+        assert!(p.started() && !p.running());
     }
 }
