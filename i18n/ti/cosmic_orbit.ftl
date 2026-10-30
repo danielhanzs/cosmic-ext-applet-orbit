@@ -92,3 +92,4 @@ section-status = ኩነታትን ተግባራትን
 section-controls = ሰሌዳታትን መንሸራተቲታትን
 calendar = ዓውደ ኣዋርሕ
 section-island = Dynamic island
+no-more-events = ሎሚ ተወሳኺ ፍጻመታት የለን

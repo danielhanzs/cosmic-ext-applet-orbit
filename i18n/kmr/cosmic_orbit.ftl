@@ -92,3 +92,4 @@ section-status = Rewş û çalakî
 section-controls = Kart û şemitok
 calendar = Salname
 section-island = Girava dînamîk
+no-more-events = Îro êdî bûyer tune ne

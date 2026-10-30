@@ -92,3 +92,4 @@ section-status = Status og handlingar
 section-controls = Fliser og glidebrytarar
 calendar = Kalender
 section-island = Dynamisk øy
+no-more-events = Ingen fleire hendingar i dag

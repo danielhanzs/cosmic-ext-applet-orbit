@@ -92,3 +92,4 @@ section-status = وضعیت و کنش‌ها
 section-controls = کاشی‌ها و لغزنده‌ها
 calendar = تقویم
 section-island = جزیرهٔ پویا
+no-more-events = امروز رویداد دیگری نیست

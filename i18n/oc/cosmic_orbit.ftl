@@ -92,3 +92,4 @@ section-status = Estat e accions
 section-controls = Tèulas e cursors
 calendar = Calendièr
 section-island = Isla dinamica
+no-more-events = Pas mai d’eveniments uèi

@@ -92,3 +92,4 @@ section-status = Stato kaj agoj
 section-controls = Kaheloj kaj ŝoviloj
 calendar = Kalendaro
 section-island = Dinamika insulo
+no-more-events = Neniuj pliaj eventoj hodiaŭ

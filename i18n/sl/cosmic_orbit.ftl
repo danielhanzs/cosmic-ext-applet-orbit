@@ -92,3 +92,4 @@ section-status = Stanje in dejanja
 section-controls = Ploščice in drsniki
 calendar = Koledar
 section-island = Dinamični otok
+no-more-events = Danes ni več dogodkov

@@ -92,3 +92,4 @@ section-status = Статус и действия
 section-controls = Плитки и ползунки
 calendar = Календарь
 section-island = Динамический остров
+no-more-events = Больше нет событий сегодня

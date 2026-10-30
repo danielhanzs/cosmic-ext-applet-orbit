@@ -92,3 +92,4 @@ section-status = Addad d tigawin
 section-controls = Tifelwin d tfeggagin
 calendar = Awitay
 section-island = Tigzirt tadinamikt
+no-more-events = Ulac ugar n tedyanin ass-a

@@ -92,3 +92,4 @@ section-status = État et actions
 section-controls = Tuiles et curseurs
 calendar = Calendrier
 section-island = Îlot dynamique
+no-more-events = Plus d’événements aujourd’hui

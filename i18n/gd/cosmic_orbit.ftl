@@ -92,3 +92,4 @@ section-status = Staid is gnìomhan
 section-controls = Leacan is sleamhnachain
 calendar = Mìosachan
 section-island = Eilean dinamaigeach
+no-more-events = Chan eil tuilleadh thachartasan an-diugh

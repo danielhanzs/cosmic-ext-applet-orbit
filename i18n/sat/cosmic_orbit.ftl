@@ -92,3 +92,4 @@ section-status = ᱫᱚᱥᱟ ᱟᱨ ᱠᱟᱹᱢᱤ ᱠᱚ
 section-controls = ᱴᱟᱭᱤᱞ ᱟᱨ ᱥᱞᱟᱭᱤᱰᱟᱨ ᱠᱚ
 calendar = ᱠᱟᱞᱮᱱᱰᱟᱨ
 section-island = ᱰᱟᱭᱱᱟᱢᱤᱠ ᱟᱭᱞᱮᱱᱰ
+no-more-events = ᱛᱮᱦᱮᱧ ᱟᱨ ᱡᱟᱦᱟᱸᱱ ᱜᱚᱴᱚᱱᱟ ᱵᱟᱹᱱᱩᱜᱼᱟ

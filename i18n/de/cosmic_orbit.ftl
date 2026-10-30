@@ -92,3 +92,4 @@ section-status = Status und Aktionen
 section-controls = Kacheln und Regler
 calendar = Kalender
 section-island = Dynamische Insel
+no-more-events = Heute keine weiteren Termine

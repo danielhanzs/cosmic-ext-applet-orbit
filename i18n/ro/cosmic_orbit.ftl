@@ -92,3 +92,4 @@ section-status = Stare și acțiuni
 section-controls = Plăci și glisoare
 calendar = Calendar
 section-island = Insulă dinamică
+no-more-events = Nu mai sunt evenimente astăzi

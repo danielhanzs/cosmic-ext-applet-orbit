@@ -92,3 +92,4 @@ section-status = מצב ופעולות
 section-controls = אריחים ומחוונים
 calendar = לוח שנה
 section-island = אי דינמי
+no-more-events = אין עוד אירועים היום

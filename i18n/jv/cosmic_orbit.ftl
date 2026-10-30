@@ -92,3 +92,4 @@ section-status = Status lan tumindak
 section-controls = Ubin lan panggeser
 calendar = Tanggalan
 section-island = Pulo dinamis
+no-more-events = Ora ana acara maneh dina iki

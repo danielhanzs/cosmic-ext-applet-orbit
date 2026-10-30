@@ -92,3 +92,4 @@ section-status = 狀態與操作
 section-controls = 圖塊與滑桿
 calendar = 日曆
 section-island = 動態島
+no-more-events = 今天沒有更多活動

@@ -92,3 +92,4 @@ section-status = Status en aksjes
 section-controls = Tegels en skowbalken
 calendar = Aginda
 section-island = Dynamysk eilân
+no-more-events = Hjoed gjin eveneminten mear

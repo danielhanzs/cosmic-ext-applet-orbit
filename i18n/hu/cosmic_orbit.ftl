@@ -92,3 +92,4 @@ section-status = Állapot és gombok
 section-controls = Csempék és csúszkák
 calendar = Naptár
 section-island = Dynamic island
+no-more-events = Nincs több mai esemény

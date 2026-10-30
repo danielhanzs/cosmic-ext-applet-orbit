@@ -92,3 +92,4 @@ section-status = સ્થિતિ અને ક્રિયાઓ
 section-controls = ટાઇલ્સ અને સ્લાઇડર્સ
 calendar = કેલેન્ડર
 section-island = ડાયનેમિક આઇલેન્ડ
+no-more-events = આજે વધુ કોઈ ઇવેન્ટ નથી

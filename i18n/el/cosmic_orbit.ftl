@@ -92,3 +92,4 @@ section-status = Κατάσταση και ενέργειες
 section-controls = Πλακίδια και ρυθμιστικά
 calendar = Ημερολόγιο
 section-island = Δυναμικό νησί
+no-more-events = Δεν υπάρχουν άλλα συμβάντα σήμερα

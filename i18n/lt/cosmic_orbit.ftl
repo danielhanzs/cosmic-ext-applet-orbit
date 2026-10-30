@@ -92,3 +92,4 @@ section-status = Būsena ir veiksmai
 section-controls = Plytelės ir slankikliai
 calendar = Kalendorius
 section-island = Dinaminė sala
+no-more-events = Šiandien daugiau įvykių nėra

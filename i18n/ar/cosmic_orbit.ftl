@@ -92,3 +92,4 @@ section-status = الحالة والإجراءات
 section-controls = البلاطات والمنزلقات
 calendar = التقويم
 section-island = الجزيرة الديناميكية
+no-more-events = لا مزيد من الأحداث اليوم

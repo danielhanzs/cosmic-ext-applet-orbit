@@ -92,3 +92,4 @@ section-status = Status en aksies
 section-controls = Teëls en skuifbalke
 calendar = Kalender
 section-island = Dinamiese eiland
+no-more-events = Geen verdere gebeurtenisse vandag nie

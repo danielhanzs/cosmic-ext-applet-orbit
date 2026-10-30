@@ -92,3 +92,4 @@ section-status = Holat va amallar
 section-controls = Plitkalar va slayderlar
 calendar = Taqvim
 section-island = Dinamik orol
+no-more-events = Bugun boshqa tadbirlar yo‘q

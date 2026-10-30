@@ -92,3 +92,4 @@ section-status = Tila ja toiminnot
 section-controls = Ruudut ja liukusäätimet
 calendar = Kalenteri
 section-island = Dynaaminen saareke
+no-more-events = Ei enää tapahtumia tänään

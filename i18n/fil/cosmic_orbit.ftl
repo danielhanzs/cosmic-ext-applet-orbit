@@ -92,3 +92,4 @@ section-status = Status at mga aksyon
 section-controls = Mga tile at slider
 calendar = Kalendaryo
 section-island = Dynamic island
+no-more-events = Wala nang kaganapan ngayong araw

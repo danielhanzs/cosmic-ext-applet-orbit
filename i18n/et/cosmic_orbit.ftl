@@ -92,3 +92,4 @@ section-status = Olek ja toimingud
 section-controls = Paanid ja liugurid
 calendar = Kalender
 section-island = Dünaamiline saar
+no-more-events = Täna rohkem sündmusi pole

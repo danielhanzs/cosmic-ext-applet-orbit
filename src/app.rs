@@ -964,6 +964,8 @@ impl App {
                 Some(start) => format!("{} {}", i18n::clock(start), e.summary),
                 None => e.summary.clone(),
             },
+            // Today had events, all over by now.
+            (None, Some(_)) if self.today.as_ref().is_some_and(|e| !e.is_empty()) => T.no_more_events.to_string(),
             (None, Some(_)) => T.no_events.to_string(),
             (None, None) => T.no_calendar.to_string(),
         };

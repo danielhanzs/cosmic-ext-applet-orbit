@@ -92,3 +92,4 @@ section-status = ステータスと操作
 section-controls = タイルとスライダー
 calendar = カレンダー
 section-island = ダイナミックアイランド
+no-more-events = 今日の予定はもうありません

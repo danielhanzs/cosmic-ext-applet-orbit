@@ -92,3 +92,4 @@ section-status = Stav a akce
 section-controls = Dlaždice a posuvníky
 calendar = Kalendář
 section-island = Dynamický ostrůvek
+no-more-events = Dnes už žádné události

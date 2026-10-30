@@ -92,3 +92,4 @@ section-status = Status and actions
 section-controls = Tiles and sliders
 calendar = Calendar
 section-island = Dynamic island
+no-more-events = No more events today

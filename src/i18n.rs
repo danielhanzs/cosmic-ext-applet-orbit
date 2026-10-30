@@ -147,6 +147,7 @@ strings!(
     section_controls,
     calendar,
     section_island,
+    no_more_events,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));

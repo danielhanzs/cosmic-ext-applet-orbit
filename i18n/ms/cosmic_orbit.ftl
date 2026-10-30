@@ -92,3 +92,4 @@ section-status = Status dan tindakan
 section-controls = Jubin dan peluncur
 calendar = Kalendar
 section-island = Pulau dinamik
+no-more-events = Tiada lagi acara hari ini

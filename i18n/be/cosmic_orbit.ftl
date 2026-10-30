@@ -92,3 +92,4 @@ section-status = Стан і дзеянні
 section-controls = Пліткі і паўзункі
 calendar = Каляндар
 section-island = Дынамічны астравок
+no-more-events = Больш няма падзей сёння

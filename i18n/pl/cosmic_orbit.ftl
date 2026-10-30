@@ -92,3 +92,4 @@ section-status = Stan i działania
 section-controls = Kafelki i suwaki
 calendar = Kalendarz
 section-island = Dynamiczna wyspa
+no-more-events = Brak kolejnych wydarzeń dzisiaj
