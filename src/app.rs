@@ -1871,6 +1871,27 @@ fn dot<'a>(on_accent: bool) -> Element<'a, Message> {
         .into()
 }
 
+/// A preview's popup on a solid background, in a magenta frame that marks
+/// it out in a screenshot of the whole screen.
+fn preview_frame(body: Element<'_, Message>) -> Element<'_, Message> {
+    let solid = container(body).class(theme::Container::custom(|theme| container::Style {
+        background: Some(Color::from(theme.cosmic().background(false).base).into()),
+        ..Default::default()
+    }));
+    container(solid)
+        .padding(4)
+        .class(theme::Container::custom(|_| container::Style {
+            background: Some(Color::from_rgb(1.0, 0.0, 1.0).into()),
+            ..Default::default()
+        }))
+        .into()
+}
+
+/// ORBIT_PREVIEW's options, when set.
+fn preview() -> Option<String> {
+    std::env::var("ORBIT_PREVIEW").ok().filter(|v| !v.is_empty())
+}
+
 /// A section on its own surface (islands), or as part of the one.
 fn shape<'a>((element, look): (Element<'a, Message>, Look), islands: bool) -> Element<'a, Message> {
     match (look, islands) {
@@ -2013,6 +2034,26 @@ impl cosmic::Application for App {
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
         app.city_input = app.prefs.weather_place.as_ref().map(|p| p.name.clone()).unwrap_or_default();
+        // ORBIT_PREVIEW=fullscreen,islands,calendar,weather: opens by itself, set
+        // so for this run only (nothing is saved), for screenshots.
+        if let Some(preview) = preview() {
+            for option in preview.split(',') {
+                match option {
+                    "dropdown" => app.prefs.layout = Layout::Dropdown,
+                    "side" => app.prefs.layout = Layout::Side,
+                    "fullscreen" => app.prefs.layout = Layout::Fullscreen,
+                    "islands" => app.prefs.islands = true,
+                    "single" => app.prefs.islands = false,
+                    "calendar" => app.prefs.calendar_open = true,
+                    "weather" => app.prefs.weather_open = true,
+                    _ => {}
+                }
+            }
+            tasks.push(run(async {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                Message::Toggle
+            }));
+        }
         tasks.push(run(async {
             tokio::time::sleep(Duration::from_secs(3)).await;
             Message::CheckWeather
@@ -2519,7 +2560,8 @@ impl cosmic::Application for App {
             sys::changes().map(Message::Changed),
             audio::changes().map(|()| Message::AudioChanged),
             crate::config::changes().map(|()| Message::FlagsChanged),
-            agent::subscription().map(Message::Secret),
+            // A preview leaves passwords to the Orbit on the panel.
+            if preview().is_some() { Subscription::none() } else { agent::subscription().map(Message::Secret) },
             desktop::a11y().map(Message::A11y),
             desktop::screen_reader().map(Message::Reader),
             desktop::comp_changes().map(|()| Message::CompChanged),
@@ -2662,6 +2704,7 @@ impl cosmic::Application for App {
             let surface = panel(widget::scrollable(content).into(), if wide { WIDTH * 2.0 + 60.0 } else { WIDTH });
             if layout == Layout::Side { surface.height(Length::Fill).into() } else { surface.into() }
         };
+        let body: Element<'_, Message> = if preview().is_some() { preview_frame(body) } else { body };
         match layout {
             Layout::Dropdown => cosmic::widget::autosize::autosize(
                 container(body).width(Length::Fixed(WIDTH)),

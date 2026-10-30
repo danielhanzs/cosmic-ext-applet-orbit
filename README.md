@@ -1,18 +1,21 @@
 # Orbit
 
-**A control panel applet for the COSMIC desktop** — quick toggles, sliders, a
-calendar with your synced events, and a "dynamic island" for what's playing,
-filming or recording, all in one popup on your panel. Think the Windows 11
-quick settings or a phone's control center, built natively for COSMIC with
-libcosmic, following your system theme.
+**A control panel applet for the COSMIC desktop** — quick toggles, sliders,
+your calendar, the weather, your notifications and a "dynamic island" for
+what's playing, filming or recording, all in one popup on your panel. Think
+the Windows 11 quick settings or a phone's control center, built natively
+for COSMIC with libcosmic, following your system theme.
 
 <p align="center">
   <img src="data/icons/scalable/apps/io.github.danielhanzs.CosmicOrbit.svg" width="128" alt="Orbit icon">
 </p>
 
 <p align="center">
-  <img src="data/screenshots/dropdown.png" alt="Orbit as a dropdown" height="420">
-  <img src="data/screenshots/islands.png" alt="Orbit fullscreen, as separate islands" height="420">
+  <img src="data/screenshots/dropdown.png" alt="Orbit as a dropdown" height="440">
+  <img src="data/screenshots/islands.png" alt="Orbit as separate islands" height="440">
+</p>
+<p align="center">
+  <img src="data/screenshots/fullscreen.png" alt="Orbit fullscreen, in two columns" width="720">
 </p>
 
 ## Features
@@ -20,55 +23,91 @@ libcosmic, following your system theme.
 ### Quick tiles
 Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
 Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors ·
-Screen reader · High contrast · Touchpad, plus shortcuts to Screenshot and
-Workspaces.
+Screen reader · High contrast · Touchpad · Hotspot · Pomodoro, plus
+shortcuts to Screenshot and Workspaces.
 
 - **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
   networks (join, with a password prompt), Bluetooth devices (connect, battery
-  level), VPN connections, power profiles.
+  level), VPN connections, power profiles, the hotspot's name and password,
+  the pomodoro timer.
 - **Edit tiles**: drag to reorder, click to switch between wide (name and
   state) and small (icon only), remove with −, add with +, or reset.
 - On a bright accent color (lime, yellow…) text turns black so it stays
   readable; on dark accents it stays white.
-
-### Looks like COSMIC
-Orbit follows your **Appearance** settings: accent color, dark/light,
-roundness (round, slightly round, square), **frosted glass** for applet
-popups. The space between the panel icons is yours to set. Show
-the popup as one surface or as **separate islands** — status and actions,
-controls, calendar, and the dynamic island each on its own.
 - State is **live in both directions**: Orbit listens to NetworkManager,
   BlueZ, UPower, power-profiles-daemon, PipeWire, the compositor and COSMIC's
   own settings, so changes made anywhere else show up immediately.
 
-### Panel
-Status icons (network, VPN, Bluetooth, volume, battery, camera and
-microphone in use), the clock, and the tiles' own icons: none, only the
-active ones, or all of them with the inactive ones faint, with adjustable
-spacing. The battery icon
-shows its charge and a clear bolt while plugged in.
+### Your popup, your order
+The popup is made of parts — status and actions, tiles and sliders,
+calendar, weather, notifications, dynamic island — each shown or hidden and
+moved up or down in the editor, on one surface or as **separate islands**.
+Open it as a **dropdown** under the panel, a **side panel** sliding in from
+the edge, or **fullscreen** in two columns.
 
-### Sliders
-Volume (with output device picker and mute) and screen brightness.
+### Looks like COSMIC
+Orbit follows your **Appearance** settings: accent color, dark/light,
+roundness (round, slightly round, square) and **frosted glass** for applet
+popups.
+
+### Panel
+Status icons (network, VPN, Bluetooth, volume, battery, notifications,
+camera and microphone in use), the clock, optionally the weather and the
+pomodoro's time left, and the tiles' own icons: none, only the active ones,
+or all of them with the inactive ones faint. The space between them is
+yours to set. The battery icon shows its charge and a clear bolt while
+plugged in.
+
+### Status and actions
+Battery, and the charge of mice, keyboards, headsets and phones UPower
+knows; updates waiting (packages and Flatpaks), opening the COSMIC Store;
+the editor, settings, lock and power off.
+
+### Sound
+Volume and brightness sliders. Behind the volume's arrow: the output and the
+microphone to use, and each playing app's own volume and mute (folded away
+until you open it).
 
 ### Calendar
 - Today's date and your next event at a glance; click to open the month
   (remembered).
 - Days with events are marked with a dot; pick a day to see its events.
+- **Join** buttons for Google Meet, Zoom, Teams, Jitsi, Webex, Whereby and
+  GoTo meetings; the next one also shows in the island from ten minutes
+  before it starts.
 - Events come from the calendars synced to the system — Evolution Data
   Server, filled by GNOME Online Accounts (Google, Microsoft 365, Nextcloud,
   CalDAV…). Repeating events are handled.
+
+### Weather
+Now (temperature, feels like, wind) and five days ahead, from
+[Open-Meteo](https://open-meteo.com) — free, no account. Pick your city in
+the editor (it suggests places as you type), or leave it empty to use your
+time zone's city. Fahrenheit where the region uses it. Can show on the
+panel too.
+
+*Privacy:* the chosen place's coordinates (or the time zone's city name) go
+to Open-Meteo to look up the weather.
+
+### Notifications
+A notification center: notifications as COSMIC shows them, newest first,
+kept after their popups go and across restarts (for a week, readable only by
+you; ones their apps mark transient are never saved). Click one to open it,
+dismiss one or all.
 
 ### Dynamic island
 At the bottom of the popup, what's running that you should know about:
 - the media playing (any MPRIS player: Spotify, browsers, …) with cover art
   and controls,
+- a video meeting about to start, with a Join button,
+- the pomodoro timer while it runs,
 - apps using the **camera** (green) or the **microphone** (orange) — also
   shown as icons on the panel.
 
-### Layouts
-Open Orbit as a **dropdown** under the panel, a **side panel** sliding in from
-the edge, or **fullscreen** with a two-column layout.
+### Pomodoro
+25 minutes of focus, a 5-minute break, 15 minutes after every fourth; each
+phase starts the next with a notification. Start, pause, skip and reset from
+its tile, its page or the island.
 
 ### Localization
 Orbit speaks the 76 languages COSMIC itself is translated into, following
@@ -221,7 +260,26 @@ cargo test
 | `src/calendar.rs` | Evolution Data Server events |
 | `src/config.rs` | saved preferences and COSMIC settings |
 | `src/i18n.rs` | loading translations, date formats |
+| `src/weather.rs` | Open-Meteo weather and place search |
+| `src/notifications.rs` | the notification center's feed and history |
+| `src/pomodoro.rs` | the pomodoro timer |
+| `src/updates.rs` | counting updates |
+| `src/desktop.rs` | accessibility, touchpad, keep awake, tiling settings |
+| `src/workspaces.rs` | the active workspace's tiling |
+| `src/host.rs` | host programs and files, from a Flatpak too |
 | `i18n/<language>/cosmic_orbit.ftl` | the words, one file per language |
+
+### Screenshots
+
+`ORBIT_PREVIEW` starts Orbit with its popup open by itself, set for that run
+only (nothing is saved), framed in magenta to cut it out of a screenshot:
+
+```sh
+ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-orbit
+```
+
+Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
+`weather`.
 
 ### Translations
 

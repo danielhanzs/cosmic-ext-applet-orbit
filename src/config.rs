@@ -166,6 +166,10 @@ impl Prefs {
     }
 
     pub fn save(&self) {
+        // A preview's settings are for that run only.
+        if std::env::var_os("ORBIT_PREVIEW").is_some() {
+            return;
+        }
         let Some(c) = config() else { return };
         if let Err(err) = c.set("prefs", self) {
             tracing::warn!("cannot save settings: {err}");

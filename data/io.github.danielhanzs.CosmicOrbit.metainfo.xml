@@ -22,17 +22,23 @@
       <li>Month calendar with events from GNOME Online Accounts calendars</li>
       <li>Media controls, and which apps use the camera or microphone</li>
       <li>VPN and Wi-Fi passwords from the keyring, or asked in the popup</li>
-      <li>Opens as a dropdown, side panel or fullscreen; one surface or separate islands</li>
+      <li>Weather now and ahead, a notification center, a pomodoro timer, hotspot, updates</li>
+      <li>Opens as a dropdown, side panel or fullscreen; one surface or separate islands, each part shown or hidden and in any order</li>
+      <li>In 76 languages, with dates in the region's format</li>
     </ul>
   </description>
   <screenshots>
     <screenshot type="default">
       <caption>Quick settings, sliders, calendar and media in one popup</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.1.1/data/screenshots/dropdown.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.0/data/screenshots/dropdown.png</image>
     </screenshot>
     <screenshot>
-      <caption>Fullscreen, as separate islands, with the month open</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.1.1/data/screenshots/islands.png</image>
+      <caption>As separate islands: calendar, weather, notifications, media</caption>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.0/data/screenshots/islands.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Fullscreen, in two columns</caption>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-orbit/v0.2.0/data/screenshots/fullscreen.png</image>
     </screenshot>
   </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicOrbit.desktop</launchable>
@@ -54,6 +60,11 @@
   </keywords>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-10-30">
+      <description>
+        <p>Weather, a notification center, per-app volumes, a pomodoro timer, a hotspot tile, updates and peripheral batteries; join video meetings from the calendar; the popup's parts can be hidden and reordered; 76 languages, with dates in the region's format; many fixes.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-29">
       <description>
         <p>Cover art in the media island, calendar days in the text color, screenshots.</p>
