@@ -32,7 +32,13 @@ pub struct Notification {
     /// its id may be another's now.
     #[serde(default)]
     pub restored: bool,
+    /// Asked by its app not to be kept (a transient hint): shown, never saved.
+    #[serde(skip)]
+    pub transient: bool,
 }
+
+/// Notifications older than this are not brought back after a restart.
+const KEEP: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 
 fn history_file() -> Option<std::path::PathBuf> {
     let dir = std::env::var_os("XDG_STATE_HOME")
@@ -52,6 +58,7 @@ pub fn load() -> Vec<Notification> {
         return Vec::new();
     };
     let mut notifications: Vec<Notification> = serde_json::from_slice(&data).unwrap_or_default();
+    notifications.retain(|n| n.time.elapsed().is_ok_and(|age| age < KEEP));
     for notification in &mut notifications {
         notification.restored = true;
         notification.actions.clear();
@@ -66,13 +73,19 @@ pub fn save(notifications: &[Notification]) {
     let Some(file) = history_file() else {
         return;
     };
-    let result = file
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| {
-            let data = serde_json::to_vec(notifications).map_err(std::io::Error::other)?;
-            std::fs::write(&file, data)
-        });
+    // Bodies can hold codes and messages: for this user's eyes only.
+    let result = (|| {
+        use std::{io::Write, os::unix::fs::{DirBuilderExt, OpenOptionsExt}};
+        if let Some(dir) = file.parent() {
+            std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+        }
+        let kept: Vec<&Notification> = notifications.iter().filter(|n| !n.transient).collect();
+        let data = serde_json::to_vec(&kept).map_err(std::io::Error::other)?;
+        let part = file.with_extension("part");
+        let mut out = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&part)?;
+        out.write_all(&data)?;
+        std::fs::rename(&part, &file)
+    })();
     if let Err(err) = result {
         tracing::warn!("cannot keep the notifications: {err}");
     }
@@ -88,8 +101,8 @@ pub enum Event {
     Dismissed(u32),
 }
 
-/// `NotificationClosed`'s reason when the user closed it.
-const DISMISSED_BY_USER: u32 = 2;
+/// `NotificationClosed`'s reason when its app closed it.
+const CLOSED_BY_APP: u32 = 3;
 
 #[zbus::proxy(
     default_service = "com.system76.NotificationsApplet",
@@ -199,6 +212,7 @@ pub fn subscription() -> Subscription<Event> {
                     actions,
                     time: SystemTime::now(),
                     restored: false,
+                    transient: matches!(args.hints.get("transient"), Some(Value::Bool(true))),
                 }))
             });
             let closed = closed.filter_map(|signal| async move {
@@ -233,11 +247,10 @@ fn event(opened: &mut HashSet<u32>, signal: Signal) -> Option<Event> {
             opened.insert(id);
             return None;
         }
-        Signal::Closed(id, DISMISSED_BY_USER) if !opened.contains(&id) => Event::Dismissed(id),
-        Signal::Closed(id, _) => {
-            opened.remove(&id);
-            Event::Closed(id)
-        }
+        // Gone for good when opened, or closed by its app; a popup that
+        // timed out or was swiped away leaves it in the center.
+        Signal::Closed(id, reason) if opened.remove(&id) || reason == CLOSED_BY_APP => Event::Closed(id),
+        Signal::Closed(id, _) => Event::Dismissed(id),
     })
 }
 
@@ -431,6 +444,8 @@ mod tests {
         assert!(matches!(close(Signal::Closed(2, 2)), Some(Event::Dismissed(2))));
         // Closed by its app: gone.
         assert!(matches!(close(Signal::Closed(3, 3)), Some(Event::Closed(3))));
+        // Its popup timed out: kept.
+        assert!(matches!(close(Signal::Closed(4, 1)), Some(Event::Dismissed(4))));
     }
 
     #[test]
