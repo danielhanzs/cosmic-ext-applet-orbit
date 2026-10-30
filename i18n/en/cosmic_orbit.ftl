@@ -57,3 +57,6 @@ large = Large
 icons-none = None
 icons-active = Active
 icons-all = All
+hotspot = Hotspot
+network-name = Network name
+hotspot-hint = Share this computer's connection over Wi-Fi. Turn it on to create the network.

@@ -112,6 +112,9 @@ strings!(
     icons_none,
     icons_active,
     icons_all,
+    hotspot,
+    network_name,
+    hotspot_hint,
 );
 
 pub static T: LazyLock<Strings> = LazyLock::new(|| load(&LOADER));

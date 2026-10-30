@@ -78,6 +78,7 @@ trait NmSettings {
 )]
 trait NmConnection {
     fn get_settings(&self) -> zbus::Result<Settings>;
+    fn get_secrets(&self, setting_name: &str) -> zbus::Result<Settings>;
 }
 
 #[zbus::proxy(
@@ -143,6 +144,16 @@ pub struct Network {
     pub primary: Option<Primary>,
     pub access_points: Vec<AccessPoint>,
     pub vpns: Vec<Vpn>,
+    /// The saved hotspot: a Wi-Fi connection in access point mode.
+    pub hotspot: Option<Hotspot>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Hotspot {
+    pub path: OwnedObjectPath,
+    pub ssid: String,
+    /// The active connection while it's on.
+    pub active: Option<OwnedObjectPath>,
 }
 
 #[derive(Debug, Clone)]
@@ -206,9 +217,13 @@ pub async fn network() -> zbus::Result<Network> {
                 let ssid = settings
                     .get("802-11-wireless")
                     .and_then(|w| w.get("ssid"))
-                    .and_then(|v| Vec::<u8>::try_from(v.try_clone().ok()?).ok());
-                if let Some(ssid) = ssid {
-                    saved_wifi.insert(String::from_utf8_lossy(&ssid).into_owned(), path);
+                    .and_then(|v| Vec::<u8>::try_from(v.try_clone().ok()?).ok())
+                    .map(|ssid| String::from_utf8_lossy(&ssid).into_owned());
+                let Some(ssid) = ssid else { continue };
+                if text(&settings, "802-11-wireless", "mode").as_deref() == Some("ap") {
+                    net.hotspot = Some(Hotspot { path, ssid, active: None });
+                } else {
+                    saved_wifi.insert(ssid, path);
                 }
             }
             _ => {}
@@ -219,11 +234,14 @@ pub async fn network() -> zbus::Result<Network> {
         let Ok(active) = proxy::<NmActiveProxy>(&conn, Some(path.clone())).await else { continue };
         let Ok(kind) = active.kind().await else { continue };
         let up = active.state().await.unwrap_or(0) == 2;
+        let saved = active.connection().await.ok();
+        if let Some(hotspot) = net.hotspot.as_mut().filter(|h| saved.as_ref() == Some(&h.path)) {
+            hotspot.active = Some(path);
+            continue;
+        }
         match kind.as_str() {
             "vpn" | "wireguard" => {
-                if let Ok(saved) = active.connection().await
-                    && let Some(vpn) = vpns.get_mut(&saved)
-                {
+                if let Some(vpn) = saved.as_ref().and_then(|saved| vpns.get_mut(saved)) {
                     vpn.active = Some((path, up));
                 }
             }
@@ -299,6 +317,65 @@ pub async fn join_wifi(device: OwnedObjectPath, ap: AccessPoint) -> zbus::Result
 pub async fn disconnect(active: OwnedObjectPath) -> zbus::Result<()> {
     let conn = crate::bus::system().await?;
     proxy::<NmProxy>(&conn, None).await?.deactivate_connection(&active).await
+}
+
+/// Starts the hotspot: the saved one, or a new one named after the computer
+/// with a random password, which NetworkManager keeps.
+pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPath>) -> zbus::Result<()> {
+    let conn = crate::bus::system().await?;
+    let nm: NmProxy = proxy(&conn, None).await?;
+    if let Some(saved) = saved {
+        return nm.activate_connection(&saved, &device, &root()).await.map(drop);
+    }
+    let mut name = [0u8; 64];
+    // SAFETY: the buffer is as long as said, and gethostname ends it with a zero.
+    let host = if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } == 0 {
+        std::ffi::CStr::from_bytes_until_nul(&name).map(|c| c.to_string_lossy().into_owned()).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let ssid = if host.is_empty() { "Orbit".to_string() } else { host };
+    let settings = HashMap::from([
+        (
+            "connection",
+            HashMap::from([
+                ("id", Value::from("Hotspot")),
+                ("type", Value::from("802-11-wireless")),
+                ("autoconnect", Value::from(false)),
+            ]),
+        ),
+        (
+            "802-11-wireless",
+            HashMap::from([("ssid", Value::from(ssid.into_bytes())), ("mode", Value::from("ap"))]),
+        ),
+        (
+            "802-11-wireless-security",
+            HashMap::from([("key-mgmt", Value::from("wpa-psk")), ("psk", Value::from(password()))]),
+        ),
+        ("ipv4", HashMap::from([("method", Value::from("shared"))])),
+        ("ipv6", HashMap::from([("method", Value::from("ignore"))])),
+    ]);
+    nm.add_and_activate_connection(settings, &device, &root()).await.map(drop)
+}
+
+/// Twelve letters and digits, from the kernel's random source.
+fn password() -> String {
+    const CHARS: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let mut bytes = [0u8; 12];
+    // getrandom fills the buffer, or the fallback below is used.
+    let filled = unsafe { libc::getrandom(bytes.as_mut_ptr().cast(), bytes.len(), 0) } == bytes.len() as isize;
+    if !filled {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        bytes.iter_mut().enumerate().for_each(|(i, b)| *b = (nanos >> (i * 5)) as u8);
+    }
+    bytes.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect()
+}
+
+/// The hotspot's password, to show for joining it.
+pub async fn hotspot_password(saved: OwnedObjectPath) -> Option<String> {
+    let conn = crate::bus::system().await.ok()?;
+    let secrets = proxy::<NmConnectionProxy>(&conn, Some(saved)).await.ok()?.get_secrets("802-11-wireless-security").await.ok()?;
+    text(&secrets, "802-11-wireless-security", "psk")
 }
 
 pub async fn connect(saved: OwnedObjectPath) -> zbus::Result<()> {

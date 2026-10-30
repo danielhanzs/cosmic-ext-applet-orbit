@@ -52,10 +52,11 @@ pub enum Tile {
     Screenshot,
     Workspaces,
     Touchpad,
+    Hotspot,
 }
 
 impl Tile {
-    pub const ALL: [Tile; 17] = [
+    pub const ALL: [Tile; 18] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -73,6 +74,7 @@ impl Tile {
         Tile::Screenshot,
         Tile::Workspaces,
         Tile::Touchpad,
+        Tile::Hotspot,
     ];
 
     /// Shown at first, and after a reset.
@@ -106,6 +108,7 @@ impl Tile {
             Tile::Screenshot => T.screenshot,
             Tile::Workspaces => T.workspaces,
             Tile::Touchpad => T.touchpad,
+            Tile::Hotspot => T.hotspot,
         }
     }
 
@@ -147,6 +150,7 @@ pub enum Page {
     Vpn,
     Power,
     Sound,
+    Hotspot,
     Edit,
     Password,
 }
@@ -209,6 +213,8 @@ pub struct App {
     password: Option<(agent::Request, String)>,
     remember: bool,
     screen: (u32, u32),
+    /// The hotspot's password, read when its page opens.
+    hotspot_password: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +261,8 @@ pub enum Message {
     Disconnect(OwnedObjectPath),
     SetWifi(bool),
     SetBluetooth(bool),
+    SetHotspot(bool),
+    HotspotPassword(Option<String>),
     BtConnect(OwnedObjectPath, bool),
     Profile(String),
     MediaControl(&'static str),
@@ -498,6 +506,15 @@ impl App {
             // Shortcuts: never lit.
             Tile::Screenshot => (named("accessories-screenshot-symbolic"), false, String::new(), None),
             Tile::Workspaces => (named("view-app-grid-symbolic"), false, String::new(), None),
+            Tile::Hotspot => {
+                let hotspot = self.net.hotspot.as_ref();
+                let on = hotspot.is_some_and(|h| h.active.is_some());
+                let subtitle = match hotspot {
+                    Some(h) if on => h.ssid.clone(),
+                    _ => on_off(false),
+                };
+                (named("network-wireless-hotspot-symbolic"), on, subtitle, Some(Page::Hotspot))
+            }
             Tile::Touchpad => {
                 let on = self.touchpad.unwrap_or(false);
                 let icon = if on { "input-touchpad-symbolic" } else { "touchpad-disabled-symbolic" };
@@ -599,6 +616,7 @@ impl App {
             }
             Tile::Screenshot => self.update(Message::Spawn("cosmic-screenshot", &[])),
             Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
+            Tile::Hotspot => self.update(Message::SetHotspot(!self.net.hotspot.as_ref().is_some_and(|h| h.active.is_some()))),
             Tile::Touchpad => {
                 let on = !self.touchpad.unwrap_or(false);
                 desktop::set_touchpad(on);
@@ -1185,6 +1203,27 @@ impl App {
                 }
                 column = column.push(self.more("sound"));
             }
+            Page::Hotspot => {
+                let hotspot = self.net.hotspot.as_ref();
+                let on = hotspot.is_some_and(|h| h.active.is_some());
+                column = column.push(self.page_header(T.hotspot, Some((on, Message::SetHotspot))));
+                if let Some(h) = hotspot {
+                    let line = |label: &'static str, value: String| {
+                        widget::Row::new()
+                            .spacing(12)
+                            .padding([8, 10])
+                            .push(text::body(label).width(Length::Fill))
+                            .push(text::body(value).font(cosmic::font::bold()))
+                    };
+                    column = column.push(line(T.network_name, h.ssid.clone()));
+                    if let Some(password) = &self.hotspot_password {
+                        column = column.push(line(T.password, password.clone()));
+                    }
+                } else {
+                    column = column.push(container(text::caption(T.hotspot_hint)).padding([8, 10]));
+                }
+                column = column.push(self.more("wireless"));
+            }
             Page::Edit => column = column.push(self.edit_page()),
             Page::Password => column = column.push(self.password_page()),
             Page::Main => {}
@@ -1506,6 +1545,7 @@ impl cosmic::Application for App {
             password: None,
             remember: true,
             screen: (1920, 1080),
+            hotspot_password: None,
         };
         let mut tasks: Vec<_> = [
             Source::Network,
@@ -1550,6 +1590,11 @@ impl cosmic::Application for App {
                 self.page = page;
                 self.drag = None;
                 self.drag_over = None;
+                if page == Page::Hotspot {
+                    if let Some(path) = self.net.hotspot.as_ref().map(|h| h.path.clone()) {
+                        return run(async move { Message::HotspotPassword(sys::hotspot_password(path).await) });
+                    }
+                }
                 if page == Page::Wifi {
                     if let Some(device) = self.net.wifi_device.clone() {
                         return fire(async move { _ = sys::scan_wifi(device).await });
@@ -1677,6 +1722,18 @@ impl cosmic::Application for App {
             Message::Connect(path) => return fire(async move { log("connect", sys::connect(path).await) }),
             Message::Disconnect(path) => return fire(async move { log("disconnect", sys::disconnect(path).await) }),
             Message::SetWifi(on) => return fire(async move { log("wifi", sys::set_wifi(on).await) }),
+            Message::SetHotspot(on) => {
+                let hotspot = self.net.hotspot.clone();
+                if !on {
+                    if let Some(active) = hotspot.and_then(|h| h.active) {
+                        return self.update(Message::Disconnect(active));
+                    }
+                } else if let Some(device) = self.net.wifi_device.clone() {
+                    let saved = hotspot.map(|h| h.path);
+                    return fire(async move { log("hotspot", sys::start_hotspot(device, saved).await) });
+                }
+            }
+            Message::HotspotPassword(password) => self.hotspot_password = password,
             Message::SetBluetooth(on) => {
                 if let Some(adapter) = self.bt.adapter.clone() {
                     return fire(async move { log("bluetooth", sys::set_bluetooth(adapter, on).await) });

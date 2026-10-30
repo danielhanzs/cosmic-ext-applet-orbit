@@ -57,3 +57,6 @@ large = Nagy
 icons-none = Nincs
 icons-active = Aktívak
 icons-all = Összes
+hotspot = Hotspot
+network-name = Hálózat neve
+hotspot-hint = A gép kapcsolatának megosztása Wi-Fi-n. Bekapcsolva létrejön a hálózat.
