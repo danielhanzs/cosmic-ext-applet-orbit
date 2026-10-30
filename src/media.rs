@@ -11,6 +11,8 @@ const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 const PATH: &str = "/org/mpris/MediaPlayer2";
 /// Covers kept in the cache; older ones go.
 const CACHED_COVERS: usize = 100;
+/// The largest cover read or downloaded.
+const MAX_COVER: u64 = 5_000_000;
 
 #[derive(Debug, Clone)]
 pub struct Media {
@@ -77,20 +79,40 @@ pub async fn read() -> Option<Media> {
 /// track show the right one.
 async fn art(url: &str) -> Option<image::Handle> {
     let bytes = if let Some(path) = url.strip_prefix("file://") {
-        let path = percent_decoded(path);
-        if crate::host::in_flatpak() {
-            // A sandbox doesn't see the player's files (its /tmp, its home).
-            let out = crate::host::command("cat").arg(&path).output().await.ok()?;
-            out.status.success().then_some(out.stdout)?
-        } else {
-            tokio::fs::read(&path).await.ok()?
-        }
+        let read = read_cover(percent_decoded(path));
+        tokio::time::timeout(std::time::Duration::from_secs(3), read).await.ok()??
     } else if url.starts_with("https://") {
         tokio::fs::read(download(url).await?).await.ok()?
     } else {
         return None;
     };
     Some(image::Handle::from_bytes(bytes))
+}
+
+/// A local cover: a regular file of at most MAX_COVER bytes, not whatever a
+/// player names (a device, a huge file).
+async fn read_cover(path: PathBuf) -> Option<Vec<u8>> {
+    let bytes = if crate::host::in_flatpak() {
+        // A sandbox doesn't see the player's files (its /tmp, its home).
+        let out = crate::host::command("sh")
+            .args(["-c", "test -f \"$1\" && head -c \"$2\" -- \"$1\"", "sh"])
+            .arg(&path)
+            .arg((MAX_COVER + 1).to_string())
+            .output()
+            .await
+            .ok()?;
+        out.status.success().then_some(out.stdout)?
+    } else {
+        use tokio::io::AsyncReadExt;
+        let file = tokio::fs::File::open(&path).await.ok()?;
+        if !file.metadata().await.ok()?.is_file() {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_COVER + 1).read_to_end(&mut bytes).await.ok()?;
+        bytes
+    };
+    (bytes.len() as u64 <= MAX_COVER).then_some(bytes)
 }
 
 /// An HTTPS cover, downloaded once into the cache.
@@ -110,7 +132,7 @@ async fn download(url: &str) -> Option<PathBuf> {
     // as the app, but curl still gets only plain HTTPS, small files.
     let ok = crate::host::command("curl")
         .args(["-sfL", "--globoff", "--proto", "=https", "--proto-redir", "=https"])
-        .args(["--max-time", "5", "--max-filesize", "5000000", "-o"])
+        .args(["--max-time", "5", "--max-filesize", &MAX_COVER.to_string(), "-o"])
         .arg(&part)
         .arg(url)
         .status()
@@ -180,6 +202,20 @@ mod tests {
     fn decodes_paths() {
         assert_eq!(super::percent_decoded("/m/My%20Album/c%C3%B3ver.jpg"), std::path::PathBuf::from("/m/My Album/cóver.jpg"));
         assert_eq!(super::percent_decoded("/a/100%/b%2"), std::path::PathBuf::from("/a/100%/b%2"));
+    }
+
+    #[tokio::test]
+    async fn covers_are_regular_small_files() {
+        assert!(super::read_cover("/dev/zero".into()).await.is_none());
+        let dir = std::env::temp_dir().join(format!("orbit-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let small = dir.join("cover.jpg");
+        std::fs::write(&small, b"jpeg").unwrap();
+        assert_eq!(super::read_cover(small).await.as_deref(), Some(&b"jpeg"[..]));
+        let big = dir.join("big.jpg");
+        std::fs::write(&big, vec![0; super::MAX_COVER as usize + 1]).unwrap();
+        assert!(super::read_cover(big).await.is_none());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
