@@ -440,6 +440,75 @@ pub async fn battery() -> zbus::Result<Option<BatteryState>> {
 }
 
 #[zbus::proxy(
+    interface = "org.freedesktop.UPower",
+    default_service = "org.freedesktop.UPower",
+    default_path = "/org/freedesktop/UPower"
+)]
+trait UPower {
+    fn enumerate_devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
+}
+
+#[zbus::proxy(interface = "org.freedesktop.UPower.Device", default_service = "org.freedesktop.UPower", default_path = "/")]
+trait UPowerDevice {
+    #[zbus(property, name = "Type")]
+    fn kind(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn model(&self) -> zbus::Result<String>;
+    #[zbus(property)]
+    fn percentage(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn power_supply(&self) -> zbus::Result<bool>;
+}
+
+/// A mouse, keyboard, headset, phone… with a battery.
+#[derive(Debug, Clone)]
+pub struct Peripheral {
+    pub name: String,
+    pub icon: &'static str,
+    pub percent: f64,
+}
+
+/// UPower's device types, as icons.
+fn peripheral_icon(kind: u32) -> &'static str {
+    match kind {
+        5 => "input-mouse-symbolic",
+        6 => "input-keyboard-symbolic",
+        8 => "phone-symbolic",
+        12 => "input-gaming-symbolic",
+        13 | 10 => "input-tablet-symbolic",
+        17 => "audio-headset-symbolic",
+        18 => "audio-speakers-symbolic",
+        19 => "audio-headphones-symbolic",
+        _ => "bluetooth-active-symbolic",
+    }
+}
+
+pub async fn peripherals() -> zbus::Result<Vec<Peripheral>> {
+    let conn = crate::bus::system().await?;
+    let mut found = Vec::new();
+    for path in proxy::<UPowerProxy>(&conn, None).await?.enumerate_devices().await? {
+        let Ok(device) = proxy::<UPowerDeviceProxy>(&conn, Some(path)).await else { continue };
+        // The computer's own batteries and power lines supply it; these don't.
+        let (Ok(false), Ok(kind)) = (device.power_supply().await, device.kind().await) else { continue };
+        // 1: line power, 2: battery, 3: UPS, 4: monitor.
+        if kind <= 4 {
+            continue;
+        }
+        let percent = device.percentage().await.unwrap_or(0.0);
+        if percent <= 0.0 {
+            continue;
+        }
+        found.push(Peripheral {
+            name: device.model().await.unwrap_or_default(),
+            icon: peripheral_icon(kind),
+            percent,
+        });
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(found)
+}
+
+#[zbus::proxy(
     interface = "net.hadess.PowerProfiles",
     default_service = "net.hadess.PowerProfiles",
     default_path = "/net/hadess/PowerProfiles"

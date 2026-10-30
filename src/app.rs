@@ -160,6 +160,7 @@ pub struct App {
     net: Network,
     bt: Bluetooth,
     battery: Option<BatteryState>,
+    peripherals: Vec<sys::Peripheral>,
     profiles: Profiles,
     brightness: Option<f32>,
     audio: Audio,
@@ -224,7 +225,7 @@ pub enum Message {
     FlagsChanged,
     Network(Option<Network>),
     Bluetooth(Option<Bluetooth>),
-    Battery(Option<BatteryState>),
+    Battery(Option<BatteryState>, Vec<sys::Peripheral>),
     Profiles(Option<Profiles>),
     Brightness(Option<f32>),
     Audio(Audio),
@@ -339,7 +340,8 @@ impl App {
             }),
             Source::Battery => run(async move {
                 wait().await;
-                Message::Battery(sys::battery().await.ok().flatten())
+                let (battery, peripherals) = tokio::join!(sys::battery(), sys::peripherals());
+                Message::Battery(battery.ok().flatten(), peripherals.unwrap_or_default())
             }),
             Source::Profiles => run(async move {
                 wait().await;
@@ -682,6 +684,15 @@ impl App {
             row = row
                 .push(icon::icon(icons::battery(b.percent, b.charging)).size(16))
                 .push(text::body(format!("{:.0}%", b.percent)));
+        }
+        // Mice, headsets, phones…: their charge, named on hover.
+        for p in self.peripherals.iter().take(3) {
+            let chip = widget::Row::new()
+                .spacing(2)
+                .align_y(Alignment::Center)
+                .push(icon::from_name(p.icon).size(14))
+                .push(text::caption(format!("{:.0}%", p.percent)));
+            row = row.push(widget::tooltip(chip, text::caption(p.name.clone()), widget::tooltip::Position::Bottom));
         }
         let action = |name: &'static str, message: Message| {
             button::icon(icon::from_name(name)).padding(8).on_press(message)
@@ -1458,6 +1469,7 @@ impl cosmic::Application for App {
             net: Network::default(),
             bt: Bluetooth::default(),
             battery: None,
+            peripherals: Vec::new(),
             profiles: Profiles::default(),
             brightness: None,
             audio: Audio::default(),
@@ -1589,8 +1601,9 @@ impl cosmic::Application for App {
                 self.bt = bt.unwrap_or_default();
                 return self.settled(Source::Bluetooth);
             }
-            Message::Battery(battery) => {
+            Message::Battery(battery, peripherals) => {
                 self.battery = battery;
+                self.peripherals = peripherals;
                 return self.settled(Source::Battery);
             }
             Message::Profiles(profiles) => {
