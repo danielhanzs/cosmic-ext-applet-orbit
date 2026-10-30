@@ -83,8 +83,10 @@ pub struct Prefs {
     pub pomodoro_panel: bool,
     /// Shown parts of the popup, in order; the rest are hidden.
     pub sections: Vec<Section>,
-    /// The weather's place; empty: the time zone's city.
-    pub weather_city: String,
+    /// The weather's place; none: the time zone's city.
+    pub weather_place: Option<crate::weather::Place>,
+    /// The weather now on the panel.
+    pub weather_panel: bool,
     /// The forecast open, or only today's line.
     pub weather_open: bool,
     /// The notifications' list open, or only their count.
@@ -105,7 +107,8 @@ impl Default for Prefs {
             mixer_open: false,
             pomodoro_panel: true,
             sections: Section::ALL.to_vec(),
-            weather_city: String::new(),
+            weather_place: None,
+            weather_panel: false,
             weather_open: false,
             notifications_open: true,
         }

@@ -18,6 +18,22 @@ pub struct Weather {
     pub fahrenheit: bool,
 }
 
+/// A place found by name, kept with where it is.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Place {
+    pub name: String,
+    /// Its region and country, to tell same-named places apart.
+    pub region: String,
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl Place {
+    pub fn label(&self) -> String {
+        if self.region.is_empty() { self.name.clone() } else { format!("{}, {}", self.name, self.region) }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Day {
     pub date: civil::Date,
@@ -97,25 +113,61 @@ fn encoded(text: &str) -> String {
         .collect()
 }
 
-/// `city` empty: the time zone's. `language`: for the place's name.
-pub async fn read(city: String, language: String, fahrenheit: bool) -> Option<Weather> {
-    let city = if city.trim().is_empty() { time_zone_city()? } else { city };
-    let found = fetch(&format!(
-        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language={}&format=json",
-        encoded(city.trim()),
+/// Places matching a name, for picking one. `language`: for their names.
+pub async fn search(query: String, language: String) -> Vec<Place> {
+    let Some(found) = fetch(&format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=6&language={}&format=json",
+        encoded(query.trim()),
         encoded(&language),
     ))
-    .await?;
-    let place = &found["results"][0];
-    let (latitude, longitude) = (place["latitude"].as_f64()?, place["longitude"].as_f64()?);
+    .await
+    else {
+        return Vec::new();
+    };
+    found["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    let mut region: Vec<&str> =
+                        ["admin1", "country"].iter().filter_map(|k| r[*k].as_str()).collect();
+                    let name = r["name"].as_str()?;
+                    region.retain(|part| *part != name);
+                    region.dedup();
+                    Some(Place {
+                        name: name.to_string(),
+                        region: region.join(", "),
+                        latitude: r["latitude"].as_f64()?,
+                        longitude: r["longitude"].as_f64()?,
+                    })
+                })
+                .fold(Vec::<Place>::new(), |mut places, place| {
+                    // The same name and region twice (a city and its district) is one choice.
+                    if !places.iter().any(|p| p.label() == place.label()) {
+                        places.push(place);
+                    }
+                    places
+                })
+        })
+        .unwrap_or_default()
+}
+
+/// The weather at `place`, or, without one, at the time zone's city.
+pub async fn read(place: Option<Place>, language: String, fahrenheit: bool) -> Option<Weather> {
+    let place = match place {
+        Some(place) => place,
+        None => search(time_zone_city()?, language).await.into_iter().next()?,
+    };
     let units = if fahrenheit { "&temperature_unit=fahrenheit&wind_speed_unit=mph" } else { "" };
     let data = fetch(&format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}\
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}\
          &current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m\
-         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6{units}"
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6{units}",
+        place.latitude, place.longitude,
     ))
     .await?;
-    parse(&data, place["name"].as_str().unwrap_or(&city), fahrenheit)
+    parse(&data, &place.name, fahrenheit)
 }
 
 fn parse(data: &Value, place: &str, fahrenheit: bool) -> Option<Weather> {

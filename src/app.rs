@@ -231,8 +231,11 @@ pub struct App {
     weather: Option<Weather>,
     /// When the weather was last asked for.
     weather_read: Option<Instant>,
-    /// The city being typed in the editor.
+    /// The city being typed in the editor, the places matching it, and
+    /// which search is the latest.
     city_input: String,
+    places: Vec<weather::Place>,
+    city_search: u64,
     /// Newest first.
     notifications: Vec<Notification>,
 }
@@ -314,6 +317,10 @@ pub enum Message {
     CheckWeather,
     Weather(Option<Weather>),
     City(String),
+    SearchCity(u64),
+    Places(u64, Vec<weather::Place>),
+    PickPlace(weather::Place),
+    WeatherPanel(bool),
     CitySubmit,
     ToggleWeather,
     Notification(notifications::Event),
@@ -1769,6 +1776,21 @@ impl App {
             .push(text::heading(T.sections))
             .push(sections)
             .push(widget::Row::new().spacing(8).align_y(Alignment::Center).push(text::body(T.city)).push(city))
+            .push(self.places.iter().fold(widget::Column::new(), |column, place| {
+                column.push(
+                    button::custom(text::body(place.label()))
+                        .class(style::flat())
+                        .padding([6, 10])
+                        .width(Length::Fill)
+                        .on_press(Message::PickPlace(place.clone())),
+                )
+            }))
+            .push(
+                widget::Row::new()
+                    .align_y(Alignment::Center)
+                    .push(text::body(format!("{} · {}", T.weather, T.show_on_panel)).width(Length::Fill))
+                    .push(widget::toggler(self.prefs.weather_panel).on_toggle(Message::WeatherPanel)),
+            )
             .push(widget::divider::horizontal::default())
             .push(text::heading(T.layout))
             .push(layouts)
@@ -1974,6 +1996,8 @@ impl cosmic::Application for App {
             weather: None,
             weather_read: None,
             city_input: String::new(),
+            places: Vec::new(),
+            city_search: 0,
             notifications: notifications::load(),
         };
         let mut tasks: Vec<_> = [
@@ -1988,7 +2012,7 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
-        app.city_input = app.prefs.weather_city.clone();
+        app.city_input = app.prefs.weather_place.as_ref().map(|p| p.name.clone()).unwrap_or_default();
         tasks.push(run(async {
             tokio::time::sleep(Duration::from_secs(3)).await;
             Message::CheckWeather
@@ -2183,8 +2207,8 @@ impl cosmic::Application for App {
             Message::Input(name) => return fire(audio::set_input(name)),
             Message::CheckWeather => {
                 self.weather_read = Some(Instant::now());
-                let (city, language, fahrenheit) = (self.prefs.weather_city.clone(), i18n::language(), i18n::fahrenheit());
-                return run(async move { Message::Weather(weather::read(city, language, fahrenheit).await) });
+                let (place, language, fahrenheit) = (self.prefs.weather_place.clone(), i18n::language(), i18n::fahrenheit());
+                return run(async move { Message::Weather(weather::read(place, language, fahrenheit).await) });
             }
             Message::Weather(weather) => {
                 // A failed read keeps what was shown.
@@ -2192,12 +2216,56 @@ impl cosmic::Application for App {
                     self.weather = weather;
                 }
             }
-            Message::City(city) => self.city_input = city,
-            Message::CitySubmit => {
-                self.prefs.weather_city = self.city_input.trim().to_string();
+            Message::City(city) => {
+                self.city_input = city;
+                // Searched once typing pauses.
+                self.city_search += 1;
+                let search = self.city_search;
+                return run(async move {
+                    tokio::time::sleep(Duration::from_millis(350)).await;
+                    Message::SearchCity(search)
+                });
+            }
+            Message::SearchCity(search) => {
+                let query = self.city_input.trim().to_string();
+                if search != self.city_search || query.chars().count() < 2 {
+                    if query.is_empty() {
+                        self.places.clear();
+                    }
+                    return Task::none();
+                }
+                let language = i18n::language();
+                return run(async move { Message::Places(search, weather::search(query, language).await) });
+            }
+            Message::Places(search, places) => {
+                if search == self.city_search {
+                    self.places = places;
+                }
+            }
+            Message::PickPlace(place) => {
+                self.city_input = place.name.clone();
+                self.places.clear();
+                self.prefs.weather_place = Some(place);
                 self.prefs.save();
                 self.weather = None;
                 return self.update(Message::CheckWeather);
+            }
+            Message::CitySubmit => {
+                // Enter takes the first match; an empty field, the time zone's city.
+                if self.city_input.trim().is_empty() {
+                    self.places.clear();
+                    self.prefs.weather_place = None;
+                    self.prefs.save();
+                    self.weather = None;
+                    return self.update(Message::CheckWeather);
+                }
+                if let Some(place) = self.places.first().cloned() {
+                    return self.update(Message::PickPlace(place));
+                }
+            }
+            Message::WeatherPanel(on) => {
+                self.prefs.weather_panel = on;
+                self.prefs.save();
             }
             Message::ToggleWeather => {
                 self.prefs.weather_open = !self.prefs.weather_open;
@@ -2540,6 +2608,16 @@ impl cosmic::Application for App {
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
         let gap = self.prefs.spacing.gap();
+        if let Some(w) = self.weather.as_ref().filter(|_| self.prefs.weather_panel) {
+            icons.push(
+                widget::Row::new()
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .push(status_icon(named(w.condition.icon(w.day)), size, false))
+                    .push(applet.text(format!("{:.0}°", w.temperature)))
+                    .into(),
+            );
+        }
         if self.prefs.pomodoro_panel && self.pomodoro.started() {
             icons.push(applet.text(pomodoro::clock(self.pomodoro.remaining(Instant::now()))).into());
         }
