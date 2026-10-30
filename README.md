@@ -203,6 +203,19 @@ the COSMIC Flatpak repository: it builds the `v0.1.1` tag offline, from
 In the sandbox Orbit runs `wpctl`, `pactl`, `curl`, `cosmic-settings`… on
 the host through `flatpak-spawn --host`, as COSMIC applets in Flatpak do.
 
+## Releasing
+
+```sh
+./release.sh 0.2.1 "What changed, in a sentence or two."
+./release.sh --dry-run 0.2.1 "..."   # shows what it would do, changes nothing
+```
+
+Bumps the version (Cargo, AppStream metainfo with the notes, the Flatpak
+manifest), regenerates `flatpak/cargo-sources.json`, runs the tests, commits,
+tags and pushes, then updates the cosmic-flatpak fork in `../cosmic-flatpak`
+(the open submission's branch, or a new update branch) and prints the links
+for the GitHub release and the pull request.
+
 ## Updating
 
 ```sh

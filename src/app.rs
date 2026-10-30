@@ -2651,7 +2651,8 @@ impl cosmic::Application for App {
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
         let mut push = |name: &str| icons.push(status_icon(named(name), size, false));
-        if !self.notifications.is_empty() {
+        // Do not disturb: no bell either; they still wait in the center.
+        if !self.notifications.is_empty() && !self.dnd {
             push("notification-new-symbolic");
         }
         if !self.camera.is_empty() {
