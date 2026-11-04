@@ -47,9 +47,12 @@
   <url type="vcs-browser">https://github.com/danielhanzs/cosmic-ext-applet-orbit</url>
   <provides>
     <id>io.github.danielhanzs.CosmicExtAppletOrbit.desktop</id>
+    <!-- What the COSMIC Store lists under Applets. -->
+    <id>com.system76.CosmicApplet</id>
   </provides>
   <categories>
     <category>COSMIC</category>
+    <category>Settings</category>
   </categories>
   <keywords>
     <keyword>COSMIC</keyword>
