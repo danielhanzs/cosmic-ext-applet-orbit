@@ -834,9 +834,11 @@ impl App {
             .step(0.01_f32)
             .on_release(Message::Released)
             .into();
-        let mut column = widget::Column::new()
-            .spacing(4)
-            .push(line(volume_icon, Some(Message::Mute), volume, Some(Page::Sound)));
+        let mut column = widget::Column::new().spacing(4);
+        // The sound card has its own.
+        if !self.prefs.sections.contains(&Section::Audio) {
+            column = column.push(line(volume_icon, Some(Message::Mute), volume, Some(Page::Sound)));
+        }
         if let Some(level) = self.brightness {
             let slider = widget::slider(0.05..=1.0, level, Message::SetBrightness)
                 .step(0.01_f32)
@@ -1577,7 +1579,7 @@ impl App {
     }
 
     /// Sound on a card: output and microphone levels, each with its device
-    /// (a click lists the others), and the apps playing.
+    /// (a click lists the others), and the apps playing, folded away.
     fn sound_card(&self) -> Element<'_, Message> {
         let device = |list: &[audio::Output], inputs: bool| {
             let current = list.iter().find(|d| d.default).map_or("", |d| d.description.as_str());
@@ -1622,10 +1624,7 @@ impl App {
                 .push(level(mic, Message::TileClick(Tile::Mic), self.audio.mic_volume, Message::MicVolume))
                 .push(device(&self.audio.inputs, true));
         }
-        column
-            .push(container(text::heading(T.applications)).padding([8, 10, 0, 10]))
-            .push(self.streams())
-            .into()
+        column.push(self.mixer()).into()
     }
 
     /// Each app's volume, folded away unless opened (remembered).
