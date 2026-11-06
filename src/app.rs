@@ -1168,10 +1168,12 @@ impl App {
     /// or each an island of its own.
     fn main_page(&self) -> Element<'_, Message> {
         let islands = self.prefs.islands;
-        let mut columns: Vec<Vec<Element<'_, Message>>> = (0..self.prefs.columns()).map(|_| Vec::new()).collect();
+        let fit = self.columns();
+        let mut columns: Vec<Vec<Element<'_, Message>>> = (0..fit).map(|_| Vec::new()).collect();
         for &s in &self.prefs.sections {
             if let Some(part) = self.section(s) {
-                columns[self.prefs.column(s)].push(shape(part, islands));
+                // A column past the screen's edge: into the last that fits.
+                columns[self.prefs.column(s).min(fit - 1)].push(shape(part, islands));
             }
         }
         columns
@@ -1190,9 +1192,16 @@ impl App {
         if up { (0..i).rev().find(same) } else { (i + 1..sections.len()).find(same) }
     }
 
+    /// The columns set, as many as the screen has room for (and a side
+    /// panel's margin).
+    fn columns(&self) -> usize {
+        let room = ((self.screen.0 as f32 - 40.0 + GAP) / (WIDTH + GAP)) as usize;
+        self.prefs.columns().min(room.max(1))
+    }
+
     /// The main page's width: its columns side by side.
     fn main_width(&self) -> f32 {
-        let n = self.prefs.columns() as f32;
+        let n = self.columns() as f32;
         WIDTH * n + GAP * (n - 1.0)
     }
 
