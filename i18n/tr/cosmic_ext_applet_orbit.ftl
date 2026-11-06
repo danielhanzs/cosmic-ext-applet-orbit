@@ -93,3 +93,5 @@ section-controls = Kutucuklar ve kaydırıcılar
 calendar = Takvim
 section-island = Dinamik ada
 no-more-events = Bugün başka etkinlik yok
+columns = Sütunlar
+section-audio = Ses

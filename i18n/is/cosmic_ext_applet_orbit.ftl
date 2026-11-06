@@ -93,3 +93,5 @@ section-controls = Reitir og sleðar
 calendar = Dagatal
 section-island = Kvik eyja
 no-more-events = Engir fleiri viðburðir í dag
+columns = Dálkar
+section-audio = Hljóð

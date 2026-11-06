@@ -93,3 +93,5 @@ section-controls = Плочки и плъзгачи
 calendar = Календар
 section-island = Динамичен остров
 no-more-events = Няма повече събития днес
+columns = Колони
+section-audio = Звук

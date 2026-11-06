@@ -93,3 +93,5 @@ section-controls = タイルとスライダー
 calendar = カレンダー
 section-island = ダイナミックアイランド
 no-more-events = 今日の予定はもうありません
+columns = 列
+section-audio = サウンド

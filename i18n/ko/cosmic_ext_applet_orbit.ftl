@@ -93,3 +93,5 @@ section-controls = 타일 및 슬라이더
 calendar = 캘린더
 section-island = 다이내믹 아일랜드
 no-more-events = 오늘 남은 일정 없음
+columns = 열
+section-audio = 소리

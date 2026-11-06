@@ -93,3 +93,5 @@ section-controls = אריחים ומחוונים
 calendar = לוח שנה
 section-island = אי דינמי
 no-more-events = אין עוד אירועים היום
+columns = עמודות
+section-audio = צליל

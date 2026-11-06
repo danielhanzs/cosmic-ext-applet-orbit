@@ -93,3 +93,5 @@ section-controls = টাইল ও স্লাইডার
 calendar = ক্যালেন্ডার
 section-island = ডায়নামিক আইল্যান্ড
 no-more-events = আজ আর কোনো ইভেন্ট নেই
+columns = কলাম
+section-audio = শব্দ

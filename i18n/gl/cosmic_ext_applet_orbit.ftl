@@ -93,3 +93,5 @@ section-controls = Mosaicos e controis desprazables
 calendar = Calendario
 section-island = Illa dinámica
 no-more-events = Non hai máis eventos hoxe
+columns = Columnas
+section-audio = Son

@@ -143,10 +143,12 @@ strings!(
     clear_all,
     no_notifications,
     sections,
+    columns,
     section_status,
     section_controls,
     calendar,
     section_island,
+    section_audio,
     no_more_events,
 );
 

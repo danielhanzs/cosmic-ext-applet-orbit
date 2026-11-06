@@ -93,3 +93,5 @@ section-controls = Pločice i klizači
 calendar = Kalendar
 section-island = Dinamički otok
 no-more-events = Danas nema više događaja
+columns = Stupci
+section-audio = Zvuk

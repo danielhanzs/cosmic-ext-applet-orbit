@@ -93,3 +93,5 @@ section-controls = ფილები და სლაიდერები
 calendar = კალენდარი
 section-island = დინამიკური კუნძული
 no-more-events = დღეს მეტი მოვლენა აღარ არის
+columns = სვეტები
+section-audio = ხმა

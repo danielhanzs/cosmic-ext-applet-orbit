@@ -93,3 +93,5 @@ section-controls = ஓடுகள் மற்றும் ஸ்லைடர�
 calendar = நாட்காட்டி
 section-island = டைனமிக் ஐலண்ட்
 no-more-events = இன்று மேலும் நிகழ்வுகள் இல்லை
+columns = நெடுவரிசைகள்
+section-audio = ஒலி

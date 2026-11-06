@@ -35,6 +35,8 @@ use crate::{
 };
 
 const WIDTH: f32 = 380.0;
+/// Between the popup's columns.
+const GAP: f32 = 24.0;
 const SLIDE: Duration = Duration::from_millis(220);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -147,6 +149,7 @@ fn rows(tiles: &[Tile], small: &[Tile]) -> Vec<Vec<(usize, Tile)>> {
 pub enum Slider {
     Volume,
     Brightness,
+    Mic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,8 +213,8 @@ pub struct App {
     pending: HashSet<Source>,
     dirty: HashSet<Source>,
     /// Per slider: the value waiting to be set, and whether a set runs.
-    waiting: [Option<f32>; 2],
-    writing: [bool; 2],
+    waiting: [Option<f32>; 3],
+    writing: [bool; 3],
     audio_pending: bool,
     audio_dirty: bool,
     /// The month the events were read for, and when.
@@ -227,6 +230,8 @@ pub struct App {
     updates: usize,
     /// An app's volume slider being dragged: its index and level.
     stream_drag: Option<(u32, f32)>,
+    /// The sound card's device list open: inputs (true) or outputs.
+    picking: Option<bool>,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
     /// When the weather was last asked for, and which ask is the latest.
@@ -277,6 +282,9 @@ pub enum Message {
     Camera(Vec<String>),
     TileClick(Tile),
     Volume(f32),
+    MicVolume(f32),
+    /// The sound card's outputs (false) or inputs list, opened or closed.
+    Picking(bool),
     SetBrightness(f32),
     Written(Slider),
     Released,
@@ -334,6 +342,9 @@ pub enum Message {
     ToggleNotifications,
     MoveSection(usize, bool),
     ShowSection(Section, bool),
+    SetColumns(u8),
+    /// To the next column, or (false) the one before.
+    SectionColumn(Section, bool),
     ShowClock(bool),
     Spawn(&'static str, &'static [&'static str]),
     None,
@@ -438,6 +449,7 @@ impl App {
             match slider {
                 Slider::Volume => audio::set_volume(level).await,
                 Slider::Brightness => log("brightness", sys::set_brightness(level).await),
+                Slider::Mic => audio::set_mic_volume(level).await,
             }
             Message::Written(slider)
         })
@@ -722,15 +734,17 @@ impl App {
                 // What the panel takes, and a little air.
                 let panel = applet.suggested_size(true).1 as u32 + 2 * applet.suggested_padding(true).0 as u32 + 16;
                 let p = &mut settings.positioner;
+                let width = app.main_width();
                 match app.prefs.layout {
                     Layout::Dropdown => {
                         p.size_limits = Limits::NONE
-                            .width(WIDTH)
+                            .min_width(WIDTH)
+                            .max_width(width)
                             .min_height(1.0)
                             .max_height(h.saturating_sub(panel) as f32);
                     }
                     Layout::Side => {
-                        let size = (WIDTH as u32 + 40, h.saturating_sub(panel));
+                        let size = (width as u32 + 40, h.saturating_sub(panel));
                         // Far to the right: the compositor slides it back to the edge.
                         p.offset.0 = w as i32;
                         p.size = Some(size);
@@ -815,12 +829,7 @@ impl App {
             }
             row
         };
-        let volume_icon = match (self.audio.muted, self.audio.volume) {
-            (true, _) => "audio-volume-muted-symbolic",
-            (_, v) if v < 0.34 => "audio-volume-low-symbolic",
-            (_, v) if v < 0.67 => "audio-volume-medium-symbolic",
-            _ => "audio-volume-high-symbolic",
-        };
+        let volume_icon = volume_icon(self.audio.muted, self.audio.volume);
         let volume = widget::slider(0.0..=1.0, self.audio.volume, Message::Volume)
             .step(0.01_f32)
             .on_release(Message::Released)
@@ -1149,27 +1158,40 @@ impl App {
             Section::Weather => (self.weather_view(), Look::Flush),
             Section::Notifications => (self.notifications_view(), Look::Flush),
             Section::Island => (self.island()?, Look::Own),
+            Section::Audio => (self.sound_card(), Look::Padded),
         })
     }
 
-    /// The popup's parts, in the user's order: on one surface, or each an
-    /// island of its own. Fullscreen puts status and tiles on the left.
-    fn main_page(&self, wide: bool) -> Element<'_, Message> {
+    /// The popup's parts, in the user's order and columns: on one surface,
+    /// or each an island of its own.
+    fn main_page(&self) -> Element<'_, Message> {
         let islands = self.prefs.islands;
-        let shape = |part| shape(part, islands);
-        let stack = |parts| stack(parts, islands);
-        let shown = self.prefs.sections.iter().filter_map(|s| Some((*s, self.section(*s)?)));
-        if wide {
-            let (left, right): (Vec<_>, Vec<_>) =
-                shown.partition(|(s, _)| matches!(s, Section::Status | Section::Controls));
-            let side = |parts: Vec<(Section, _)>| stack(parts.into_iter().map(|(_, p)| shape(p)).collect());
-            return widget::Row::new()
-                .spacing(24)
-                .push(container(side(left)).width(Length::Fixed(WIDTH)))
-                .push(container(side(right)).width(Length::Fixed(WIDTH)))
-                .into();
+        let mut columns: Vec<Vec<Element<'_, Message>>> = (0..self.prefs.columns()).map(|_| Vec::new()).collect();
+        for &s in &self.prefs.sections {
+            if let Some(part) = self.section(s) {
+                columns[self.prefs.column(s)].push(shape(part, islands));
+            }
         }
-        stack(shown.map(|(_, p)| shape(p)).collect())
+        columns
+            .into_iter()
+            .fold(widget::Row::new().spacing(GAP), |row, parts| {
+                row.push(container(stack(parts, islands)).width(Length::Fixed(WIDTH)))
+            })
+            .into()
+    }
+
+    /// The shown part above (or below) the `i`th in its column.
+    fn neighbor(&self, i: usize, up: bool) -> Option<usize> {
+        let sections = &self.prefs.sections;
+        let column = self.prefs.column(*sections.get(i)?);
+        let same = |&j: &usize| self.prefs.column(sections[j]) == column;
+        if up { (0..i).rev().find(same) } else { (i + 1..sections.len()).find(same) }
+    }
+
+    /// The main page's width: its columns side by side.
+    fn main_width(&self) -> f32 {
+        let n = self.prefs.columns() as f32;
+        WIDTH * n + GAP * (n - 1.0)
     }
 
     fn weather_view(&self) -> Element<'_, Message> {
@@ -1554,6 +1576,58 @@ impl App {
             .into()
     }
 
+    /// Sound on a card: output and microphone levels, each with its device
+    /// (a click lists the others), and the apps playing.
+    fn sound_card(&self) -> Element<'_, Message> {
+        let device = |list: &[audio::Output], inputs: bool| {
+            let current = list.iter().find(|d| d.default).map_or("", |d| d.description.as_str());
+            let open = self.picking == Some(inputs);
+            let chevron = if open { "go-up-symbolic" } else { "go-down-symbolic" };
+            let mut column = widget::Column::new().push(
+                button::custom(
+                    widget::Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .push(text::caption(current.to_string()).width(Length::Fill).wrapping(iced::widget::text::Wrapping::None))
+                        .push(icon::from_name(chevron).size(16)),
+                )
+                .class(style::flat())
+                .padding([4, 10])
+                .width(Length::Fill)
+                .on_press(Message::Picking(inputs)),
+            );
+            if open {
+                let icon = if inputs { "audio-input-microphone-symbolic" } else { "audio-speakers-symbolic" };
+                for d in list {
+                    let pick = if inputs { Message::Input(d.name.clone()) } else { Message::Output(d.name.clone()) };
+                    column = column.push(self.item(named(icon), d.description.clone(), None, d.default, Some(pick)));
+                }
+            }
+            column
+        };
+        let level = |icon: &'static str, mute: Message, value: f32, set: fn(f32) -> Message| {
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(button::icon(icon::from_name(icon)).padding(6).on_press(mute))
+                .push(widget::slider(0.0..=1.0, value, set).step(0.01_f32).on_release(Message::Released))
+        };
+        let mut column = widget::Column::new()
+            .spacing(4)
+            .push(level(volume_icon(self.audio.muted, self.audio.volume), Message::Mute, self.audio.volume, Message::Volume))
+            .push(device(&self.audio.outputs, false));
+        if !self.audio.inputs.is_empty() {
+            let mic = if self.audio.mic_muted { "microphone-disabled-symbolic" } else { "audio-input-microphone-symbolic" };
+            column = column
+                .push(level(mic, Message::TileClick(Tile::Mic), self.audio.mic_volume, Message::MicVolume))
+                .push(device(&self.audio.inputs, true));
+        }
+        column
+            .push(container(text::heading(T.applications)).padding([8, 10, 0, 10]))
+            .push(self.streams())
+            .into()
+    }
+
     /// Each app's volume, folded away unless opened (remembered).
     fn mixer(&self) -> Element<'_, Message> {
         let chevron = if self.prefs.mixer_open { "go-up-symbolic" } else { "go-down-symbolic" };
@@ -1567,10 +1641,16 @@ impl App {
         .padding([10, 10])
         .width(Length::Fill)
         .on_press(Message::ToggleMixer);
-        let mut column = widget::Column::new().spacing(6).push(head);
+        let column = widget::Column::new().spacing(6).push(head);
         if !self.prefs.mixer_open {
             return column.into();
         }
+        column.push(self.streams()).into()
+    }
+
+    /// Each playing app with its volume.
+    fn streams(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(6);
         if self.audio.streams.is_empty() {
             column = column.push(container(text::caption(T.no_apps_playing)).padding([0, 10]));
         }
@@ -1749,16 +1829,26 @@ impl App {
         }
         // The popup's parts: shown or not, moved up and down.
         let mut sections = widget::Column::new().spacing(2);
-        let count = self.prefs.sections.len();
-        for (i, section) in self.prefs.sections.iter().enumerate() {
+        let columns = self.prefs.columns();
+        let mut order: Vec<usize> = (0..self.prefs.sections.len()).collect();
+        order.sort_by_key(|&i| self.prefs.column(self.prefs.sections[i]));
+        for i in order {
+            let section = self.prefs.sections[i];
+            let column = self.prefs.column(section);
+            let mut row = widget::Row::new()
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .push(text::body(section_name(section)).width(Length::Fill));
+            if columns > 1 {
+                row = row
+                    .push(button::icon(icon::from_name("go-previous-symbolic")).on_press_maybe((column > 0).then_some(Message::SectionColumn(section, false))))
+                    .push(text::caption((column + 1).to_string()))
+                    .push(button::icon(icon::from_name("go-next-symbolic")).on_press_maybe((column + 1 < columns).then_some(Message::SectionColumn(section, true))));
+            }
             sections = sections.push(
-                widget::Row::new()
-                    .spacing(4)
-                    .align_y(Alignment::Center)
-                    .push(text::body(section_name(*section)).width(Length::Fill))
-                    .push(button::icon(icon::from_name("go-up-symbolic")).on_press_maybe((i > 0).then_some(Message::MoveSection(i, true))))
-                    .push(button::icon(icon::from_name("go-down-symbolic")).on_press_maybe((i + 1 < count).then_some(Message::MoveSection(i, false))))
-                    .push(widget::toggler(true).on_toggle_maybe((*section != Section::Status).then_some(move |on| Message::ShowSection(*section, on)))),
+                row.push(button::icon(icon::from_name("go-up-symbolic")).on_press_maybe(self.neighbor(i, true).map(|_| Message::MoveSection(i, true))))
+                    .push(button::icon(icon::from_name("go-down-symbolic")).on_press_maybe(self.neighbor(i, false).map(|_| Message::MoveSection(i, false))))
+                    .push(widget::toggler(true).on_toggle_maybe((section != Section::Status).then_some(move |on| Message::ShowSection(section, on)))),
             );
         }
         for section in Section::ALL.iter().filter(|s| !self.prefs.sections.contains(s)) {
@@ -1772,6 +1862,10 @@ impl App {
         let city = widget::text_input(T.city_auto, self.city_input.as_str())
             .on_input(Message::City)
             .on_submit(|_| Message::CitySubmit);
+        let mut column_count = widget::Row::new().spacing(4);
+        for n in 1..=3u8 {
+            column_count = column_count.push(choice(["1", "2", "3"][n as usize - 1], n as usize == columns, Message::SetColumns(n)));
+        }
         let mut spacing = widget::Row::new().spacing(4);
         for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
             spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
@@ -1805,6 +1899,8 @@ impl App {
             .push(widget::divider::horizontal::default())
             .push(text::heading(T.layout))
             .push(layouts)
+            .push(text::body(T.columns))
+            .push(column_count)
             .push(widget::divider::horizontal::default())
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
             .push(text::body(T.panel_icons))
@@ -1920,6 +2016,15 @@ fn stack<'a>(parts: Vec<Element<'a, Message>>, islands: bool) -> Element<'a, Mes
     if islands { column.into() } else { container(column).padding(14).into() }
 }
 
+fn volume_icon(muted: bool, level: f32) -> &'static str {
+    match (muted, level) {
+        (true, _) => "audio-volume-muted-symbolic",
+        (_, v) if v < 0.34 => "audio-volume-low-symbolic",
+        (_, v) if v < 0.67 => "audio-volume-medium-symbolic",
+        _ => "audio-volume-high-symbolic",
+    }
+}
+
 /// How a section sits in the popup.
 #[derive(Clone, Copy)]
 enum Look {
@@ -1936,6 +2041,7 @@ fn section_name(section: Section) -> &'static str {
         Section::Weather => T.weather,
         Section::Notifications => T.notifications,
         Section::Island => T.section_island,
+        Section::Audio => T.section_audio,
     }
 }
 
@@ -2013,8 +2119,8 @@ impl cosmic::Application for App {
             pending: HashSet::new(),
             dirty: HashSet::new(),
             adjusting: None,
-            waiting: [None; 2],
-            writing: [false; 2],
+            waiting: [None; 3],
+            writing: [false; 3],
             audio_pending: false,
             audio_dirty: false,
             events_read: None,
@@ -2024,6 +2130,7 @@ impl cosmic::Application for App {
             hotspot_password: None,
             updates: 0,
             stream_drag: None,
+            picking: None,
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
@@ -2061,6 +2168,8 @@ impl cosmic::Application for App {
                     "fullscreen" => app.prefs.layout = Layout::Fullscreen,
                     "islands" => app.prefs.islands = true,
                     "single" => app.prefs.islands = false,
+                    "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
+                    "audio" if !app.prefs.sections.contains(&Section::Audio) => app.prefs.sections.push(Section::Audio),
                     "calendar" => app.prefs.calendar_open = true,
                     "weather" => app.prefs.weather_open = true,
                     _ => {}
@@ -2200,10 +2309,10 @@ impl cosmic::Application for App {
             }
             Message::Audio(audio) => {
                 self.audio_pending = false;
-                let volume = self.audio.volume;
+                let (volume, mic_volume) = (self.audio.volume, self.audio.mic_volume);
                 self.audio = audio;
                 if self.adjusting() {
-                    self.audio.volume = volume;
+                    (self.audio.volume, self.audio.mic_volume) = (volume, mic_volume);
                 }
                 if std::mem::take(&mut self.audio_dirty) {
                     return self.update(Message::AudioChanged);
@@ -2241,6 +2350,14 @@ impl cosmic::Application for App {
                 self.audio.volume = level;
                 self.adjusting = Some(Instant::now());
                 return self.write(Slider::Volume, Some(level));
+            }
+            Message::MicVolume(level) => {
+                self.audio.mic_volume = level;
+                self.adjusting = Some(Instant::now());
+                return self.write(Slider::Mic, Some(level));
+            }
+            Message::Picking(inputs) => {
+                self.picking = if self.picking == Some(inputs) { None } else { Some(inputs) };
             }
             Message::SetBrightness(level) => {
                 self.brightness = Some(level);
@@ -2397,9 +2514,21 @@ impl cosmic::Application for App {
                 self.prefs.save();
             }
             Message::MoveSection(i, up) => {
-                let j = if up { i.wrapping_sub(1) } else { i + 1 };
-                if j < self.prefs.sections.len() {
+                if let Some(j) = self.neighbor(i, up) {
                     self.prefs.sections.swap(i, j);
+                    self.prefs.save();
+                }
+            }
+            Message::SetColumns(n) => {
+                self.prefs.columns = Some(n);
+                self.prefs.save();
+            }
+            Message::SectionColumn(section, next) => {
+                let column = self.prefs.column(section);
+                let to = if next { column + 1 } else { column.wrapping_sub(1) };
+                if to < self.prefs.columns() {
+                    self.prefs.placement.retain(|(s, _)| *s != section);
+                    self.prefs.placement.push((section, to as u8));
                     self.prefs.save();
                 }
             }
@@ -2737,9 +2866,10 @@ impl cosmic::Application for App {
             return text::body("").into();
         }
         let layout = self.prefs.layout;
-        let wide = layout == Layout::Fullscreen && self.page == Page::Main;
-        let content = if self.page == Page::Main {
-            self.main_page(wide)
+        let main = self.page == Page::Main;
+        let width = if main { self.main_width() } else { WIDTH };
+        let content = if main {
+            self.main_page()
         } else {
             container(self.sub_page()).padding(14).into()
         };
@@ -2748,21 +2878,22 @@ impl cosmic::Application for App {
         } else {
             // One surface, outside the scrolling, so a side panel runs the
             // screen's full height.
-            let surface = panel(widget::scrollable(content).into(), if wide { WIDTH * 2.0 + 60.0 } else { WIDTH });
+            let surface = panel(widget::scrollable(content).into(), width);
             if layout == Layout::Side { surface.height(Length::Fill).into() } else { surface.into() }
         };
         let body: Element<'_, Message> = if preview().is_some() { preview_frame(body) } else { body };
         match layout {
             Layout::Dropdown => cosmic::widget::autosize::autosize(
-                container(body).width(Length::Fixed(WIDTH)),
+                container(body).width(Length::Fixed(width)),
                 widget::Id::new("orbit-autosize"),
             )
-            .limits(Limits::NONE.width(WIDTH).min_height(1.0).max_height(self.screen.1 as f32))
+            .limits(Limits::NONE.width(width).min_height(1.0).max_height(self.screen.1 as f32))
             .into(),
             Layout::Side => {
                 let t = (self.opened.elapsed().as_secs_f32() / SLIDE.as_secs_f32()).min(1.0);
-                let shift = (1.0 - t).powi(3) * (WIDTH + 40.0);
+                let shift = (1.0 - t).powi(3) * (width + 40.0);
                 container(body)
+                    .align_right(Length::Fill)
                     .padding(iced::Padding { left: 20.0 + shift, right: 20.0 - shift.min(20.0), top: 0.0, bottom: 0.0 })
                     .width(Length::Fill)
                     .height(Length::Fill)

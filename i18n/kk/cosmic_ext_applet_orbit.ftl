@@ -93,3 +93,5 @@ section-controls = Плиткалар мен жүгірткілер
 calendar = Күнтізбе
 section-island = Динамикалық арал
 no-more-events = Бүгін басқа оқиғалар жоқ
+columns = Бағандар
+section-audio = Дыбыс

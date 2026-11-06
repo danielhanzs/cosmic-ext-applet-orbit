@@ -93,3 +93,5 @@ section-controls = Fliser og skydere
 calendar = Kalender
 section-island = Dynamisk ø
 no-more-events = Ikke flere begivenheder i dag
+columns = Kolonner
+section-audio = Lyd

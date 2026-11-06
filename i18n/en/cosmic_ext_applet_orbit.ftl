@@ -93,3 +93,5 @@ section-controls = Tiles and sliders
 calendar = Calendar
 section-island = Dynamic island
 no-more-events = No more events today
+columns = Columns
+section-audio = Sound

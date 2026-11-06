@@ -93,3 +93,5 @@ section-controls = Dlaždice a posuvníky
 calendar = Kalendár
 section-island = Dynamický ostrov
 no-more-events = Dnes už žiadne udalosti
+columns = Stĺpce
+section-audio = Zvuk

@@ -93,3 +93,5 @@ section-controls = Tíleanna agus sleamhnáin
 calendar = Féilire
 section-island = Oileán dinimiciúil
 no-more-events = Níl a thuilleadh imeachtaí inniu
+columns = Colúin
+section-audio = Fuaim

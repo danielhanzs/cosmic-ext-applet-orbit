@@ -93,3 +93,5 @@ section-controls = کاشی‌ها و لغزنده‌ها
 calendar = تقویم
 section-island = جزیرهٔ پویا
 no-more-events = امروز رویداد دیگری نیست
+columns = ستون‌ها
+section-audio = صدا

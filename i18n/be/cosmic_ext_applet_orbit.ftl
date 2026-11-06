@@ -93,3 +93,5 @@ section-controls = Пліткі і паўзункі
 calendar = Каляндар
 section-island = Дынамічны астравок
 no-more-events = Больш няма падзей сёння
+columns = Слупкі
+section-audio = Гук

@@ -93,3 +93,5 @@ section-controls = Plytelės ir slankikliai
 calendar = Kalendorius
 section-island = Dinaminė sala
 no-more-events = Šiandien daugiau įvykių nėra
+columns = Stulpeliai
+section-audio = Garsas

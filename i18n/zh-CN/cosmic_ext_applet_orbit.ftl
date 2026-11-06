@@ -93,3 +93,5 @@ section-controls = 磁贴与滑块
 calendar = 日历
 section-island = 灵动岛
 no-more-events = 今天没有更多日程
+columns = 列
+section-audio = 声音

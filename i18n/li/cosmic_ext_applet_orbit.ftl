@@ -93,3 +93,5 @@ section-controls = Tegels en sjuifkes
 calendar = Agenda
 section-island = Dynamisch eiland
 no-more-events = Gein evenemente mie vandaag
+columns = Kolomme
+section-audio = Geluid

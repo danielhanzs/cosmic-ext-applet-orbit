@@ -93,3 +93,5 @@ section-controls = Blocos e controlos deslizantes
 calendar = Calendário
 section-island = Ilha dinâmica
 no-more-events = Não há mais eventos hoje
+columns = Colunas
+section-audio = Som

@@ -93,3 +93,5 @@ section-controls = Plăci și glisoare
 calendar = Calendar
 section-island = Insulă dinamică
 no-more-events = Nu mai sunt evenimente astăzi
+columns = Coloane
+section-audio = Sunet

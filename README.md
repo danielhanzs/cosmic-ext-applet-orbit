@@ -40,10 +40,16 @@ shortcuts to Screenshot and Workspaces.
 
 ### Your popup, your order
 The popup is made of parts — status and actions, tiles and sliders,
-calendar, weather, notifications, dynamic island — each shown or hidden and
-moved up or down in the editor, on one surface or as **separate islands**.
-Open it as a **dropdown** under the panel, a **side panel** sliding in from
-the edge, or **fullscreen** in two columns.
+calendar, weather, notifications, dynamic island, sound — each shown or
+hidden and moved up or down in the editor, on one surface or as **separate
+islands**, in **one, two or three columns** (each part moved left or right
+between them). Open it as a **dropdown** under the panel, a **side panel**
+sliding in from the edge, or **fullscreen**.
+
+### Sound card
+A card of its own, off until you turn it on: the output and microphone
+levels, each with its device (a click lists the others to switch to), and
+every playing app's volume.
 
 ### Follows your appearance settings
 Orbit follows your **Appearance** settings: accent color, dark/light,
@@ -292,7 +298,7 @@ ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-appl
 ```
 
 Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
-`weather`.
+`weather`, `audio` (the sound card), `1`, `2`, `3` (columns).
 
 ### Translations
 

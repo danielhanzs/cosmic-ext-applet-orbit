@@ -93,3 +93,5 @@ section-controls = ਟਾਈਲਾਂ ਅਤੇ ਸਲਾਈਡਰ
 calendar = ਕੈਲੰਡਰ
 section-island = ਡਾਇਨੈਮਿਕ ਆਈਲੈਂਡ
 no-more-events = ਅੱਜ ਹੋਰ ਕੋਈ ਇਵੈਂਟ ਨਹੀਂ
+columns = ਕਾਲਮ
+section-audio = ਧੁਨੀ

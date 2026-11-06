@@ -93,3 +93,5 @@ section-controls = Rajoles i controls lliscants
 calendar = Calendari
 section-island = Illa dinàmica
 no-more-events = No hi ha més esdeveniments avui
+columns = Columnes
+section-audio = So

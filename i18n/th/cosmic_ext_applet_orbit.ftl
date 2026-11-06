@@ -93,3 +93,5 @@ section-controls = ไทล์และแถบเลื่อน
 calendar = ปฏิทิน
 section-island = ไดนามิกไอส์แลนด์
 no-more-events = วันนี้ไม่มีกิจกรรมอีกแล้ว
+columns = คอลัมน์
+section-audio = เสียง

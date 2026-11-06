@@ -93,3 +93,5 @@ section-controls = Ubin dan penggeser
 calendar = Kalender
 section-island = Pulau dinamis
 no-more-events = Tidak ada acara lagi hari ini
+columns = Kolom
+section-audio = Suara

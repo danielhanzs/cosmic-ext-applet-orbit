@@ -93,3 +93,5 @@ section-controls = ಟೈಲ್‌ಗಳು ಮತ್ತು ಸ್ಲೈಡರ�
 calendar = ಕ್ಯಾಲೆಂಡರ್
 section-island = ಡೈನಾಮಿಕ್ ದ್ವೀಪ
 no-more-events = ಇಂದು ಇನ್ನು ಯಾವುದೇ ಈವೆಂಟ್‌ಗಳಿಲ್ಲ
+columns = ಕಾಲಮ್‌ಗಳು
+section-audio = ಧ್ವನಿ

@@ -12,6 +12,7 @@ pub struct Audio {
     pub volume: f32,
     pub muted: bool,
     pub mic_muted: bool,
+    pub mic_volume: f32,
     pub outputs: Vec<Output>,
     /// Microphones and other inputs, not the outputs' monitors.
     pub inputs: Vec<Output>,
@@ -48,6 +49,19 @@ fn parse_volume(text: &str) -> Option<(f32, bool)> {
     Some((level, text.contains("[MUTED]")))
 }
 
+/// A device's name for people. pactl prints "(null)" for a node without a
+/// description (virtual and some Pro Audio ones): then its properties'.
+fn label(device: &serde_json::Value, name: &str) -> String {
+    let props = &device["properties"];
+    [&device["description"], &props["node.description"], &props["node.nick"], &props["device.description"]]
+        .into_iter()
+        .filter_map(|v| v.as_str())
+        .map(str::trim)
+        .find(|d| !d.is_empty() && *d != "(null)")
+        .unwrap_or(name)
+        .to_string()
+}
+
 pub async fn read() -> Audio {
     let (sink, source, sinks, default, outputs, sources, default_source, sink_inputs) = tokio::join!(
         run("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"]),
@@ -60,7 +74,7 @@ pub async fn read() -> Audio {
         run("pactl", &["-f", "json", "list", "sink-inputs"]),
     );
     let (volume, muted) = sink.as_deref().and_then(parse_volume).unwrap_or((0.0, true));
-    let mic_muted = source.as_deref().and_then(parse_volume).is_none_or(|(_, m)| m);
+    let (mic_volume, mic_muted) = source.as_deref().and_then(parse_volume).unwrap_or((0.0, true));
     let default = default.unwrap_or_default();
     let json = |text: Option<String>| -> Vec<serde_json::Value> {
         text.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
@@ -71,7 +85,7 @@ pub async fn read() -> Audio {
             let name = sink["name"].as_str()?.to_string();
             Some(Output {
                 default: name == default.trim(),
-                description: sink["description"].as_str().unwrap_or(&name).to_string(),
+                description: label(sink, &name),
                 name,
             })
         })
@@ -91,7 +105,7 @@ pub async fn read() -> Audio {
             let name = s["name"].as_str()?.to_string();
             Some(Output {
                 default: name == default_source.trim(),
-                description: s["description"].as_str().unwrap_or(&name).to_string(),
+                description: label(s, &name),
                 name,
             })
         })
@@ -117,7 +131,7 @@ pub async fn read() -> Audio {
             })
         })
         .collect();
-    Audio { volume, muted, mic_muted, outputs: outputs_list, inputs, streams, recording }
+    Audio { volume, muted, mic_muted, mic_volume, outputs: outputs_list, inputs, streams, recording }
 }
 
 pub async fn set_stream_volume(index: u32, level: f32) {
@@ -135,6 +149,10 @@ pub async fn set_input(name: String) {
 
 pub async fn set_volume(level: f32) {
     _ = run("wpctl", &["set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", &format!("{level:.2}")]).await;
+}
+
+pub async fn set_mic_volume(level: f32) {
+    _ = run("wpctl", &["set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SOURCE@", &format!("{level:.2}")]).await;
 }
 
 pub async fn toggle_mute(mic: bool) {
@@ -173,6 +191,16 @@ pub fn changes() -> Subscription<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::label;
+
+    #[test]
+    fn null_descriptions() {
+        let device = serde_json::json!({"description": "(null)", "properties": {"node.nick": "HDMI 0"}});
+        assert_eq!(label(&device, "alsa_output.x"), "HDMI 0");
+        assert_eq!(label(&serde_json::json!({"description": "(null)"}), "alsa_output.x"), "alsa_output.x");
+        assert_eq!(label(&serde_json::json!({"description": "Speakers"}), "x"), "Speakers");
+    }
+
     #[test]
     fn volume() {
         assert_eq!(super::parse_volume("Volume: 0.45\n"), Some((0.45, false)));

@@ -49,16 +49,19 @@ pub enum Section {
     Weather,
     Notifications,
     Island,
+    /// Sound on a card of its own: levels, devices, apps.
+    Audio,
 }
 
 impl Section {
-    pub const ALL: [Section; 6] = [
+    pub const ALL: [Section; 7] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
         Section::Weather,
         Section::Notifications,
         Section::Island,
+        Section::Audio,
     ];
 }
 
@@ -91,6 +94,11 @@ pub struct Prefs {
     pub weather_open: bool,
     /// The notifications' list open, or only their count.
     pub notifications_open: bool,
+    /// Columns the popup's parts sit in, 1 to 3; none: two in fullscreen,
+    /// one otherwise.
+    pub columns: Option<u8>,
+    /// Parts put in another column than their own.
+    pub placement: Vec<(Section, u8)>,
 }
 
 impl Default for Prefs {
@@ -106,11 +114,14 @@ impl Default for Prefs {
             spacing: Spacing::Medium,
             mixer_open: false,
             pomodoro_panel: true,
-            sections: Section::ALL.to_vec(),
+            // The sound card repeats the volume slider: on when asked for.
+            sections: Section::ALL.into_iter().filter(|s| *s != Section::Audio).collect(),
             weather_place: None,
             weather_panel: false,
             weather_open: false,
             notifications_open: true,
+            columns: None,
+            placement: Vec::new(),
         }
     }
 }
@@ -165,6 +176,25 @@ impl Prefs {
         prefs
     }
 
+    pub fn columns(&self) -> usize {
+        match self.columns {
+            Some(n) => n.clamp(1, 3) as usize,
+            None if self.layout == Layout::Fullscreen => 2,
+            None => 1,
+        }
+    }
+
+    /// The column a part sits in: the one it was put in, or its own.
+    pub fn column(&self, section: Section) -> usize {
+        let own = match section {
+            Section::Status | Section::Controls => 0,
+            Section::Calendar | Section::Weather => 1,
+            Section::Notifications | Section::Island | Section::Audio => 2,
+        };
+        let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
+        put.unwrap_or(own).min(self.columns() - 1)
+    }
+
     pub fn save(&self) {
         // A preview's settings are for that run only.
         if std::env::var_os("ORBIT_PREVIEW").is_some() {
@@ -217,4 +247,25 @@ pub fn changes() -> cosmic::iced::Subscription<()> {
             drop(watchers);
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parts_find_their_column() {
+        let mut prefs = Prefs::default();
+        assert_eq!(prefs.columns(), 1);
+        assert_eq!(prefs.column(Section::Island), 0);
+        prefs.layout = Layout::Fullscreen;
+        assert_eq!((prefs.column(Section::Controls), prefs.column(Section::Island)), (0, 1));
+        prefs.columns = Some(3);
+        assert_eq!(prefs.column(Section::Notifications), 2);
+        prefs.placement.push((Section::Notifications, 0));
+        assert_eq!(prefs.column(Section::Notifications), 0);
+        prefs.placement = vec![(Section::Status, 2)];
+        prefs.columns = Some(2);
+        assert_eq!(prefs.column(Section::Status), 1);
+    }
 }

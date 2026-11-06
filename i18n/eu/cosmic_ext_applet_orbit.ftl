@@ -93,3 +93,5 @@ section-controls = Lauzak eta graduatzaileak
 calendar = Egutegia
 section-island = Uharte dinamikoa
 no-more-events = Gaur ez dago gertaera gehiagorik
+columns = Zutabeak
+section-audio = Soinua

@@ -93,3 +93,5 @@ section-controls = 圖塊與滑桿
 calendar = 日曆
 section-island = 動態島
 no-more-events = 今天沒有更多活動
+columns = 欄
+section-audio = 聲音
