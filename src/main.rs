@@ -15,6 +15,7 @@ mod media;
 mod notifications;
 mod pomodoro;
 mod style;
+mod swipe;
 mod sys;
 mod updates;
 mod weather;

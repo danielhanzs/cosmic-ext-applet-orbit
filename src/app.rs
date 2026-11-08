@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    keyboard, workspaces,
+    keyboard, swipe::swipe, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -1300,8 +1300,7 @@ impl App {
                     .push(text::caption(i18n::clock(h.time)))
                     .push(icon::from_name(h.condition.icon(h.day)).size(20))
                     .push(text::body(degrees(h.temperature)))
-                    .push(text::caption(format!("{}%", h.chance)))
-                    .push(text::caption(format!("{:.1} {rain}", h.precipitation)))
+                    .push(text::caption(format!("{}% {:.1}{rain}", h.chance, h.precipitation)).wrapping(iced::widget::text::Wrapping::None))
                     .push(text::caption(format!("{:.0} {wind}", h.wind))),
             )
         });
@@ -2947,11 +2946,11 @@ impl cosmic::Application for App {
             container(self.sub_page()).padding(14).into()
         };
         let body: Element<'_, Message> = if self.prefs.islands && self.page == Page::Main {
-            widget::scrollable(content).into()
+            swipe(widget::scrollable(content)).into()
         } else {
             // One surface, outside the scrolling, so a side panel runs the
             // screen's full height.
-            let surface = panel(widget::scrollable(content).into(), width);
+            let surface = panel(swipe(widget::scrollable(content)).into(), width);
             if layout == Layout::Side { surface.height(Length::Fill).into() } else { surface.into() }
         };
         let body: Element<'_, Message> = if preview().is_some() { preview_frame(body) } else { body };
