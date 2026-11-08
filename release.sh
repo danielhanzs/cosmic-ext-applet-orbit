@@ -4,6 +4,8 @@
 #
 #   ./release.sh 0.2.1 "What changed, in one or two sentences."
 #   ./release.sh --dry-run 0.2.1 "..."     # checks and shows, changes nothing
+#   FLATPAK_BRANCH=cosmic-ext-applet-orbit-v0.2.0 ./release.sh 0.2.1 "..."
+#                                          # updates that branch's open pull request
 #
 # Pushes with your own git/SSH setup. Needs: git, cargo, python3 (with venv),
 # curl, and the cosmic-flatpak fork cloned next to this repository
@@ -122,7 +124,10 @@ git remote get-url upstream >/dev/null 2>&1 || run git remote add upstream "$UPS
 $dry || git fetch -q upstream master
 # The fork's branches as they are, for the force-with-lease below.
 $dry || git fetch -q origin
-if git cat-file -e "upstream/master:app/$ID/$ID.json" 2>/dev/null; then
+if [ -n "${FLATPAK_BRANCH:-}" ]; then
+    # An open pull request's branch: updating it updates the request.
+    branch="$FLATPAK_BRANCH"
+elif git cat-file -e "upstream/master:app/$ID/$ID.json" 2>/dev/null; then
     # Already in: an update, on a branch of its own.
     branch="cosmic-ext-applet-orbit-$tag"
 else
@@ -155,7 +160,7 @@ fi
 owner="$(git remote get-url origin | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#')"
 say "Done"
 echo "   GitHub release:  https://github.com/danielhanzs/cosmic-ext-applet-orbit/releases/new?tag=$tag"
-if [ "$branch" = add-cosmic-orbit ]; then
+if [ "$branch" = add-cosmic-orbit ] || [ -n "${FLATPAK_BRANCH:-}" ]; then
     echo "   Pull request:    an open one from $owner:$branch is updated; if none is open:"
 else
     echo "   Pull request:"
