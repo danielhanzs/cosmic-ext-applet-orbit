@@ -95,3 +95,4 @@ section-island = Isla dinamica
 no-more-events = Pas mai d’eveniments uèi
 columns = Colomnas
 section-audio = Son
+keyboard = Clavièr

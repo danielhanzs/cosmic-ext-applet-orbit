@@ -95,3 +95,4 @@ section-island = Illa dinàmica
 no-more-events = No hi ha més esdeveniments avui
 columns = Columnes
 section-audio = So
+keyboard = Teclat

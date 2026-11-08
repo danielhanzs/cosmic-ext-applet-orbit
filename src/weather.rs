@@ -15,7 +15,22 @@ pub struct Weather {
     pub condition: Condition,
     pub day: bool,
     pub days: Vec<Day>,
+    /// The next 24 hours, from this one.
+    pub hours: Vec<Hour>,
     pub fahrenheit: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct Hour {
+    pub time: civil::Time,
+    pub condition: Condition,
+    pub day: bool,
+    pub temperature: f64,
+    /// Chance of rain or snow, in percent.
+    pub chance: u64,
+    /// How much: mm, or inches with fahrenheit.
+    pub precipitation: f64,
+    pub wind: f64,
 }
 
 /// A place found by name, kept with where it is.
@@ -159,11 +174,12 @@ pub async fn read(place: Option<Place>, language: String, fahrenheit: bool) -> O
         Some(place) => place,
         None => search(time_zone_city()?, language).await.into_iter().next()?,
     };
-    let units = if fahrenheit { "&temperature_unit=fahrenheit&wind_speed_unit=mph" } else { "" };
+    let units = if fahrenheit { "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch" } else { "" };
     let data = fetch(&format!(
         "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}\
          &current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m\
-         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6{units}",
+         &hourly=temperature_2m,weather_code,precipitation_probability,precipitation,wind_speed_10m,is_day\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6&forecast_hours=24{units}",
         place.latitude, place.longitude,
     ))
     .await?;
@@ -186,6 +202,31 @@ fn parse(data: &Value, place: &str, fahrenheit: bool) -> Option<Weather> {
             })
         })
         .collect();
+    let hourly = &data["hourly"];
+    let column = |key: &str| hourly[key].as_array().cloned().unwrap_or_default();
+    let (times, codes, temperatures, chances, amounts, winds, is_day) = (
+        column("time"),
+        column("weather_code"),
+        column("temperature_2m"),
+        column("precipitation_probability"),
+        column("precipitation"),
+        column("wind_speed_10m"),
+        column("is_day"),
+    );
+    let hours = (0..times.len())
+        .filter_map(|i| {
+            Some(Hour {
+                time: times[i].as_str()?.parse::<civil::DateTime>().ok()?.time(),
+                condition: Condition::from_code(codes.get(i)?.as_u64()?),
+                day: is_day.get(i).and_then(|d| d.as_u64()) != Some(0),
+                temperature: temperatures.get(i)?.as_f64()?,
+                chance: chances.get(i).and_then(|c| c.as_u64()).unwrap_or(0),
+                precipitation: amounts.get(i).and_then(|p| p.as_f64()).unwrap_or(0.0),
+                wind: winds.get(i).and_then(|w| w.as_f64()).unwrap_or(0.0),
+            })
+        })
+        .take(24)
+        .collect();
     Some(Weather {
         place: place.to_string(),
         temperature: now["temperature_2m"].as_f64()?,
@@ -194,6 +235,7 @@ fn parse(data: &Value, place: &str, fahrenheit: bool) -> Option<Weather> {
         condition: Condition::from_code(now["weather_code"].as_u64()?),
         day: now["is_day"].as_u64() != Some(0),
         days,
+        hours,
         fahrenheit,
     })
 }
@@ -206,7 +248,9 @@ mod tests {
     fn reads_a_forecast() {
         let data: Value = serde_json::from_str(
             r#"{"current":{"temperature_2m":14.9,"apparent_temperature":12.8,"weather_code":2,"is_day":0,"wind_speed_10m":5.0},
-               "daily":{"time":["2026-10-30","2026-10-31"],"weather_code":[61,0],"temperature_2m_max":[16.1,18.0],"temperature_2m_min":[8.2,9.0]}}"#,
+               "daily":{"time":["2026-10-30","2026-10-31"],"weather_code":[61,0],"temperature_2m_max":[16.1,18.0],"temperature_2m_min":[8.2,9.0]},
+               "hourly":{"time":["2026-10-30T22:00","2026-10-30T23:00"],"weather_code":[0,61],"temperature_2m":[14.0,13.5],
+                 "precipitation_probability":[5,60],"precipitation":[0.0,1.2],"wind_speed_10m":[4.0,7.5],"is_day":[0,0]}}"#,
         )
         .unwrap();
         let w = parse(&data, "Budapest", false).unwrap();
@@ -215,6 +259,9 @@ mod tests {
         assert_eq!(w.days.len(), 2);
         assert_eq!(w.days[0].condition, Condition::Rain);
         assert_eq!(w.days[1].date, civil::date(2026, 10, 31));
+        assert_eq!(w.hours.len(), 2);
+        assert_eq!(w.hours[1].time, civil::time(23, 0, 0, 0));
+        assert_eq!((w.hours[1].condition, w.hours[1].chance, w.hours[1].precipitation), (Condition::Rain, 60, 1.2));
         assert_eq!(Condition::from_code(95), Condition::Storm);
         assert_eq!(encoded("São Paulo"), "S%C3%A3o%20Paulo");
     }

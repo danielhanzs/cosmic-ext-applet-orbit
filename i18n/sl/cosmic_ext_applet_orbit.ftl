@@ -95,3 +95,4 @@ section-island = Dinamični otok
 no-more-events = Danes ni več dogodkov
 columns = Stolpci
 section-audio = Zvok
+keyboard = Tipkovnica

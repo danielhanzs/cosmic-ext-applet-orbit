@@ -95,3 +95,4 @@ section-island = Girava dînamîk
 no-more-events = Îro êdî bûyer tune ne
 columns = Stûn
 section-audio = Deng
+keyboard = Klavye

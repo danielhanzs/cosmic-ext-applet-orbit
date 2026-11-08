@@ -95,3 +95,4 @@ section-island = Insulă dinamică
 no-more-events = Nu mai sunt evenimente astăzi
 columns = Coloane
 section-audio = Sunet
+keyboard = Tastatură

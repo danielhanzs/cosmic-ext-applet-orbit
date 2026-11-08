@@ -95,3 +95,4 @@ section-island = Dynamisk øy
 no-more-events = Ingen flere hendelser i dag
 columns = Kolonner
 section-audio = Lyd
+keyboard = Tastatur

@@ -95,3 +95,4 @@ section-island = ഡൈനാമിക് ദ്വീപ്
 no-more-events = ഇന്ന് കൂടുതൽ ഇവന്റുകളില്ല
 columns = നിരകൾ
 section-audio = ശബ്ദം
+keyboard = കീബോർഡ്

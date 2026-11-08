@@ -95,3 +95,4 @@ section-island = Dünaamiline saar
 no-more-events = Täna rohkem sündmusi pole
 columns = Veerud
 section-audio = Heli
+keyboard = Klaviatuur

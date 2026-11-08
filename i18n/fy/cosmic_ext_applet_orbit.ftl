@@ -95,3 +95,4 @@ section-island = Dynamysk eilân
 no-more-events = Hjoed gjin eveneminten mear
 columns = Kolommen
 section-audio = Lûd
+keyboard = Toetseboerd

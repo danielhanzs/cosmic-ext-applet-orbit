@@ -95,3 +95,4 @@ section-island = डायनेमिक आइलैंड
 no-more-events = आज कोई और इवेंट नहीं
 columns = कॉलम
 section-audio = ध्वनि
+keyboard = कीबोर्ड

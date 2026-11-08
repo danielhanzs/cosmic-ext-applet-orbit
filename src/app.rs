@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    workspaces,
+    keyboard, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -60,10 +60,11 @@ pub enum Tile {
     Touchpad,
     Hotspot,
     Pomodoro,
+    Keyboard,
 }
 
 impl Tile {
-    pub const ALL: [Tile; 19] = [
+    pub const ALL: [Tile; 20] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -83,6 +84,7 @@ impl Tile {
         Tile::Touchpad,
         Tile::Hotspot,
         Tile::Pomodoro,
+        Tile::Keyboard,
     ];
 
     /// Shown at first, and after a reset.
@@ -118,6 +120,7 @@ impl Tile {
             Tile::Touchpad => T.touchpad,
             Tile::Hotspot => T.hotspot,
             Tile::Pomodoro => T.pomodoro,
+            Tile::Keyboard => T.keyboard,
         }
     }
 
@@ -162,6 +165,7 @@ pub enum Page {
     Sound,
     Hotspot,
     Pomodoro,
+    Keyboard,
     Edit,
     Password,
 }
@@ -202,7 +206,10 @@ pub struct App {
     /// Keeping awake: the inhibition's cookie.
     inhibit: Option<u32>,
     inhibiting: bool,
-    workspaces: Option<cosmic::cctk::sctk::reexports::calloop::channel::Sender<bool>>,
+    workspaces: Option<cosmic::cctk::sctk::reexports::calloop::channel::Sender<workspaces::Command>>,
+    /// The keyboard layouts set, and which is in use.
+    layouts: Vec<keyboard::Layout>,
+    layout: usize,
     /// Whether the active workspace tiles.
     tiling: Option<bool>,
     touchpad: Option<bool>,
@@ -272,6 +279,8 @@ pub enum Message {
     A11y(desktop::A11y),
     Reader(desktop::ReaderResponse),
     Workspaces(workspaces::Event),
+    /// Switch to the keyboard layout at this place in the list.
+    KeyboardLayout(usize),
     CompChanged,
     Inhibited(Option<u32>),
     ResetTiles,
@@ -590,6 +599,10 @@ impl App {
                 };
                 (named("network-wireless-hotspot-symbolic"), on, subtitle, Some(Page::Hotspot))
             }
+            Tile::Keyboard => {
+                let name = self.layouts.get(self.layout).map_or(String::new(), |l| l.name.clone());
+                (named("input-keyboard-symbolic"), false, name, Some(Page::Keyboard))
+            }
             Tile::Touchpad => {
                 let on = self.touchpad.unwrap_or(false);
                 let icon = if on { "input-touchpad-symbolic" } else { "touchpad-disabled-symbolic" };
@@ -660,7 +673,7 @@ impl App {
             Tile::Tiling => {
                 let on = !self.tiling.unwrap_or_else(desktop::autotile);
                 match &self.workspaces {
-                    Some(tx) => _ = tx.send(on),
+                    Some(tx) => _ = tx.send(workspaces::Command::Tiling(on)),
                     None => desktop::set_autotile(on),
                 }
                 self.tiling = Some(on);
@@ -692,6 +705,11 @@ impl App {
             Tile::Screenshot => self.update(Message::Spawn("cosmic-screenshot", &[])),
             Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
             Tile::Pomodoro => self.update(Message::PomodoroToggle),
+            // On to the next layout; with one, its page.
+            Tile::Keyboard if self.layouts.len() > 1 => {
+                self.update(Message::KeyboardLayout((self.layout + 1) % self.layouts.len()))
+            }
+            Tile::Keyboard => self.update(Message::Page(Page::Keyboard)),
             Tile::Hotspot => self.update(Message::SetHotspot(!self.net.hotspot.as_ref().is_some_and(|h| h.active.is_some()))),
             Tile::Touchpad => {
                 let on = !self.touchpad.unwrap_or(false);
@@ -1268,7 +1286,31 @@ impl App {
                     .push(text::caption(format!("{} / {}", degrees(day.high), degrees(day.low)))),
             );
         }
-        widget::Column::new().push(head).push(container(days).padding([0, 12, 12, 12])).into()
+        // The next 24 hours, five at a time, scrolled sideways.
+        let (rain, wind) = if w.fahrenheit { ("in", "mph") } else { ("mm", "km/h") };
+        // The card's inside: the popup's width, less the one surface's padding and its own.
+        let inside = WIDTH - if self.prefs.islands { 0.0 } else { 28.0 } - 24.0;
+        let cell = (inside - 4.0 * 4.0) / 5.0;
+        let hours = w.hours.iter().fold(widget::Row::new().spacing(4).padding([0, 0, 10, 0]), |row, h| {
+            row.push(
+                widget::Column::new()
+                    .spacing(2)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fixed(cell))
+                    .push(text::caption(i18n::clock(h.time)))
+                    .push(icon::from_name(h.condition.icon(h.day)).size(20))
+                    .push(text::body(degrees(h.temperature)))
+                    .push(text::caption(format!("{}%", h.chance)))
+                    .push(text::caption(format!("{:.1} {rain}", h.precipitation)))
+                    .push(text::caption(format!("{:.0} {wind}", h.wind))),
+            )
+        });
+        widget::Column::new()
+            .push(head)
+            .push(container(widget::scrollable::horizontal(hours)).padding([0, 12, 8, 12]))
+            .push(widget::divider::horizontal::light())
+            .push(container(days).padding([8, 12, 12, 12]))
+            .into()
     }
 
     fn notifications_view(&self) -> Element<'_, Message> {
@@ -1382,6 +1424,7 @@ impl App {
                 "bluetooth" => &["bluetooth"],
                 "vpn" => &["vpn"],
                 "power" => &["power"],
+                "keyboard" => &["keyboard"],
                 _ => &["sound"],
             }))
             .into()
@@ -1526,6 +1569,19 @@ impl App {
                     column = column.push(container(text::caption(T.hotspot_hint)).padding([8, 10]));
                 }
                 column = column.push(self.more("wireless"));
+            }
+            Page::Keyboard => {
+                column = column.push(self.page_header(T.keyboard, None));
+                for (i, layout) in self.layouts.iter().enumerate() {
+                    column = column.push(self.item(
+                        named("input-keyboard-symbolic"),
+                        layout.name.clone(),
+                        Some(if layout.variant.is_empty() { layout.code.clone() } else { format!("{} · {}", layout.code, layout.variant) }),
+                        i == self.layout,
+                        Some(Message::KeyboardLayout(i)),
+                    ));
+                }
+                column = column.push(self.more("keyboard"));
             }
             Page::Edit => column = column.push(self.edit_page()),
             Page::Password => column = column.push(self.password_page()),
@@ -2120,6 +2176,8 @@ impl cosmic::Application for App {
             inhibit: None,
             inhibiting: false,
             workspaces: None,
+            layouts: keyboard::layouts(),
+            layout: 0,
             tiling: None,
             touchpad: desktop::touchpad(),
             drag: None,
@@ -2280,6 +2338,7 @@ impl cosmic::Application for App {
             Message::FlagsChanged => {
                 self.dnd = DND.get();
                 self.dark = DARK.get();
+                self.layouts = keyboard::layouts();
             }
             Message::Network(net) => {
                 if let Some(net) = net {
@@ -2706,6 +2765,12 @@ impl cosmic::Application for App {
             },
             Message::Workspaces(workspaces::Event::Ready(tx)) => self.workspaces = Some(tx),
             Message::Workspaces(workspaces::Event::Tiling(on)) => self.tiling = Some(on),
+            Message::Workspaces(workspaces::Event::Layout(i)) => self.layout = i,
+            Message::KeyboardLayout(i) => {
+                if let Some(tx) = &self.workspaces {
+                    _ = tx.send(workspaces::Command::Layout(i as u32));
+                }
+            }
             Message::CompChanged => self.touchpad = desktop::touchpad(),
             Message::Inhibited(cookie) => {
                 self.inhibiting = false;

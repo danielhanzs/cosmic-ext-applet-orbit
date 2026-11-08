@@ -95,3 +95,4 @@ section-island = Dynamic island
 no-more-events = No more events today
 columns = Columns
 section-audio = Sound
+keyboard = Keyboard

@@ -10,6 +10,7 @@ mod desktop;
 mod host;
 mod i18n;
 mod icons;
+mod keyboard;
 mod media;
 mod notifications;
 mod pomodoro;

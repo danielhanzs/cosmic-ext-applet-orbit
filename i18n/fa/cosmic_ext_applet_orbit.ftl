@@ -95,3 +95,4 @@ section-island = جزیرهٔ پویا
 no-more-events = امروز رویداد دیگری نیست
 columns = ستون‌ها
 section-audio = صدا
+keyboard = صفحه‌کلید

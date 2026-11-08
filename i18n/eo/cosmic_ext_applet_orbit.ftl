@@ -95,3 +95,4 @@ section-island = Dinamika insulo
 no-more-events = Neniuj pliaj eventoj hodiaŭ
 columns = Kolumnoj
 section-audio = Sono
+keyboard = Klavaro

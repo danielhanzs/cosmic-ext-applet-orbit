@@ -95,3 +95,4 @@ section-island = Tigzirt tadinamikt
 no-more-events = Ulac ugar n tedyanin ass-a
 columns = Ijudam
 section-audio = Imesli
+keyboard = Anasiw

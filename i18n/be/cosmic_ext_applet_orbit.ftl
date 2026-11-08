@@ -95,3 +95,4 @@ section-island = Дынамічны астравок
 no-more-events = Больш няма падзей сёння
 columns = Слупкі
 section-audio = Гук
+keyboard = Клавіятура

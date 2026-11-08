@@ -95,3 +95,4 @@ section-island = ເກາະໄດນາມິກ
 no-more-events = ບໍ່ມີເຫດການອີກມື້ນີ້
 columns = ຖັນ
 section-audio = ສຽງ
+keyboard = ແປ້ນພິມ

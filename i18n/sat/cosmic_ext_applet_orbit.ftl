@@ -95,3 +95,4 @@ section-island = ᱰᱟᱭᱱᱟᱢᱤᱠ ᱟᱭᱞᱮᱱᱰ
 no-more-events = ᱛᱮᱦᱮᱧ ᱟᱨ ᱡᱟᱦᱟᱸᱱ ᱜᱚᱴᱚᱱᱟ ᱵᱟᱹᱱᱩᱜᱼᱟ
 columns = ᱠᱚᱞᱚᱢ
 section-audio = ᱥᱟᱰᱮ
+keyboard = ᱠᱤᱵᱚᱰ

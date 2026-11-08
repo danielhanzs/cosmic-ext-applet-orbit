@@ -95,3 +95,4 @@ section-island = 動態島
 no-more-events = 今日冇其他活動喇
 columns = 欄
 section-audio = 聲音
+keyboard = 鍵盤

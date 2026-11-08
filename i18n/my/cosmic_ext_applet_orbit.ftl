@@ -95,3 +95,4 @@ section-island = ဒိုင်နမစ်ကျွန်း
 no-more-events = ယနေ့ နောက်ထပ် ဖြစ်ရပ်များ မရှိပါ
 columns = ကော်လံများ
 section-audio = အသံ
+keyboard = ကီးဘုတ်

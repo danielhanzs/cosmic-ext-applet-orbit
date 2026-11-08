@@ -95,3 +95,4 @@ section-island = Dinamic insul
 no-more-events = Null plu evenimentes hodie
 columns = Columnes
 section-audio = Son
+keyboard = Tastatura

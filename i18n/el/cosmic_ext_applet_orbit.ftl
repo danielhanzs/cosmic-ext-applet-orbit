@@ -95,3 +95,4 @@ section-island = Δυναμικό νησί
 no-more-events = Δεν υπάρχουν άλλα συμβάντα σήμερα
 columns = Στήλες
 section-audio = Ήχος
+keyboard = Πληκτρολόγιο

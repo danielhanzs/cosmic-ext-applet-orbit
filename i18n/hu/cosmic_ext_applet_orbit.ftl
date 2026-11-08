@@ -95,3 +95,4 @@ section-island = Dynamic island
 no-more-events = Nincs több mai esemény
 columns = Oszlopok
 section-audio = Hang
+keyboard = Billentyűzet

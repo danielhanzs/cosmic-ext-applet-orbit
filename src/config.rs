@@ -229,7 +229,8 @@ impl Flag {
 pub fn changes() -> cosmic::iced::Subscription<()> {
     cosmic::iced::Subscription::run(|| {
         cosmic::iced::stream::channel(4, async |out| {
-            let watchers: Vec<_> = [DND.0, DARK.0]
+            // cosmic-comp's: the keyboard layouts.
+            let watchers: Vec<_> = [DND.0, DARK.0, "com.system76.CosmicComp"]
                 .into_iter()
                 .filter_map(|name| {
                     let out = std::sync::Mutex::new(out.clone());

@@ -95,3 +95,4 @@ section-island = 灵动岛
 no-more-events = 今天没有更多日程
 columns = 列
 section-audio = 声音
+keyboard = 键盘

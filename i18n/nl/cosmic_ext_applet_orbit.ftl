@@ -95,3 +95,4 @@ section-island = Dynamisch eiland
 no-more-events = Vandaag geen afspraken meer
 columns = Kolommen
 section-audio = Geluid
+keyboard = Toetsenbord

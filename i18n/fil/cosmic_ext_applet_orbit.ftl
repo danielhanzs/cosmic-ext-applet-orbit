@@ -95,3 +95,4 @@ section-island = Dynamic island
 no-more-events = Wala nang kaganapan ngayong araw
 columns = Mga column
 section-audio = Tunog
+keyboard = Keyboard

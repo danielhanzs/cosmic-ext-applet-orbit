@@ -95,3 +95,4 @@ section-island = Dynamický ostrůvek
 no-more-events = Dnes už žádné události
 columns = Sloupce
 section-audio = Zvuk
+keyboard = Klávesnice

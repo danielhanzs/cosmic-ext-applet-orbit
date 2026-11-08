@@ -95,3 +95,4 @@ section-island = Dynamic island
 no-more-events = ሎሚ ተወሳኺ ፍጻመታት የለን
 columns = ዓምድታት
 section-audio = ድምጺ
+keyboard = ኪቦርድ

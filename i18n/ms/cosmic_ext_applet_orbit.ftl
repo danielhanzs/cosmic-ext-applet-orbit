@@ -95,3 +95,4 @@ section-island = Pulau dinamik
 no-more-events = Tiada lagi acara hari ini
 columns = Lajur
 section-audio = Bunyi
+keyboard = Papan kekunci

@@ -95,3 +95,4 @@ section-island = Dinamik orol
 no-more-events = Bugun boshqa tadbirlar yo‘q
 columns = Ustunlar
 section-audio = Ovoz
+keyboard = Klaviatura

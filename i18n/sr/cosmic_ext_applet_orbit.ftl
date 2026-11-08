@@ -95,3 +95,4 @@ section-island = Динамичко острво
 no-more-events = Данас нема више догађаја
 columns = Колоне
 section-audio = Звук
+keyboard = Тастатура

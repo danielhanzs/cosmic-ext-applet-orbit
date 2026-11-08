@@ -95,3 +95,4 @@ section-island = დინამიკური კუნძული
 no-more-events = დღეს მეტი მოვლენა აღარ არის
 columns = სვეტები
 section-audio = ხმა
+keyboard = კლავიატურა

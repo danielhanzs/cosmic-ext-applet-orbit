@@ -95,3 +95,4 @@ section-island = Đảo động
 no-more-events = Không còn sự kiện nào hôm nay
 columns = Cột
 section-audio = Âm thanh
+keyboard = Bàn phím

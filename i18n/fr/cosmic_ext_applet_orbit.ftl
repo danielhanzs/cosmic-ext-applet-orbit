@@ -95,3 +95,4 @@ section-island = Îlot dynamique
 no-more-events = Plus d’événements aujourd’hui
 columns = Colonnes
 section-audio = Son
+keyboard = Clavier

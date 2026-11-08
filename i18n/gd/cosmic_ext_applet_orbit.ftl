@@ -95,3 +95,4 @@ section-island = Eilean dinamaigeach
 no-more-events = Chan eil tuilleadh thachartasan an-diugh
 columns = Colbhan
 section-audio = Fuaim
+keyboard = Meur-chlàr

@@ -149,6 +149,7 @@ strings!(
     calendar,
     section_island,
     section_audio,
+    keyboard,
     no_more_events,
 );
 
