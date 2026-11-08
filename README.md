@@ -290,7 +290,6 @@ cargo test
 | `src/pomodoro.rs` | the pomodoro timer |
 | `src/updates.rs` | counting updates |
 | `src/desktop.rs` | accessibility, touchpad, keep awake, tiling settings |
-| `src/workspaces.rs` | the active workspace's tiling |
 | `src/host.rs` | host programs and files, from a Flatpak too |
 | `i18n/<language>/cosmic_ext_applet_orbit.ftl` | the words, one file per language |
 
