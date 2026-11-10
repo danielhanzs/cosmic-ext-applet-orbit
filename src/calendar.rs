@@ -71,16 +71,22 @@ pub async fn month(first: civil::Date) -> Option<HashMap<civil::Date, Vec<Event>
     }
 }
 
-async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event>>> {
-    let conn = crate::bus::session().await?;
-    let objects = zbus::fdo::ObjectManagerProxy::builder(&conn)
+/// The shown sources of a kind ("Calendar", "Task List"), opened with the
+/// factory's `method` ("OpenCalendar", "OpenTaskList"): the bus and path to
+/// ask each at.
+pub(crate) async fn open_all(
+    conn: &zbus::Connection,
+    kind: &str,
+    method: &str,
+) -> zbus::Result<Vec<(String, OwnedObjectPath)>> {
+    let objects = zbus::fdo::ObjectManagerProxy::builder(conn)
         .destination(SOURCES)?
         .path("/org/gnome/evolution/dataserver/SourceManager")?
         .build()
         .await?
         .get_managed_objects()
         .await?;
-    let mut calendars = Vec::new();
+    let mut opened = Vec::new();
     for ifaces in objects.values() {
         let Some((_, props)) =
             ifaces.iter().find(|(name, _)| name.as_str() == "org.gnome.evolution.dataserver.Source")
@@ -90,14 +96,20 @@ async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event
         let props: &HashMap<String, OwnedValue> = props;
         let string = |key: &str| props.get(key).and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         let (Some(uid), Some(data)) = (string("UID"), string("Data")) else { continue };
-        if !is_shown_calendar(&data) {
+        if !is_shown(&data, kind) {
             continue;
         }
-        match open(&conn, &uid).await {
-            Ok(calendar) => calendars.push(calendar),
-            Err(err) => tracing::warn!("calendar {uid}: {err}"),
+        match open(conn, &uid, method).await {
+            Ok(source) => opened.push(source),
+            Err(err) => tracing::warn!("{kind} {uid}: {err}"),
         }
     }
+    Ok(opened)
+}
+
+async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event>>> {
+    let conn = crate::bus::session().await?;
+    let calendars = open_all(&conn, "Calendar", "OpenCalendar").await?;
 
     let tz = TimeZone::system();
     let utc = |time: civil::DateTime| -> String {
@@ -148,33 +160,33 @@ async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event
     Ok(days)
 }
 
-/// A source that is a calendar, enabled and selected to show.
-fn is_shown_calendar(keyfile: &str) -> bool {
+/// A source of `kind` ("Calendar", "Task List"), enabled and selected to show.
+fn is_shown(keyfile: &str, kind: &str) -> bool {
     let mut section = "";
-    let (mut calendar, mut enabled, mut selected) = (false, true, true);
+    let (mut of_kind, mut enabled, mut selected) = (false, true, true);
     for line in keyfile.lines().map(str::trim) {
         if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             section = name;
-            calendar |= name == "Calendar";
+            of_kind |= name == kind;
         } else if let Some((key, value)) = line.split_once('=') {
-            match (section, key.trim()) {
-                ("Data Source", "Enabled") => enabled = value.trim() == "true",
-                ("Calendar", "Selected") => selected = value.trim() == "true",
+            match key.trim() {
+                "Enabled" if section == "Data Source" => enabled = value.trim() == "true",
+                "Selected" if section == kind => selected = value.trim() == "true",
                 _ => {}
             }
         }
     }
-    calendar && enabled && selected
+    of_kind && enabled && selected
 }
 
-/// Opens a calendar: the bus and path to ask it at.
-async fn open(conn: &zbus::Connection, uid: &str) -> zbus::Result<(String, OwnedObjectPath)> {
+/// Opens a calendar or task list: the bus and path to ask it at.
+async fn open(conn: &zbus::Connection, uid: &str, method: &str) -> zbus::Result<(String, OwnedObjectPath)> {
     let reply = conn
         .call_method(
             Some(FACTORY),
             "/org/gnome/evolution/dataserver/CalendarFactory",
             Some("org.gnome.evolution.dataserver.CalendarFactory"),
-            "OpenCalendar",
+            method,
             &(uid,),
         )
         .await?;
@@ -378,8 +390,10 @@ mod tests {
 
     #[test]
     fn shown_calendars() {
-        assert!(is_shown_calendar("[Data Source]\nDisplayName=Work\nEnabled=true\n\n[Calendar]\nBackendName=caldav\nSelected=true\n"));
-        assert!(!is_shown_calendar("[Data Source]\nEnabled=true\n[Address Book]\n"));
-        assert!(!is_shown_calendar("[Data Source]\nEnabled=false\n[Calendar]\n"));
+        assert!(is_shown("[Data Source]\nDisplayName=Work\nEnabled=true\n\n[Calendar]\nBackendName=caldav\nSelected=true\n", "Calendar"));
+        assert!(!is_shown("[Data Source]\nEnabled=true\n[Address Book]\n", "Calendar"));
+        assert!(!is_shown("[Data Source]\nEnabled=false\n[Calendar]\n", "Calendar"));
+        assert!(is_shown("[Data Source]\nEnabled=true\n[Task List]\nSelected=true\n", "Task List"));
+        assert!(!is_shown("[Data Source]\nEnabled=true\n[Task List]\nSelected=false\n", "Task List"));
     }
 }

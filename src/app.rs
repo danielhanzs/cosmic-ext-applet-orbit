@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    keyboard, swipe::swipe, workspaces,
+    keyboard, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -240,6 +240,19 @@ pub struct App {
     /// The sound card's device list open: inputs (true) or outputs.
     picking: Option<bool>,
     edit_tab: EditTab,
+    /// The last read of the machine's load, what it showed, and the
+    /// processor's recent past (0..1, oldest first).
+    sample: Option<system::Sample>,
+    load: system::Load,
+    cpu_history: std::collections::VecDeque<f32>,
+    sampling: bool,
+    /// The open to-dos; None: no task service.
+    tasks: Option<Vec<tasks::Task>>,
+    /// Running timers: when each ends, and how long it was.
+    timers: Vec<(Instant, Duration)>,
+    /// The editor's clock search, and the time zones it matches.
+    clock_input: String,
+    clock_matches: Vec<String>,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
     /// When the weather was last asked for, and which ask is the latest.
@@ -354,6 +367,15 @@ pub enum Message {
     ShowSection(Section, bool),
     SetColumns(u8),
     EditTab(EditTab),
+    System(Option<system::Sample>),
+    Tasks(Option<Vec<tasks::Task>>),
+    CompleteTask(usize),
+    /// A timer of this many minutes.
+    StartTimer(u64),
+    StopTimer(usize),
+    ClockInput(String),
+    AddClock(String),
+    RemoveClock(usize),
     WeatherHourly(bool),
     WeatherHours(u8),
     WeatherDays(u8),
@@ -742,6 +764,9 @@ impl App {
             self.visible = today.first_of_month();
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
+        if self.prefs.sections.contains(&Section::Tasks) {
+            tasks.push(run(async { Message::Tasks(tasks::open().await) }));
+        }
         if self.weather_read.is_none_or(|at| at.elapsed() > Duration::from_secs(30 * 60)) {
             tasks.push(self.update(Message::CheckWeather));
         }
@@ -1184,6 +1209,9 @@ impl App {
             Section::Notifications => (self.notifications_view(), Look::Flush),
             Section::Island => (self.island()?, Look::Own),
             Section::Audio => (self.sound_card(), Look::Padded),
+            Section::System => (self.system_view(), Look::Padded),
+            Section::Tasks => (self.tasks_view(), Look::Padded),
+            Section::Clocks => (self.clocks_view(), Look::Padded),
         })
     }
 
@@ -1211,6 +1239,26 @@ impl App {
     fn panel_room(&self) -> f32 {
         let applet = &self.core.applet;
         (applet.suggested_size(true).1 + 2 * applet.suggested_padding(true).0) as f32 + 16.0
+    }
+
+    /// Each second: the pomodoro's phase, and a new day.
+    fn tick(&mut self) -> app::Task<Message> {
+        if let Some(phase) = self.pomodoro.tick(Instant::now()) {
+            let (summary, body) = match phase {
+                pomodoro::Phase::Focus => (T.pomodoro_focus_again, T.focus),
+                _ => (T.pomodoro_break_time, self.phase_name()),
+            };
+            return fire(desktop::notify(summary.to_string(), body.to_string()));
+        }
+        let now = Zoned::now();
+        if now.date() != self.now.date() {
+            self.selected = now.date();
+            self.visible = now.date().first_of_month();
+            self.now = now;
+            return self.load_events();
+        }
+        self.now = now;
+        Task::none()
     }
 
     /// The shown part above (or below) the `i`th in its column.
@@ -1706,6 +1754,127 @@ impl App {
         column.push(self.mixer()).into()
     }
 
+    /// The processor (with its last minute or so), the memory, the network.
+    fn system_view(&self) -> Element<'_, Message> {
+        let line = |label: &'static str, value: String| {
+            widget::Row::new()
+                .align_y(Alignment::Center)
+                .push(text::heading(label).width(Length::Fill))
+                .push(text::caption(value))
+        };
+        // The newest on the right, each second or two a bar.
+        let history = self.cpu_history.iter().fold(
+            widget::Row::new().spacing(2).height(Length::Fixed(28.0)).align_y(Alignment::End),
+            |row, level| {
+                row.push(
+                    container(widget::space())
+                        .width(Length::Fixed(5.0))
+                        .height(Length::Fixed(2.0 + 26.0 * level.clamp(0.0, 1.0)))
+                        .class(theme::Container::custom(|theme| container::Style {
+                            background: Some(Color::from(theme.cosmic().accent_color()).into()),
+                            ..Default::default()
+                        })),
+                )
+            },
+        );
+        let (used, total) = self.sample.map_or((0, 1), |s| s.memory);
+        widget::Column::new()
+            .spacing(6)
+            .push(line("CPU", format!("{:.0}%", self.load.cpu * 100.0)))
+            .push(container(history).align_right(Length::Fill).clip(true))
+            .push(line("RAM", system::gigabytes((used, total))))
+            .push(widget::determinate_linear(used as f32 / total.max(1) as f32).width(Length::Fill))
+            .push(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("go-down-symbolic").size(16))
+                    .push(text::caption(system::rate(self.load.down)).width(Length::Fill))
+                    .push(icon::from_name("go-up-symbolic").size(16))
+                    .push(text::caption(system::rate(self.load.up))),
+            )
+            .into()
+    }
+
+    /// The open to-dos, soonest first: ticked off with a click.
+    fn tasks_view(&self) -> Element<'_, Message> {
+        let tasks = self.tasks.as_deref().unwrap_or_default();
+        let mut column = widget::Column::new().spacing(8).push(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(icon::from_name("checkbox-checked-symbolic").size(18))
+                .push(text::heading(T.section_tasks))
+                .push(text::caption(if tasks.is_empty() { String::new() } else { tasks.len().to_string() })),
+        );
+        if tasks.is_empty() {
+            column = column.push(text::caption(T.no_tasks));
+        }
+        let today = self.now.date();
+        for (i, task) in tasks.iter().enumerate().take(8) {
+            let mut label = widget::Column::new().push(text::body(task.summary.as_str()));
+            if let Some(due) = task.due {
+                let due_text = text::caption(i18n::short_date(due));
+                label = label.push(if due < today { due_text.class(theme::Text::Accent) } else { due_text });
+            }
+            column = column.push(
+                widget::Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(widget::checkbox(false).on_toggle(move |_| Message::CompleteTask(i)))
+                    .push(label.width(Length::Fill)),
+            );
+        }
+        column.into()
+    }
+
+    /// Other places' time, then timers: started with a click, counted down.
+    fn clocks_view(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(8);
+        let here = self.now.offset().seconds();
+        for zone in &self.prefs.clocks {
+            let Ok(tz) = jiff::tz::TimeZone::get(zone) else { continue };
+            let there = self.now.with_time_zone(tz);
+            let city = zone.rsplit('/').next().unwrap_or(zone).replace('_', " ");
+            let apart = there.offset().seconds() - here;
+            let mut note = match (apart / 3600, (apart % 3600).abs() / 60) {
+                (h, 0) => format!("{h:+} h"),
+                (h, m) => format!("{}{}:{m:02}", if apart < 0 { "-" } else { "+" }, h.abs()),
+            };
+            if there.date() != self.now.date() {
+                note = format!("{} · {note}", i18n::weekday_short(there.date()));
+            }
+            column = column.push(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(widget::Column::new().push(text::body(city)).push(text::caption(note)).width(Length::Fill))
+                    .push(text::title4(i18n::clock(there.time()))),
+            );
+        }
+        if !self.prefs.clocks.is_empty() {
+            column = column.push(widget::divider::horizontal::light());
+        }
+        let presets = [5u64, 10, 15, 30].into_iter().fold(
+            widget::Row::new().spacing(4).align_y(Alignment::Center).push(icon::from_name("alarm-symbolic").size(18)),
+            |row, minutes| row.push(button::text(format!("{minutes} min")).on_press(Message::StartTimer(minutes))),
+        );
+        column = column.push(presets);
+        let now = Instant::now();
+        for (i, (ends, length)) in self.timers.iter().enumerate() {
+            let left = ends.saturating_duration_since(now);
+            column = column.push(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(text::body(pomodoro::clock(left)))
+                    .push(widget::determinate_linear(1.0 - left.as_secs_f32() / length.as_secs_f32().max(1.0)).width(Length::Fill))
+                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::StopTimer(i))),
+            );
+        }
+        column.into()
+    }
+
     /// Each app's volume, folded away unless opened (remembered).
     fn mixer(&self) -> Element<'_, Message> {
         let chevron = if self.prefs.mixer_open { "go-up-symbolic" } else { "go-down-symbolic" };
@@ -2009,7 +2178,30 @@ impl App {
             weather = weather.push(text::body(T.hours)).push(count(&[6, 12, 24], self.prefs.weather_hours, Message::WeatherHours));
         }
         weather = weather.push(text::body(T.days)).push(count(&[3, 5, 7], self.prefs.weather_days, Message::WeatherDays));
-        widget::Column::new().spacing(10).push(sections).push(weather).into()
+        let mut clocks = widget::Column::new()
+            .spacing(10)
+            .push(widget::divider::horizontal::default())
+            .push(text::heading(T.section_clocks));
+        for (i, zone) in self.prefs.clocks.iter().enumerate() {
+            clocks = clocks.push(
+                widget::Row::new()
+                    .align_y(Alignment::Center)
+                    .push(text::body(zone.replace('_', " ")).width(Length::Fill))
+                    .push(button::icon(icon::from_name("list-remove-symbolic")).on_press(Message::RemoveClock(i))),
+            );
+        }
+        clocks = clocks
+            .push(widget::text_input(T.add_clock, self.clock_input.as_str()).on_input(Message::ClockInput))
+            .push(self.clock_matches.iter().fold(widget::Column::new(), |column, zone| {
+                column.push(
+                    button::custom(text::body(zone.replace('_', " ")))
+                        .class(style::flat())
+                        .padding([6, 10])
+                        .width(Length::Fill)
+                        .on_press(Message::AddClock(zone.clone())),
+                )
+            }));
+        widget::Column::new().spacing(10).push(sections).push(weather).push(clocks).into()
     }
 
     fn password_page(&self) -> Element<'_, Message> {
@@ -2175,6 +2367,9 @@ fn section_name(section: Section) -> &'static str {
         Section::Notifications => T.notifications,
         Section::Island => T.section_island,
         Section::Audio => T.section_audio,
+        Section::System => T.section_system,
+        Section::Tasks => T.section_tasks,
+        Section::Clocks => T.section_clocks,
     }
 }
 
@@ -2267,6 +2462,14 @@ impl cosmic::Application for App {
             stream_drag: None,
             picking: None,
             edit_tab: EditTab::General,
+            sample: None,
+            load: system::Load::default(),
+            cpu_history: std::collections::VecDeque::new(),
+            sampling: false,
+            tasks: None,
+            timers: Vec::new(),
+            clock_input: String::new(),
+            clock_matches: Vec::new(),
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
@@ -2305,7 +2508,20 @@ impl cosmic::Application for App {
                     "islands" => app.prefs.islands = true,
                     "single" => app.prefs.islands = false,
                     "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
-                    "audio" if !app.prefs.sections.contains(&Section::Audio) => app.prefs.sections.push(Section::Audio),
+                    "audio" | "system" | "tasks" | "clocks" => {
+                        let section = match option {
+                            "audio" => Section::Audio,
+                            "system" => Section::System,
+                            "tasks" => Section::Tasks,
+                            _ => Section::Clocks,
+                        };
+                        if !app.prefs.sections.contains(&section) {
+                            app.prefs.sections.push(section);
+                        }
+                        if section == Section::Clocks && app.prefs.clocks.is_empty() {
+                            app.prefs.clocks = vec!["America/New_York".into(), "Asia/Tokyo".into()];
+                        }
+                    }
                     "calendar" => app.prefs.calendar_open = true,
                     "weather" => app.prefs.weather_open = true,
                     "general" | "tiles" | "cards" => {
@@ -2386,21 +2602,23 @@ impl cosmic::Application for App {
                 }
             }
             Message::Tick => {
-                if let Some(phase) = self.pomodoro.tick(Instant::now()) {
-                    let (summary, body) = match phase {
-                        pomodoro::Phase::Focus => (T.pomodoro_focus_again, T.focus),
-                        _ => (T.pomodoro_break_time, self.phase_name()),
-                    };
-                    return fire(desktop::notify(summary.to_string(), body.to_string()));
+                let mut tasks = Vec::new();
+                let now = Instant::now();
+                for (_, length) in self.timers.iter().filter(|(ends, _)| *ends <= now) {
+                    tasks.push(fire(desktop::notify(T.timer_done.to_string(), pomodoro::clock(*length))));
                 }
-                let now = Zoned::now();
-                if now.date() != self.now.date() {
-                    self.selected = now.date();
-                    self.visible = now.date().first_of_month();
-                    self.now = now;
-                    return self.load_events();
+                self.timers.retain(|(ends, _)| *ends > now);
+                // The machine's load every two seconds, while it shows.
+                if self.popup.is_some()
+                    && self.prefs.sections.contains(&Section::System)
+                    && !self.sampling
+                    && self.sample.is_none_or(|s| s.at.elapsed() >= Duration::from_millis(1900))
+                {
+                    self.sampling = true;
+                    tasks.push(run(async { Message::System(system::sample().await) }));
                 }
-                self.now = now;
+                tasks.push(self.tick());
+                return Task::batch(tasks);
             }
             Message::Frame => {}
             Message::Changed(source) => return self.refresh(source),
@@ -2668,6 +2886,65 @@ impl cosmic::Application for App {
                 }
             }
             Message::EditTab(tab) => self.edit_tab = tab,
+            Message::System(sample) => {
+                self.sampling = false;
+                if let Some(sample) = sample {
+                    if let Some(before) = &self.sample {
+                        self.load = sample.since(before);
+                        self.cpu_history.push_back(self.load.cpu);
+                        if self.cpu_history.len() > 40 {
+                            self.cpu_history.pop_front();
+                        }
+                    }
+                    self.sample = Some(sample);
+                }
+            }
+            Message::Tasks(tasks) => self.tasks = tasks,
+            Message::CompleteTask(i) => {
+                if let Some(task) = self.tasks.as_mut().filter(|t| i < t.len()).map(|t| t.remove(i)) {
+                    return run(async move {
+                        tasks::complete(task).await;
+                        Message::Tasks(tasks::open().await)
+                    });
+                }
+            }
+            Message::StartTimer(minutes) => {
+                let length = Duration::from_secs(minutes * 60);
+                self.timers.push((Instant::now() + length, length));
+            }
+            Message::StopTimer(i) => {
+                if i < self.timers.len() {
+                    self.timers.remove(i);
+                }
+            }
+            Message::ClockInput(input) => {
+                let wanted = input.trim().to_lowercase().replace(' ', "_");
+                self.clock_matches = if wanted.len() < 2 {
+                    Vec::new()
+                } else {
+                    jiff::tz::db()
+                        .available()
+                        .map(|name| name.as_str().to_string())
+                        .filter(|name| name.contains('/') && name.to_lowercase().contains(&wanted))
+                        .take(6)
+                        .collect()
+                };
+                self.clock_input = input;
+            }
+            Message::AddClock(zone) => {
+                if !self.prefs.clocks.contains(&zone) {
+                    self.prefs.clocks.push(zone);
+                    self.prefs.save();
+                }
+                self.clock_input.clear();
+                self.clock_matches.clear();
+            }
+            Message::RemoveClock(i) => {
+                if i < self.prefs.clocks.len() {
+                    self.prefs.clocks.remove(i);
+                    self.prefs.save();
+                }
+            }
             Message::WeatherHourly(on) => {
                 self.prefs.weather_hourly = on;
                 self.prefs.save();

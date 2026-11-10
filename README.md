@@ -42,11 +42,21 @@ shortcuts to Screenshot and Workspaces.
 
 ### Your popup, your order
 The popup is made of parts — status and actions, tiles and sliders,
-calendar, weather, notifications, dynamic island, sound — each shown or
-hidden and moved up or down in the editor, on one surface or as **separate
+calendar, weather, notifications, dynamic island, sound, system, tasks,
+clocks — each shown or hidden and moved up or down in the editor, on one surface or as **separate
 islands**, in **one, two or three columns** (each part moved left or right
 between them). Open it as a **dropdown** under the panel, a **side panel**
 sliding in from the edge, or **fullscreen**.
+
+### System, tasks and clocks
+Cards of their own, off until you turn them on:
+- **System**: processor use with its last minute as bars, memory, and the
+  network's speed down and up (read from `/proc`).
+- **Tasks**: the open to-dos of the task lists synced to the system
+  (Evolution Data Server: Google Tasks, Nextcloud…), soonest due first;
+  tick one to mark it done.
+- **Clocks**: other cities' time (added in the editor, by name), and 5, 10,
+  15 or 30-minute timers that notify when they end.
 
 ### Sound card
 A card of its own, off until you turn it on: the output and microphone
@@ -284,6 +294,8 @@ cargo test
 | `src/config.rs` | saved preferences and COSMIC settings |
 | `src/i18n.rs` | loading translations, date formats |
 | `src/weather.rs` | Open-Meteo weather and place search |
+| `src/system.rs` | processor, memory and network use |
+| `src/tasks.rs` | Evolution Data Server to-dos |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
 | `src/workspaces.rs` | tiling and the keyboard layout in use, from the compositor |
 | `src/notifications.rs` | the notification center's feed and history |
@@ -303,7 +315,8 @@ ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-appl
 ```
 
 Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
-`weather`, `audio` (the sound card), `1`, `2`, `3` (columns), `general`,
+`weather`, `audio`, `system`, `tasks`, `clocks` (those cards), `1`, `2`,
+`3` (columns), `general`,
 `tiles`, `cards` (the editor, on that tab).
 
 ### Translations

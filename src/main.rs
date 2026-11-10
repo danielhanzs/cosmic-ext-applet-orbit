@@ -17,6 +17,8 @@ mod pomodoro;
 mod style;
 mod swipe;
 mod sys;
+mod system;
+mod tasks;
 mod updates;
 mod weather;
 mod workspaces;

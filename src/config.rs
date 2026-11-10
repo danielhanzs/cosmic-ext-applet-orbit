@@ -55,10 +55,16 @@ pub enum Section {
     Island,
     /// Sound on a card of its own: levels, devices, apps.
     Audio,
+    /// Processor, memory and network use.
+    System,
+    /// The open to-dos.
+    Tasks,
+    /// Other places' time, and timers.
+    Clocks,
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [
+    pub const ALL: [Section; 10] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -66,7 +72,15 @@ impl Section {
         Section::Notifications,
         Section::Island,
         Section::Audio,
+        Section::System,
+        Section::Tasks,
+        Section::Clocks,
     ];
+
+    /// Shown at first: the ones added later are there to turn on.
+    pub fn at_first(self) -> bool {
+        !matches!(self, Section::Audio | Section::System | Section::Tasks | Section::Clocks)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -103,6 +117,8 @@ pub struct Prefs {
     pub weather_days: u8,
     /// The notifications' list open, or only their count.
     pub notifications_open: bool,
+    /// Other places' clocks, by time zone ("America/New_York").
+    pub clocks: Vec<String>,
     /// Columns the popup's parts sit in, 1 to 3; none: two in fullscreen,
     /// one otherwise.
     pub columns: Option<u8>,
@@ -123,8 +139,7 @@ impl Default for Prefs {
             spacing: Spacing::Medium,
             mixer_open: false,
             pomodoro_panel: true,
-            // The sound card repeats the volume slider: on when asked for.
-            sections: Section::ALL.into_iter().filter(|s| *s != Section::Audio).collect(),
+            sections: Section::ALL.into_iter().filter(|s| s.at_first()).collect(),
             weather_place: None,
             weather_panel: false,
             weather_open: false,
@@ -133,6 +148,7 @@ impl Default for Prefs {
             weather_days: 5,
             notifications_open: true,
             columns: None,
+            clocks: Vec::new(),
             placement: Vec::new(),
         }
     }
@@ -200,8 +216,8 @@ impl Prefs {
     pub fn column(&self, section: Section) -> usize {
         let own = match section {
             Section::Status | Section::Controls => 0,
-            Section::Calendar | Section::Weather => 1,
-            Section::Notifications | Section::Island | Section::Audio => 2,
+            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks => 1,
+            Section::Notifications | Section::Island | Section::Audio | Section::System => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
         put.unwrap_or(own).min(self.columns() - 1)

@@ -156,6 +156,12 @@ strings!(
     hours,
     days,
     native,
+    section_system,
+    section_tasks,
+    section_clocks,
+    no_tasks,
+    timer_done,
+    add_clock,
     no_more_events,
 );
 
