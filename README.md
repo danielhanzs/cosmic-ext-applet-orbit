@@ -56,7 +56,8 @@ Cards of their own, off until you turn them on:
   (Evolution Data Server: Google Tasks, Nextcloud…), soonest due first;
   tick one to mark it done.
 - **Clocks**: other cities' time (added in the editor, by name), and 5, 10,
-  15 or 30-minute timers that notify when they end.
+  15 or 30-minute timers, or one of any length in minutes, that notify when
+  they end.
 
 ### Sound card
 A card of its own, off until you turn it on: the output and microphone

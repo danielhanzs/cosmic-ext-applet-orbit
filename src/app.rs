@@ -253,6 +253,8 @@ pub struct App {
     /// The editor's clock search, and the time zones it matches.
     clock_input: String,
     clock_matches: Vec<String>,
+    /// A timer's own length being typed, in minutes.
+    timer_input: String,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
     /// When the weather was last asked for, and which ask is the latest.
@@ -373,6 +375,7 @@ pub enum Message {
     /// A timer of this many minutes.
     StartTimer(u64),
     StopTimer(usize),
+    TimerInput(String),
     ClockInput(String),
     AddClock(String),
     RemoveClock(usize),
@@ -1859,7 +1862,20 @@ impl App {
             widget::Row::new().spacing(4).align_y(Alignment::Center).push(icon::from_name("alarm-symbolic").size(18)),
             |row, minutes| row.push(button::text(format!("{minutes} min")).on_press(Message::StartTimer(minutes))),
         );
-        column = column.push(presets);
+        // Any other length, in minutes.
+        let minutes = self.timer_input.trim().parse::<u64>().ok().filter(|m| (1..=24 * 60).contains(m));
+        let custom = widget::Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(
+                widget::text_input("min", self.timer_input.as_str())
+                    .on_input(Message::TimerInput)
+                    .on_submit_maybe(minutes.map(|m| move |_| Message::StartTimer(m)))
+                    .width(Length::Fixed(90.0)),
+            )
+            .push(text::caption("min").width(Length::Fill))
+            .push(button::icon(icon::from_name("media-playback-start-symbolic")).padding(6).on_press_maybe(minutes.map(Message::StartTimer)));
+        column = column.push(presets).push(custom);
         let now = Instant::now();
         for (i, (ends, length)) in self.timers.iter().enumerate() {
             let left = ends.saturating_duration_since(now);
@@ -2470,6 +2486,7 @@ impl cosmic::Application for App {
             timers: Vec::new(),
             clock_input: String::new(),
             clock_matches: Vec::new(),
+            timer_input: String::new(),
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
@@ -2908,7 +2925,12 @@ impl cosmic::Application for App {
                     });
                 }
             }
+            Message::TimerInput(input) => {
+                // Digits only, a day at most.
+                self.timer_input = input.chars().filter(char::is_ascii_digit).take(4).collect();
+            }
             Message::StartTimer(minutes) => {
+                self.timer_input.clear();
                 let length = Duration::from_secs(minutes * 60);
                 self.timers.push((Instant::now() + length, length));
             }
