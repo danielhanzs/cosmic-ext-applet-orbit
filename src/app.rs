@@ -1868,7 +1868,7 @@ impl App {
             .spacing(8)
             .align_y(Alignment::Center)
             .push(
-                widget::text_input("min", self.timer_input.as_str())
+                widget::text_input("", self.timer_input.as_str())
                     .on_input(Message::TimerInput)
                     .on_submit_maybe(minutes.map(|m| move |_| Message::StartTimer(m)))
                     .width(Length::Fixed(90.0)),
@@ -2005,6 +2005,9 @@ impl App {
             .push(column_count)
             .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
             .push(widget::divider::horizontal::default())
+            .push(text::heading(T.cards))
+            .push(self.edit_sections())
+            .push(widget::divider::horizontal::default())
             .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
             .push(text::body(T.panel_icons))
             .push(icons)
@@ -2131,9 +2134,8 @@ impl App {
         column.into()
     }
 
-    /// The popup's cards: shown or not, in which column and order; then
-    /// each card's own settings.
-    fn edit_cards(&self) -> Element<'_, Message> {
+    /// The popup's cards: shown or not, in which column and order.
+    fn edit_sections(&self) -> Element<'_, Message> {
         // The popup's parts: shown or not, moved up and down.
         let mut sections = widget::Column::new().spacing(2);
         let columns = self.prefs.columns();
@@ -2166,6 +2168,11 @@ impl App {
                     .push(widget::toggler(false).on_toggle(|on| Message::ShowSection(*section, on))),
             );
         }
+        sections.into()
+    }
+
+    /// Each card's own settings.
+    fn edit_cards(&self) -> Element<'_, Message> {
         let city = widget::text_input(T.city_auto, self.city_input.as_str())
             .on_input(Message::City)
             .on_submit(|_| Message::CitySubmit);
@@ -2176,7 +2183,6 @@ impl App {
         };
         let mut weather = widget::Column::new()
             .spacing(10)
-            .push(widget::divider::horizontal::default())
             .push(text::heading(T.weather))
             .push(widget::Row::new().spacing(8).align_y(Alignment::Center).push(text::body(T.city)).push(city))
             .push(self.places.iter().fold(widget::Column::new(), |column, place| {
@@ -2217,7 +2223,7 @@ impl App {
                         .on_press(Message::AddClock(zone.clone())),
                 )
             }));
-        widget::Column::new().spacing(10).push(sections).push(weather).push(clocks).into()
+        widget::Column::new().spacing(10).push(weather).push(clocks).into()
     }
 
     fn password_page(&self) -> Element<'_, Message> {
