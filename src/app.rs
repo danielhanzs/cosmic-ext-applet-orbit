@@ -239,6 +239,7 @@ pub struct App {
     stream_drag: Option<(u32, f32)>,
     /// The sound card's device list open: inputs (true) or outputs.
     picking: Option<bool>,
+    edit_tab: EditTab,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
     /// When the weather was last asked for, and which ask is the latest.
@@ -352,6 +353,10 @@ pub enum Message {
     MoveSection(usize, bool),
     ShowSection(Section, bool),
     SetColumns(u8),
+    EditTab(EditTab),
+    WeatherHourly(bool),
+    WeatherHours(u8),
+    WeatherDays(u8),
     /// To the next column, or (false) the one before.
     SectionColumn(Section, bool),
     ShowClock(bool),
@@ -750,7 +755,7 @@ impl App {
                 let mut settings = applet.get_popup_settings(parent, id, None, None, None);
                 let (w, h) = app.screen;
                 // What the panel takes, and a little air.
-                let panel = applet.suggested_size(true).1 as u32 + 2 * applet.suggested_padding(true).0 as u32 + 16;
+                let panel = app.panel_room() as u32;
                 let p = &mut settings.positioner;
                 let width = app.main_width();
                 match app.prefs.layout {
@@ -1202,6 +1207,12 @@ impl App {
             .into()
     }
 
+    /// What the panel takes of the screen's height, and a little air.
+    fn panel_room(&self) -> f32 {
+        let applet = &self.core.applet;
+        (applet.suggested_size(true).1 + 2 * applet.suggested_padding(true).0) as f32 + 16.0
+    }
+
     /// The shown part above (or below) the `i`th in its column.
     fn neighbor(&self, i: usize, up: bool) -> Option<usize> {
         let sections = &self.prefs.sections;
@@ -1273,25 +1284,26 @@ impl App {
         if !self.prefs.weather_open {
             return head.into();
         }
+        // The card's inside: the popup's width, less the one surface's padding and its own.
+        let inside = WIDTH - if self.prefs.islands { 0.0 } else { 28.0 } - 24.0;
+        let cell = (inside - 4.0 * 4.0) / 5.0;
+        // Today is in the head: the days after it; more than five scroll sideways.
+        let shown = self.prefs.weather_days.clamp(1, 7) as usize;
         let mut days = widget::Row::new().spacing(4);
-        // Today is in the head: the days after it.
-        for day in w.days.iter().skip(1).take(5) {
+        for day in w.days.iter().skip(1).take(shown) {
             days = days.push(
                 widget::Column::new()
                     .spacing(4)
                     .align_x(Alignment::Center)
-                    .width(Length::Fill)
+                    .width(if shown > 5 { Length::Fixed(cell) } else { Length::Fill })
                     .push(text::caption(i18n::weekday_short(day.date)))
                     .push(icon::from_name(day.condition.icon(true)).size(24))
                     .push(text::caption(format!("{} / {}", degrees(day.high), degrees(day.low)))),
             );
         }
-        // The next 24 hours, five at a time, scrolled sideways.
+        // The next hours, five at a time, scrolled sideways.
         let (rain, wind) = if w.fahrenheit { ("in", "mph") } else { ("mm", "km/h") };
-        // The card's inside: the popup's width, less the one surface's padding and its own.
-        let inside = WIDTH - if self.prefs.islands { 0.0 } else { 28.0 } - 24.0;
-        let cell = (inside - 4.0 * 4.0) / 5.0;
-        let hours = w.hours.iter().fold(widget::Row::new().spacing(4).padding([0, 0, 10, 0]), |row, h| {
+        let hours = w.hours.iter().take(self.prefs.weather_hours as usize).fold(widget::Row::new().spacing(4).padding([0, 0, 10, 0]), |row, h| {
             row.push(
                 widget::Column::new()
                     .spacing(2)
@@ -1304,12 +1316,15 @@ impl App {
                     .push(text::caption(format!("{:.0} {wind}", h.wind))),
             )
         });
-        widget::Column::new()
-            .push(head)
-            .push(container(widget::scrollable::horizontal(hours)).padding([0, 12, 8, 12]))
-            .push(widget::divider::horizontal::light())
-            .push(container(days).padding([8, 12, 12, 12]))
-            .into()
+        let days: Element<'_, Message> =
+            if shown > 5 { widget::scrollable::horizontal(days.padding([0, 0, 10, 0])).into() } else { days.into() };
+        let mut column = widget::Column::new().push(head);
+        if self.prefs.weather_hourly {
+            column = column
+                .push(container(widget::scrollable::horizontal(hours)).padding([0, 12, 8, 12]))
+                .push(widget::divider::horizontal::light());
+        }
+        column.push(container(days).padding([8, 12, 12, 12])).into()
     }
 
     fn notifications_view(&self) -> Element<'_, Message> {
@@ -1751,22 +1766,72 @@ impl App {
     }
 
     fn edit_page(&self) -> Element<'_, Message> {
-        let header = widget::Row::new()
+        let mut header = widget::Row::new()
             .spacing(8)
             .align_y(Alignment::Center)
             .push(button::icon(icon::from_name("go-previous-symbolic")).padding(8).on_press(Message::Page(Page::Main)))
-            .push(text::title4(T.edit).width(Length::Fill))
-            .push(
-                widget::tooltip(
-                    button::icon(icon::from_name("edit-undo-symbolic")).padding(8).on_press(Message::ResetTiles),
-                    text::caption(T.reset),
-                    widget::tooltip::Position::Bottom,
-                ),
-            );
-        let mut column = widget::Column::new()
-            .spacing(10)
+            .push(text::title4(T.edit).width(Length::Fill));
+        if self.edit_tab == EditTab::Tiles {
+            header = header.push(widget::tooltip(
+                button::icon(icon::from_name("edit-undo-symbolic")).padding(8).on_press(Message::ResetTiles),
+                text::caption(T.reset),
+                widget::tooltip::Position::Bottom,
+            ));
+        }
+        let mut tabs = widget::Row::new().spacing(4);
+        for (tab, name) in [(EditTab::General, T.general), (EditTab::Tiles, T.tiles), (EditTab::Cards, T.cards)] {
+            tabs = tabs.push(choice(name, tab == self.edit_tab, Message::EditTab(tab)).width(Length::Fill));
+        }
+        widget::Column::new()
+            .spacing(12)
             .push(header)
-            .push(text::caption(T.edit_hint));
+            .push(tabs)
+            .push(match self.edit_tab {
+                EditTab::General => self.edit_general(),
+                EditTab::Tiles => self.edit_tiles(),
+                EditTab::Cards => self.edit_cards(),
+            })
+            .into()
+    }
+
+    /// How the popup opens and sits, and what the panel shows.
+    fn edit_general(&self) -> Element<'_, Message> {
+        let mut layouts = widget::Row::new().spacing(4);
+        for (layout, name) in [(Layout::Dropdown, T.dropdown), (Layout::Side, T.side), (Layout::Fullscreen, T.fullscreen)] {
+            layouts = layouts.push(choice(name, layout == self.prefs.layout, Message::SetLayout(layout)));
+        }
+        let mut column_count = widget::Row::new().spacing(4);
+        for n in 1..=3u8 {
+            column_count = column_count.push(choice(number(n), n as usize == self.prefs.columns(), Message::SetColumns(n)));
+        }
+        let mut icons = widget::Row::new().spacing(4);
+        for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
+            icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
+        }
+        let mut spacing = widget::Row::new().spacing(4);
+        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large), (Spacing::Native, T.native)] {
+            spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
+        }
+        widget::Column::new()
+            .spacing(10)
+            .push(text::heading(T.layout))
+            .push(layouts)
+            .push(text::body(T.columns))
+            .push(column_count)
+            .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
+            .push(widget::divider::horizontal::default())
+            .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
+            .push(text::body(T.panel_icons))
+            .push(icons)
+            .push(text::body(T.panel_spacing))
+            .push(spacing)
+            .into()
+    }
+
+    /// The editor's tiles: the shown ones as they lay out (drag to move,
+    /// click to resize, − to hide), and the others to add.
+    fn edit_tiles(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(10).push(text::caption(T.edit_hint));
 
         // The shown tiles, as they lay out: drag to move, click to resize.
         let mut grid = widget::Column::new().spacing(8);
@@ -1878,18 +1943,12 @@ impl App {
             }
         }
 
-        let choice = |label: &'static str, picked: bool, message: Message| {
-            let b = button::text(label).on_press(message);
-            if picked { b.class(style::picked()) } else { b }
-        };
-        let mut layouts = widget::Row::new().spacing(4);
-        for (layout, name) in [(Layout::Dropdown, T.dropdown), (Layout::Side, T.side), (Layout::Fullscreen, T.fullscreen)] {
-            layouts = layouts.push(choice(name, layout == self.prefs.layout, Message::SetLayout(layout)));
-        }
-        let mut icons = widget::Row::new().spacing(4);
-        for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
-            icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
-        }
+        column.into()
+    }
+
+    /// The popup's cards: shown or not, in which column and order; then
+    /// each card's own settings.
+    fn edit_cards(&self) -> Element<'_, Message> {
         // The popup's parts: shown or not, moved up and down.
         let mut sections = widget::Column::new().spacing(2);
         let columns = self.prefs.columns();
@@ -1925,24 +1984,15 @@ impl App {
         let city = widget::text_input(T.city_auto, self.city_input.as_str())
             .on_input(Message::City)
             .on_submit(|_| Message::CitySubmit);
-        let mut column_count = widget::Row::new().spacing(4);
-        for n in 1..=3u8 {
-            column_count = column_count.push(choice(["1", "2", "3"][n as usize - 1], n as usize == columns, Message::SetColumns(n)));
-        }
-        let mut spacing = widget::Row::new().spacing(4);
-        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large)] {
-            spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
-        }
-        let switch = |label: &'static str, on: bool, message: fn(bool) -> Message| {
-            widget::Row::new()
-                .align_y(Alignment::Center)
-                .push(text::body(label).width(Length::Fill))
-                .push(widget::toggler(on).on_toggle(message))
+        let count = |options: &[u8], now: u8, message: fn(u8) -> Message| {
+            options.iter().fold(widget::Row::new().spacing(4), |row, &n| {
+                row.push(choice(number(n), n == now, message(n)))
+            })
         };
-        column
+        let mut weather = widget::Column::new()
+            .spacing(10)
             .push(widget::divider::horizontal::default())
-            .push(text::heading(T.sections))
-            .push(sections)
+            .push(text::heading(T.weather))
             .push(widget::Row::new().spacing(8).align_y(Alignment::Center).push(text::body(T.city)).push(city))
             .push(self.places.iter().fold(widget::Column::new(), |column, place| {
                 column.push(
@@ -1953,25 +2003,13 @@ impl App {
                         .on_press(Message::PickPlace(place.clone())),
                 )
             }))
-            .push(
-                widget::Row::new()
-                    .align_y(Alignment::Center)
-                    .push(text::body(format!("{} · {}", T.weather, T.show_on_panel)).width(Length::Fill))
-                    .push(widget::toggler(self.prefs.weather_panel).on_toggle(Message::WeatherPanel)),
-            )
-            .push(widget::divider::horizontal::default())
-            .push(text::heading(T.layout))
-            .push(layouts)
-            .push(text::body(T.columns))
-            .push(column_count)
-            .push(widget::divider::horizontal::default())
-            .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
-            .push(text::body(T.panel_icons))
-            .push(icons)
-            .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
-            .push(text::body(T.panel_spacing))
-            .push(spacing)
-            .into()
+            .push(switch(T.show_on_panel, self.prefs.weather_panel, Message::WeatherPanel))
+            .push(switch(T.hourly, self.prefs.weather_hourly, Message::WeatherHourly));
+        if self.prefs.weather_hourly {
+            weather = weather.push(text::body(T.hours)).push(count(&[6, 12, 24], self.prefs.weather_hours, Message::WeatherHours));
+        }
+        weather = weather.push(text::body(T.days)).push(count(&[3, 5, 7], self.prefs.weather_days, Message::WeatherDays));
+        widget::Column::new().spacing(10).push(sections).push(weather).into()
     }
 
     fn password_page(&self) -> Element<'_, Message> {
@@ -2088,6 +2126,38 @@ fn volume_icon(muted: bool, level: f32) -> &'static str {
     }
 }
 
+/// A choice among a few: the picked one lit.
+fn choice(label: &'static str, picked: bool, message: Message) -> button::TextButton<'static, Message> {
+    let b = button::text(label).on_press(message);
+    if picked { b.class(style::picked()) } else { b }
+}
+
+/// A setting that's on or off, its name before it.
+fn switch(label: &'static str, on: bool, message: fn(bool) -> Message) -> Element<'static, Message> {
+    widget::Row::new()
+        .align_y(Alignment::Center)
+        .push(text::body(label).width(Length::Fill))
+        .push(widget::toggler(on).on_toggle(message))
+        .into()
+}
+
+/// A small count as a label that lives as long as the program.
+fn number(n: u8) -> &'static str {
+    const NUMBERS: [&str; 25] = [
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+        "20", "21", "22", "23", "24",
+    ];
+    NUMBERS.get(n as usize).copied().unwrap_or("")
+}
+
+/// The editor's pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditTab {
+    General,
+    Tiles,
+    Cards,
+}
+
 /// How a section sits in the popup.
 #[derive(Clone, Copy)]
 enum Look {
@@ -2196,6 +2266,7 @@ impl cosmic::Application for App {
             updates: 0,
             stream_drag: None,
             picking: None,
+            edit_tab: EditTab::General,
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
@@ -2237,6 +2308,17 @@ impl cosmic::Application for App {
                     "audio" if !app.prefs.sections.contains(&Section::Audio) => app.prefs.sections.push(Section::Audio),
                     "calendar" => app.prefs.calendar_open = true,
                     "weather" => app.prefs.weather_open = true,
+                    "general" | "tiles" | "cards" => {
+                        app.edit_tab = match option {
+                            "general" => EditTab::General,
+                            "tiles" => EditTab::Tiles,
+                            _ => EditTab::Cards,
+                        };
+                        tasks.push(run(async {
+                            tokio::time::sleep(Duration::from_secs(6)).await;
+                            Message::Page(Page::Edit)
+                        }));
+                    }
                     _ => {}
                 }
             }
@@ -2585,6 +2667,19 @@ impl cosmic::Application for App {
                     self.prefs.save();
                 }
             }
+            Message::EditTab(tab) => self.edit_tab = tab,
+            Message::WeatherHourly(on) => {
+                self.prefs.weather_hourly = on;
+                self.prefs.save();
+            }
+            Message::WeatherHours(n) => {
+                self.prefs.weather_hours = n;
+                self.prefs.save();
+            }
+            Message::WeatherDays(n) => {
+                self.prefs.weather_days = n;
+                self.prefs.save();
+            }
             Message::SetColumns(n) => {
                 self.prefs.columns = Some(n);
                 self.prefs.save();
@@ -2897,7 +2992,8 @@ impl cosmic::Application for App {
         let at = icons.len() - usize::from(self.battery.is_some());
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
-        let gap = self.prefs.spacing.gap();
+        // An applet's padding on both sides, and the panel's spacing between.
+        let gap = self.prefs.spacing.gap(2 * applet.suggested_padding(true).0 + applet.spacing as u16);
         if let Some(w) = self.weather.as_ref().filter(|_| self.prefs.weather_panel) {
             icons.push(
                 widget::Row::new()
@@ -2959,7 +3055,8 @@ impl cosmic::Application for App {
                 container(body).width(Length::Fixed(width)),
                 widget::Id::new("orbit-autosize"),
             )
-            .limits(Limits::NONE.width(width).min_height(1.0).max_height(self.screen.1 as f32))
+            // No taller than the popup may be, so what's more scrolls.
+            .limits(Limits::NONE.width(width).min_height(1.0).max_height(self.screen.1 as f32 - self.panel_room()))
             .into(),
             Layout::Side => {
                 let t = (self.opened.elapsed().as_secs_f32() / SLIDE.as_secs_f32()).min(1.0);

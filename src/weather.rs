@@ -179,7 +179,7 @@ pub async fn read(place: Option<Place>, language: String, fahrenheit: bool) -> O
         "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}\
          &current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m\
          &hourly=temperature_2m,weather_code,precipitation_probability,precipitation,wind_speed_10m,is_day\
-         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6&forecast_hours=24{units}",
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=8&forecast_hours=24{units}",
         place.latitude, place.longitude,
     ))
     .await?;

@@ -20,11 +20,15 @@ pub enum Spacing {
     Small,
     Medium,
     Large,
+    /// As far apart as the panel's own applets are.
+    Native,
 }
 
 impl Spacing {
-    pub fn gap(self) -> u16 {
+    /// `native`: the gap between two of the panel's applets.
+    pub fn gap(self, native: u16) -> u16 {
         match self {
+            Spacing::Native => native,
             Spacing::Small => 2,
             Spacing::Medium => 6,
             Spacing::Large => 12,
@@ -92,6 +96,11 @@ pub struct Prefs {
     pub weather_panel: bool,
     /// The forecast open, or only today's line.
     pub weather_open: bool,
+    /// The forecast's hours shown, and how many (up to 24).
+    pub weather_hourly: bool,
+    pub weather_hours: u8,
+    /// Days ahead in the forecast (up to 7).
+    pub weather_days: u8,
     /// The notifications' list open, or only their count.
     pub notifications_open: bool,
     /// Columns the popup's parts sit in, 1 to 3; none: two in fullscreen,
@@ -119,6 +128,9 @@ impl Default for Prefs {
             weather_place: None,
             weather_panel: false,
             weather_open: false,
+            weather_hourly: true,
+            weather_hours: 24,
+            weather_days: 5,
             notifications_open: true,
             columns: None,
             placement: Vec::new(),

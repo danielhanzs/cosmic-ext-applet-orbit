@@ -142,7 +142,6 @@ strings!(
     notifications,
     clear_all,
     no_notifications,
-    sections,
     columns,
     section_status,
     section_controls,
@@ -150,6 +149,13 @@ strings!(
     section_island,
     section_audio,
     keyboard,
+    general,
+    tiles,
+    cards,
+    hourly,
+    hours,
+    days,
+    native,
     no_more_events,
 );
 

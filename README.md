@@ -88,9 +88,9 @@ until you open it).
   CalDAV…). Repeating events are handled.
 
 ### Weather
-Now (temperature, feels like, wind), the next 24 hours (five at a time,
-scrolled sideways: temperature, chance and amount of rain or snow, wind) and
-five days ahead, from
+Now (temperature, feels like, wind), the next hours (6, 12 or 24, five at a
+time, scrolled sideways: temperature, chance and amount of rain or snow,
+wind; or none) and 3, 5 or 7 days ahead, from
 [Open-Meteo](https://open-meteo.com) — free, no account. Pick your city in
 the editor (it suggests places as you type), or leave it empty to use your
 time zone's city. Fahrenheit where the region uses it. Can show on the
@@ -303,7 +303,8 @@ ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-appl
 ```
 
 Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
-`weather`, `audio` (the sound card), `1`, `2`, `3` (columns).
+`weather`, `audio` (the sound card), `1`, `2`, `3` (columns), `general`,
+`tiles`, `cards` (the editor, on that tab).
 
 ### Translations
 
