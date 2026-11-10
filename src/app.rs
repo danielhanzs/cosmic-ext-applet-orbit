@@ -3269,11 +3269,8 @@ impl cosmic::Application for App {
         let at = icons.len() - usize::from(self.battery.is_some());
         icons.splice(at..at, tile_icons);
         let horizontal = applet.is_horizontal();
-        // As between two applets: each one's padding, the panel's spacing,
-        // less what the panel lets their paddings overlap.
-        let padding = applet.suggested_padding(true).0 as f32;
-        let native = 2.0 * padding + applet.spacing as f32 - padding * applet.padding_overlap;
-        let gap = self.prefs.spacing.gap(native.max(0.0).round() as u16);
+        // Native: COSMIC's interface density (compact 8, standard 12, spacious 16).
+        let gap = self.prefs.spacing.gap(cosmic::theme::spacing().space_xs);
         if let Some(w) = self.weather.as_ref().filter(|_| self.prefs.weather_panel) {
             icons.push(
                 widget::Row::new()

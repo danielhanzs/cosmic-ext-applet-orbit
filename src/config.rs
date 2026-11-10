@@ -20,12 +20,12 @@ pub enum Spacing {
     Small,
     Medium,
     Large,
-    /// As far apart as the panel's own applets are.
+    /// As COSMIC's interface density sets it.
     Native,
 }
 
 impl Spacing {
-    /// `native`: the gap between two of the panel's applets.
+    /// `native`: the theme's, from the interface density.
     pub fn gap(self, native: u16) -> u16 {
         match self {
             Spacing::Native => native,
