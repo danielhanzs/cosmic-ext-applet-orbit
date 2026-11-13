@@ -157,7 +157,10 @@ pub struct Prefs {
     pub low_battery_badge: bool,
     /// How long the panel shows that Wi-Fi dropped.
     pub wifi_badge: WifiBadge,
-    /// Tiles of the user's own, each running a command.
+    /// Tiles of the user's own, each running a command. Not with the rest:
+    /// COSMIC's config folder is shared with other Flatpaks that could put
+    /// commands here for Orbit to run on the host. See `custom_path`.
+    #[serde(skip)]
     pub custom: Vec<Custom>,
     pub tile_style: TileStyle,
     /// Shown parts of the popup, in order; the rest are hidden.
@@ -222,6 +225,12 @@ fn config() -> Option<Config> {
 
 impl Prefs {
     pub fn load() -> Self {
+        let mut prefs = Self::load_shared();
+        prefs.custom = load_custom();
+        prefs
+    }
+
+    fn load_shared() -> Self {
         let Some(c) = config() else { return Self::default() };
         if let Ok(prefs) = c.get::<Prefs>("prefs") {
             return prefs;
@@ -290,10 +299,45 @@ impl Prefs {
         if std::env::var_os("ORBIT_PREVIEW").is_some() {
             return;
         }
+        save_custom(&self.custom);
         let Some(c) = config() else { return };
         if let Err(err) = c.set("prefs", self) {
             tracing::warn!("cannot save settings: {err}");
         }
+    }
+}
+
+/// Where the user's own tiles are kept: Orbit's own config folder, which in
+/// the Flatpak is private to it (~/.var/app/<id>/config), unlike COSMIC's.
+fn custom_path() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".config")))?;
+    Some(base.join(crate::APP_ID).join("custom-tiles.json"))
+}
+
+fn load_custom() -> Vec<Custom> {
+    custom_path()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Written whole and then moved into place, readable by the user alone.
+fn save_custom(custom: &[Custom]) {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let Some(path) = custom_path() else { return };
+    let Some(dir) = path.parent() else { return };
+    let write = || -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let part = path.with_extension("json.part");
+        let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&part)?;
+        file.write_all(&serde_json::to_vec_pretty(custom).unwrap_or_default())?;
+        file.sync_all()?;
+        std::fs::rename(part, &path)
+    };
+    if let Err(err) = write() {
+        tracing::warn!("cannot save your tiles: {err}");
     }
 }
 

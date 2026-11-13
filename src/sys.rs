@@ -757,6 +757,17 @@ impl Dns {
         }
     }
 
+    /// The same servers over IPv6, so a choice holds on both.
+    pub fn servers6(self) -> &'static [[u16; 8]] {
+        match self {
+            Dns::Automatic => &[],
+            Dns::Cloudflare => &[[0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111], [0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1001]],
+            Dns::Google => &[[0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888], [0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8844]],
+            Dns::Quad9 => &[[0x2620, 0xfe, 0, 0, 0, 0, 0, 0xfe], [0x2620, 0xfe, 0, 0, 0, 0, 0, 0x9]],
+            Dns::AdGuard => &[[0x2a10, 0x50c0, 0, 0, 0, 0, 0xad1, 0xff], [0x2a10, 0x50c0, 0, 0, 0, 0, 0xad2, 0xff]],
+        }
+    }
+
     /// The servers' names, for showing.
     pub fn name(self) -> Option<&'static str> {
         match self {
@@ -805,8 +816,10 @@ async fn primary() -> zbus::Result<(NmConnectionProxy<'static>, OwnedObjectPath,
 pub async fn dns() -> Option<Dns> {
     let (connection, _, _) = primary().await.ok()?;
     let settings = connection.get_settings().await.ok()?;
+    let ignores = |family: &str| {
+        settings.get(family).and_then(|s| s.get("ignore-auto-dns")).and_then(|v| bool::try_from(v).ok()).unwrap_or(false)
+    };
     let ipv4 = settings.get("ipv4")?;
-    let automatic = !ipv4.get("ignore-auto-dns").and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
     let servers: Vec<[u8; 4]> = ipv4
         .get("dns")
         .and_then(|v| Vec::<u32>::try_from(v.try_clone().ok()?).ok())
@@ -814,7 +827,18 @@ pub async fn dns() -> Option<Dns> {
         .into_iter()
         .map(decode)
         .collect();
-    Dns::of(&servers, automatic && servers.is_empty())
+    let choice = Dns::of(&servers, !ignores("ipv4") && servers.is_empty())?;
+    // Ours only if IPv6 goes the same way (where the connection has it).
+    (!uses_ipv6(&settings) || ignores("ipv6") == (choice != Dns::Automatic)).then_some(choice)
+}
+
+/// Whether the connection has IPv6 on at all.
+fn uses_ipv6(settings: &Settings) -> bool {
+    let method = settings
+        .get("ipv6")
+        .and_then(|s| s.get("method"))
+        .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
+    !matches!(method.as_deref(), Some("ignore" | "disabled"))
 }
 
 pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
@@ -829,6 +853,20 @@ pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
     ipv4.insert("dns".into(), OwnedValue::try_from(Value::from(servers)).map_err(|e| zbus::Error::Failure(e.to_string()))?);
     // Ours instead of the network's, not added to them.
     ipv4.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
+    // The same over IPv6, or name lookups would still go to the network's
+    // servers that way.
+    if uses_ipv6(&settings) {
+        let ipv6 = settings.entry("ipv6".into()).or_default();
+        ipv6.remove("addresses");
+        ipv6.remove("routes");
+        let servers: Vec<Vec<u8>> = choice
+            .servers6()
+            .iter()
+            .map(|groups| groups.iter().flat_map(|g| g.to_be_bytes()).collect())
+            .collect();
+        ipv6.insert("dns".into(), OwnedValue::try_from(Value::from(servers)).map_err(|e| zbus::Error::Failure(e.to_string()))?);
+        ipv6.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
+    }
     connection.update(settings).await?;
     // Saved; the running connection takes it when brought up again.
     if let Some(device) = device {
@@ -925,5 +963,9 @@ mod dns_tests {
         assert_eq!(Dns::of(&[[9, 9, 9, 9], [149, 112, 112, 112]], false), Some(Dns::Quad9));
         assert_eq!(Dns::of(&[], true), Some(Dns::Automatic));
         assert_eq!(Dns::of(&[[10, 0, 0, 1]], false), None);
+        // Every provider has both families, two servers each.
+        for d in Dns::ALL.into_iter().filter(|d| *d != Dns::Automatic) {
+            assert_eq!((d.servers().len(), d.servers6().len()), (2, 2));
+        }
     }
 }
