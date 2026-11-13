@@ -9,6 +9,8 @@ use zbus::zvariant::OwnedObjectPath;
 
 #[derive(Debug, Clone)]
 pub struct Task {
+    /// Its own id, which stays as lists are read again.
+    pub uid: String,
     pub summary: String,
     pub due: Option<civil::Date>,
     /// Its list, and itself as EDS gave it, to write back done.
@@ -18,13 +20,7 @@ pub struct Task {
 
 /// The open to-dos, the soonest due first; None: no task service.
 pub async fn open() -> Option<Vec<Task>> {
-    match read().await {
-        Ok(tasks) => Some(tasks),
-        Err(err) => {
-            tracing::info!("tasks: {err}");
-            None
-        }
-    }
+    read().await.inspect_err(|err| tracing::info!("tasks: {err}")).ok()
 }
 
 async fn read() -> zbus::Result<Vec<Task>> {
@@ -37,8 +33,8 @@ async fn read() -> zbus::Result<Vec<Task>> {
             .and_then(|r| r.body().deserialize::<Vec<String>>().map_err(Into::into));
         match reply {
             Ok(objects) => tasks.extend(objects.into_iter().filter_map(|ics| {
-                let (summary, due) = parse(&ics)?;
-                Some(Task { summary, due, list: list.clone(), ics })
+                let open = parse(&ics)?;
+                Some(Task { uid: open.uid, summary: open.summary, due: open.due, list: list.clone(), ics })
             })),
             Err(err) => tracing::warn!("task list: {err}"),
         }
@@ -66,55 +62,75 @@ pub async fn complete(task: Task) {
     }
 }
 
+/// Long lines go on in lines that start with a space or a tab.
 fn unfold(ics: &str) -> String {
-    ics.replace("\r\n ", "").replace("\n ", "").replace('\r', "")
+    ics.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "").replace('\r', "")
 }
 
-/// An open to-do's summary and due date; None: done, or not a to-do.
-fn parse(ics: &str) -> Option<(String, Option<civil::Date>)> {
-    let (mut summary, mut due, mut done, mut todo) = (None, None, false, false);
-    let mut depth = 0;
+struct Open {
+    uid: String,
+    summary: String,
+    due: Option<civil::Date>,
+}
+
+/// An open to-do; None: done, or not a to-do. Only the VTODO's own lines
+/// count, not those of what's inside it (alarms).
+fn parse(ics: &str) -> Option<Open> {
+    let (mut uid, mut summary, mut due, mut done, mut todo) = (String::new(), None, None, false, false);
+    let mut inner = 0;
     for line in unfold(ics).lines() {
-        if line == "BEGIN:VTODO" {
-            todo = true;
-            continue;
-        }
-        if line.starts_with("BEGIN:") && todo {
-            depth += 1;
-        } else if line.starts_with("END:") && depth > 0 {
-            depth -= 1;
-        } else if depth == 0 && todo {
-            let Some((name, value)) = line.split_once(':') else { continue };
-            match name.split(';').next().unwrap_or(name) {
-                "SUMMARY" => summary = Some(value.replace("\\,", ",").replace("\\;", ";").replace("\\n", " ")),
-                "STATUS" => done |= value == "COMPLETED" || value == "CANCELLED",
-                "COMPLETED" => done = true,
-                // "20261110" or "20261110T120000Z": the day is enough.
-                "DUE" => due = value.get(..8).and_then(|d| civil::Date::strptime("%Y%m%d", d).ok()),
-                _ => {}
+        match line {
+            "BEGIN:VTODO" => todo = true,
+            "END:VTODO" => break,
+            _ if !todo => {}
+            _ if line.starts_with("BEGIN:") => inner += 1,
+            _ if line.starts_with("END:") => inner -= 1,
+            _ if inner > 0 => {}
+            _ => {
+                let Some((name, value)) = line.split_once(':') else { continue };
+                match name.split(';').next().unwrap_or(name) {
+                    "UID" => uid = value.to_string(),
+                    "SUMMARY" => summary = Some(value.replace("\\,", ",").replace("\\;", ";").replace("\\n", " ")),
+                    "STATUS" => done |= value == "COMPLETED" || value == "CANCELLED",
+                    "COMPLETED" => done = true,
+                    "DUE" => due = due_day(value),
+                    _ => {}
+                }
             }
         }
     }
-    (todo && !done).then(|| (summary.unwrap_or_default(), due))
+    (todo && !done).then(|| Open { uid, summary: summary.unwrap_or_default(), due })
 }
 
-/// The to-do marked done at `now` (UTC, "20261110T120000Z").
+/// "20261110", or "20261110T120000" (floating), or "…Z" (UTC, so the day
+/// here may differ).
+fn due_day(value: &str) -> Option<civil::Date> {
+    if let Some(utc) = value.strip_suffix('Z') {
+        let at = civil::DateTime::strptime("%Y%m%dT%H%M%S", utc).ok()?;
+        return Some(at.to_zoned(jiff::tz::TimeZone::UTC).ok()?.with_time_zone(jiff::tz::TimeZone::system()).date());
+    }
+    civil::Date::strptime("%Y%m%d", value.get(..8)?).ok()
+}
+
+/// The to-do marked done at `now` (UTC, "20261110T120000Z"): its own
+/// status lines replaced, wherever the VTODO sits.
 fn done(ics: &str, now: &str) -> String {
     let mut out = Vec::new();
-    let mut depth = 0;
+    let (mut todo, mut inner) = (false, 0);
     for line in unfold(ics).lines() {
-        if line.starts_with("BEGIN:") {
-            depth += 1;
+        let own = todo && inner == 0;
+        match line {
+            "BEGIN:VTODO" => todo = true,
+            "END:VTODO" => {
+                out.extend(["STATUS:COMPLETED".to_string(), format!("COMPLETED:{now}"), "PERCENT-COMPLETE:100".to_string()]);
+                todo = false;
+            }
+            _ if todo && line.starts_with("BEGIN:") => inner += 1,
+            _ if todo && line.starts_with("END:") => inner -= 1,
+            _ => {}
         }
         let name = line.split([':', ';']).next().unwrap_or("");
-        let own = depth == 1 && matches!(name, "STATUS" | "COMPLETED" | "PERCENT-COMPLETE");
-        if depth == 1 && line == "END:VTODO" {
-            out.extend(["STATUS:COMPLETED".to_string(), format!("COMPLETED:{now}"), "PERCENT-COMPLETE:100".to_string()]);
-        }
-        if line.starts_with("END:") {
-            depth -= 1;
-        }
-        if !own {
+        if !(own && matches!(name, "STATUS" | "COMPLETED" | "PERCENT-COMPLETE")) {
             out.push(line.to_string());
         }
     }
@@ -125,38 +141,23 @@ fn done(ics: &str, now: &str) -> String {
 mod tests {
     use super::*;
 
-    const TODO: &str = "BEGIN:VTODO\r\nUID:1\r\nSUMMARY:Buy milk\\, eggs\r\nDUE;VALUE=DATE:20261112\r\n\
+    const TODO: &str = "BEGIN:VTODO\r\nUID:1\r\nSUMMARY:Buy milk\\, \r\n eggs\r\nDUE;VALUE=DATE:20261112\r\n\
                         STATUS:NEEDS-ACTION\r\nBEGIN:VALARM\r\nSTATUS:X\r\nEND:VALARM\r\nEND:VTODO";
 
     #[test]
     fn reads_and_ticks_off() {
-        assert_eq!(parse(TODO), Some(("Buy milk, eggs".to_string(), Some(civil::date(2026, 11, 12)))));
+        let open = parse(TODO).unwrap();
+        assert_eq!((open.uid.as_str(), open.summary.as_str(), open.due), ("1", "Buy milk, eggs", Some(civil::date(2026, 11, 12))));
         let ticked = done(TODO, "20261110T080000Z");
         assert!(ticked.contains("STATUS:COMPLETED\r\nCOMPLETED:20261110T080000Z\r\nPERCENT-COMPLETE:100\r\nEND:VTODO"));
         assert!(!ticked.contains("NEEDS-ACTION"));
         // The alarm's own lines stay.
         assert!(ticked.contains("BEGIN:VALARM\r\nSTATUS:X\r\nEND:VALARM"));
-        assert_eq!(parse(&ticked), None);
-        assert_eq!(parse("BEGIN:VEVENT\r\nSUMMARY:x\r\nEND:VEVENT"), None);
-    }
-
-    /// Lists this system's open to-dos: cargo test -- --ignored --nocapture
-    #[tokio::test]
-    #[ignore]
-    async fn lists_tasks() {
-        let conn = crate::bus::session().await.unwrap();
-        for list in crate::calendar::open_all(&conn, "Task List", "OpenTaskList").await.unwrap() {
-            let all: Vec<String> = conn
-                .call_method(Some(list.0.as_str()), &list.1, Some(CALENDAR), "GetObjectList", &("#t",))
-                .await
-                .unwrap()
-                .body()
-                .deserialize()
-                .unwrap();
-            println!("{} objects in {}", all.len(), list.1);
-        }
-        for task in open().await.expect("a task service") {
-            println!("{:?} {}", task.due, task.summary);
-        }
+        assert!(parse(&ticked).is_none());
+        // Inside a calendar too.
+        let wrapped = format!("BEGIN:VCALENDAR\r\n{TODO}\r\nEND:VCALENDAR");
+        assert!(parse(&wrapped).is_some());
+        assert!(parse(&done(&wrapped, "20261110T080000Z")).is_none());
+        assert!(parse("BEGIN:VEVENT\r\nSUMMARY:x\r\nEND:VEVENT").is_none());
     }
 }

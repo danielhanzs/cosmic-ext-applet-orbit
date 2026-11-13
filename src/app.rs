@@ -261,6 +261,8 @@ pub struct App {
     sampling: bool,
     /// The open to-dos; None: no task service.
     tasks: Option<Vec<tasks::Task>>,
+    /// The UIDs of to-dos being ticked off.
+    completing: Vec<String>,
     /// Running timers: when each ends, and how long it was.
     timers: Vec<(Instant, Duration)>,
     /// The editor's clock search, and the time zones it matches.
@@ -283,6 +285,7 @@ pub struct App {
     /// The user's tiles whose status says on; when last asked.
     custom_on: Vec<u32>,
     custom_asked: Option<Instant>,
+    custom_polling: bool,
     /// The user's tile being made or changed in the editor.
     custom_form: Option<crate::config::Custom>,
     /// Launchers installed here, offered as tiles.
@@ -329,7 +332,6 @@ pub enum Message {
     Workspaces(workspaces::Event),
     /// Switch to the keyboard layout at this place in the list.
     KeyboardLayout(usize),
-    CompChanged,
     Inhibited(Option<u32>),
     ResetTiles,
     PanelIcons(PanelIcons),
@@ -403,10 +405,13 @@ pub enum Message {
     EditTab(EditTab),
     System(Option<system::Sample>),
     Tasks(Option<Vec<tasks::Task>>),
-    CompleteTask(usize),
+    /// By its UID: the list may have been read again meanwhile.
+    CompleteTask(String),
+    TaskDone(String, Option<Vec<tasks::Task>>),
     /// A timer of this many minutes.
     StartTimer(u64),
-    StopTimer(usize),
+    /// By when it ends: others may have ended meanwhile.
+    StopTimer(Instant),
     TimerInput(String),
     /// The extras read when the popup opens.
     Extras(Option<sys::Dns>, Option<(zbus::zvariant::OwnedObjectPath, bool)>, Option<(String, u32, u32)>, Option<bool>),
@@ -859,11 +864,7 @@ impl App {
             self.visible = today.first_of_month();
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
-        tasks.push(run(async {
-            let (dns, charge, light, gamemode) =
-                tokio::join!(sys::dns(), sys::charge_limit(), sys::keyboard_light(), desktop::gamemode());
-            Message::Extras(dns, charge, light, gamemode)
-        }));
+        tasks.push(run(extras()));
         if self.prefs.sections.contains(&Section::Tasks) {
             tasks.push(run(async { Message::Tasks(tasks::open().await) }));
         }
@@ -917,6 +918,9 @@ impl App {
         if self.page != Page::Password {
             self.page = Page::Main;
         }
+        // Next time, the load from then: not averaged over the time closed.
+        self.sample = None;
+        self.cpu_history.clear();
         match self.popup.take() {
             Some(id) => cosmic::surface::surface_task(surface::action::destroy_popup(id)),
             None => Task::none(),
@@ -1369,6 +1373,12 @@ impl App {
         }
     }
 
+    /// Changes a setting and keeps it.
+    fn pref(&mut self, change: impl FnOnce(&mut Prefs)) {
+        change(&mut self.prefs);
+        self.prefs.save();
+    }
+
     /// Whether a tile has something to work with here.
     fn available(&self, tile: Tile) -> bool {
         match tile {
@@ -1616,18 +1626,9 @@ impl App {
             .into()
     }
 
-    fn more(&self, page: &'static str) -> Element<'_, Message> {
-        button::text(T.more_settings)
-            .on_press(Message::Spawn("cosmic-settings", match page {
-                "wireless" => &["wireless"],
-                "bluetooth" => &["bluetooth"],
-                "vpn" => &["vpn"],
-                "power" => &["power"],
-                "keyboard" => &["keyboard"],
-                "wired" => &["wired"],
-                _ => &["sound"],
-            }))
-            .into()
+    /// COSMIC Settings, on its page for this.
+    fn more(&self, page: &'static [&'static str]) -> Element<'_, Message> {
+        button::text(T.more_settings).on_press(Message::Spawn("cosmic-settings", page)).into()
     }
 
     fn sub_page(&self) -> Element<'_, Message> {
@@ -1646,7 +1647,7 @@ impl App {
                         column = column.push(self.item(named(wifi_icon(ap.strength)), name, subtitle, ap.active, message));
                     }
                 }
-                column = column.push(self.more("wireless"));
+                column = column.push(self.more(&["wireless"]));
             }
             Page::Bluetooth => {
                 column = column.push(self.page_header(T.bluetooth, Some((self.bt.powered, Message::SetBluetooth))));
@@ -1667,7 +1668,7 @@ impl App {
                         ));
                     }
                 }
-                column = column.push(self.more("bluetooth"));
+                column = column.push(self.more(&["bluetooth"]));
             }
             Page::Vpn => {
                 column = column.push(self.page_header(T.vpn, None));
@@ -1687,7 +1688,7 @@ impl App {
                         Some(message),
                     ));
                 }
-                column = column.push(self.more("vpn"));
+                column = column.push(self.more(&["vpn"]));
             }
             Page::Power => {
                 column = column.push(self.page_header(T.power, None));
@@ -1709,7 +1710,7 @@ impl App {
                             .push(text::caption(T.charge_limit_hint)),
                     );
                 }
-                column = column.push(self.more("power"));
+                column = column.push(self.more(&["power"]));
             }
             Page::Confirm(id) => {
                 let name = self.tile_name(Tile::Custom(id));
@@ -1728,7 +1729,7 @@ impl App {
             Page::Dns => {
                 column = column.push(self.page_header("DNS", None));
                 for choice in sys::Dns::ALL {
-                    let servers = choice.servers().iter().map(|s| format!("{}.{}.{}.{}", s[0], s[1], s[2], s[3])).collect::<Vec<_>>().join(", ");
+                    let servers = choice.servers().iter().map(|s| std::net::Ipv4Addr::from(*s).to_string()).collect::<Vec<_>>().join(", ");
                     column = column.push(self.item(
                         named("network-server-symbolic"),
                         choice.name().unwrap_or(T.automatic),
@@ -1738,7 +1739,7 @@ impl App {
                     ));
                 }
                 column = column.push(container(text::caption(T.dns_hint)).padding([8, 10]));
-                column = column.push(self.more("wired"));
+                column = column.push(self.more(&["wired"]));
             }
             Page::Sound => {
                 column = column.push(self.page_header(T.sound_output, None));
@@ -1764,7 +1765,7 @@ impl App {
                     }
                 }
                 column = column.push(self.mixer());
-                column = column.push(self.more("sound"));
+                column = column.push(self.more(&["sound"]));
             }
             Page::Pomodoro => {
                 column = column.push(self.page_header(T.pomodoro, None));
@@ -1806,7 +1807,7 @@ impl App {
                 } else {
                     column = column.push(container(text::caption(T.hotspot_hint)).padding([8, 10]));
                 }
-                column = column.push(self.more("wireless"));
+                column = column.push(self.more(&["wireless"]));
             }
             Page::Keyboard => {
                 column = column.push(self.page_header(T.keyboard, None));
@@ -1819,7 +1820,7 @@ impl App {
                         Some(Message::KeyboardLayout(i)),
                     ));
                 }
-                column = column.push(self.more("keyboard"));
+                column = column.push(self.more(&["keyboard"]));
             }
             Page::Edit => column = column.push(self.edit_page()),
             Page::Password => column = column.push(self.password_page()),
@@ -1988,7 +1989,7 @@ impl App {
             column = column.push(text::caption(T.no_tasks));
         }
         let today = self.now.date();
-        for (i, task) in tasks.iter().enumerate().take(8) {
+        for task in tasks.iter().take(8) {
             let mut label = widget::Column::new().push(text::body(task.summary.as_str()));
             if let Some(due) = task.due {
                 let due_text = text::caption(i18n::short_date(due));
@@ -1998,7 +1999,10 @@ impl App {
                 widget::Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(widget::checkbox(false).on_toggle(move |_| Message::CompleteTask(i)))
+                    .push(widget::checkbox(false).on_toggle({
+                        let uid = task.uid.clone();
+                        move |_| Message::CompleteTask(uid.clone())
+                    }))
                     .push(label.width(Length::Fill)),
             );
         }
@@ -2051,7 +2055,7 @@ impl App {
             .push(button::icon(icon::from_name("media-playback-start-symbolic")).padding(6).on_press_maybe(minutes.map(Message::StartTimer)));
         column = column.push(presets).push(custom);
         let now = Instant::now();
-        for (i, (ends, length)) in self.timers.iter().enumerate() {
+        for (ends, length) in &self.timers {
             let left = ends.saturating_duration_since(now);
             column = column.push(
                 widget::Row::new()
@@ -2059,7 +2063,7 @@ impl App {
                     .align_y(Alignment::Center)
                     .push(text::body(pomodoro::clock(left)))
                     .push(widget::determinate_linear(1.0 - left.as_secs_f32() / length.as_secs_f32().max(1.0)).width(Length::Fill))
-                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::StopTimer(i))),
+                    .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::StopTimer(*ends))),
             );
         }
         column.into()
@@ -2192,7 +2196,7 @@ impl App {
             .push(option(T.fullscreen, T.fullscreen_hint, Layout::Fullscreen, self.prefs.layout, Message::SetLayout));
         let mut column_count = widget::Row::new().spacing(4);
         for n in 1..=3u8 {
-            column_count = column_count.push(choice(number(n), n as usize == self.prefs.columns(), Message::SetColumns(n)));
+            column_count = column_count.push(choice(n.to_string(), n as usize == self.prefs.columns(), Message::SetColumns(n)));
         }
         let looks = widget::Column::new()
             .spacing(10)
@@ -2442,11 +2446,11 @@ impl App {
                 .push(button::standard(T.cancel).on_press(Message::CancelCustom))
                 .push(button::suggested(T.save).on_press_maybe(ready.then_some(Message::SaveCustom)));
             return column
-                .push(field(T.name, "", &form.name, CustomField::Name))
-                .push(field(T.command, "cosmic-term", &form.command, CustomField::Command))
-                .push(field(T.icon_name, "application-x-executable-symbolic", &form.icon, CustomField::Icon))
+                .push(field(T.name, "", &form.name, |c| &mut c.name))
+                .push(field(T.command, "cosmic-term", &form.command, |c| &mut c.command))
+                .push(field(T.icon_name, "application-x-executable-symbolic", &form.icon, |c| &mut c.icon))
                 .push(described(
-                    field(T.status_command, "systemctl --user is-active -q syncthing", &form.status, CustomField::Status).into(),
+                    field(T.status_command, "systemctl --user is-active -q syncthing", &form.status, |c| &mut c.status).into(),
                     T.status_command_hint,
                 ))
                 .push(switch(T.ask_first, form.confirm, Message::CustomConfirm))
@@ -2492,7 +2496,7 @@ impl App {
                             .spacing(6)
                             .align_y(Alignment::Center)
                             .push(icon::from_name(s.icon).size(16))
-                            .push(text::caption(s.name())),
+                            .push(text::caption(s.name)),
                     )
                     .class(style::tile(false))
                     .padding([6, 10])
@@ -2548,7 +2552,7 @@ impl App {
             .on_submit(|_| Message::CitySubmit);
         let count = |options: &[u8], now: u8, message: fn(u8) -> Message| {
             options.iter().fold(widget::Row::new().spacing(4), |row, &n| {
-                row.push(choice(number(n), n == now, message(n)))
+                row.push(choice(n.to_string(), n == now, message(n)))
             })
         };
         let mut weather = widget::Column::new()
@@ -2710,46 +2714,39 @@ fn volume_icon(muted: bool, level: f32) -> &'static str {
     }
 }
 
-/// The editor's fields of a tile of the user's.
-#[derive(Debug, Clone, Copy)]
-pub enum CustomField {
-    Name,
-    Command,
-    Icon,
-    Status,
+/// What's read when the popup opens, all at once.
+async fn extras() -> Message {
+    let (dns, charge, light, gamemode) = tokio::join!(sys::dns(), sys::charge_limit(), sys::keyboard_light(), desktop::gamemode());
+    Message::Extras(dns, charge, light, gamemode)
 }
+
+/// One of the editor's fields of a tile of the user's.
+type CustomField = fn(&mut crate::config::Custom) -> &mut String;
 
 /// A launcher offered as a tile, when it's installed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Suggestion {
-    key: &'static str,
+    name: &'static str,
     command: &'static str,
     icon: &'static str,
 }
 
 impl Suggestion {
-    const ALL: [Suggestion; 5] = [
-        Suggestion { key: "terminal", command: "cosmic-term", icon: "utilities-terminal-symbolic" },
-        Suggestion { key: "files", command: "cosmic-files", icon: "system-file-manager-symbolic" },
-        Suggestion { key: "editor", command: "cosmic-edit", icon: "accessories-text-editor-symbolic" },
-        Suggestion { key: "monitor", command: "observatory", icon: "utilities-system-monitor-symbolic" },
-        Suggestion { key: "store", command: "cosmic-store", icon: "system-software-install-symbolic" },
-    ];
-
-    fn name(self) -> &'static str {
-        match self.key {
-            "terminal" => T.terminal,
-            "files" => T.files,
-            "editor" => T.text_editor,
-            "monitor" => T.system_monitor,
-            _ => T.app_store,
-        }
+    fn all() -> [Suggestion; 5] {
+        let s = |name, command, icon| Suggestion { name, command, icon };
+        [
+            s(T.terminal, "cosmic-term", "utilities-terminal-symbolic"),
+            s(T.files, "cosmic-files", "system-file-manager-symbolic"),
+            s(T.text_editor, "cosmic-edit", "accessories-text-editor-symbolic"),
+            s(T.system_monitor, "observatory", "utilities-system-monitor-symbolic"),
+            s(T.app_store, "cosmic-store", "system-software-install-symbolic"),
+        ]
     }
 
     /// The ones installed on the host.
     async fn installed() -> Vec<Suggestion> {
         let mut found = Vec::new();
-        for s in Self::ALL {
+        for s in Self::all() {
             let script = format!("command -v {}", s.command);
             if crate::host::command("sh").args(["-c", &script]).output().await.is_ok_and(|o| o.status.success()) {
                 found.push(s);
@@ -2768,7 +2765,7 @@ fn percent(level: f32) -> Element<'static, Message> {
 }
 
 /// A choice among a few: the picked one lit.
-fn choice(label: &'static str, picked: bool, message: Message) -> button::TextButton<'static, Message> {
+fn choice(label: impl Into<std::borrow::Cow<'static, str>>, picked: bool, message: Message) -> button::TextButton<'static, Message> {
     let b = button::text(label).on_press(message);
     if picked { b.class(style::picked()) } else { b }
 }
@@ -2780,15 +2777,6 @@ fn switch(label: &'static str, on: bool, message: fn(bool) -> Message) -> Elemen
         .push(text::body(label).width(Length::Fill))
         .push(widget::toggler(on).on_toggle(message))
         .into()
-}
-
-/// A small count as a label that lives as long as the program.
-fn number(n: u8) -> &'static str {
-    const NUMBERS: [&str; 25] = [
-        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
-        "20", "21", "22", "23", "24",
-    ];
-    NUMBERS.get(n as usize).copied().unwrap_or("")
 }
 
 /// The editor's pages.
@@ -2872,22 +2860,25 @@ fn named(name: &str) -> icon::Handle {
     icon::from_name(name.to_string()).symbolic(true).handle()
 }
 
-/// An icon on the panel, in the panel's color; faint for a function that's off.
-/// A panel icon in the theme's warning red: a low battery, a dropped Wi-Fi.
-fn alert_icon<'a>(handle: icon::Handle, size: u16) -> Element<'a, Message> {
-    icon::icon(handle)
-        .size(size)
-        .class(theme::Svg::Custom(std::rc::Rc::new(|theme| iced::widget::svg::Style {
-            color: Some(theme.cosmic().destructive_color().into()),
-        })))
-        .into()
+/// How a panel icon is drawn.
+#[derive(Clone, Copy, PartialEq)]
+enum Shade {
+    /// The panel's own color.
+    Plain,
+    /// Faint: a function that's off.
+    Faint,
+    /// The theme's warning red: a low battery, a dropped Wi-Fi.
+    Alert,
 }
 
-fn status_icon<'a>(handle: icon::Handle, size: u16, faint: bool) -> Element<'a, Message> {
+fn status_icon<'a>(handle: icon::Handle, size: u16, shade: Shade) -> Element<'a, Message> {
     icon::icon(handle)
         .size(size)
         .class(theme::Svg::Custom(std::rc::Rc::new(move |theme| iced::widget::svg::Style {
-            color: Some(Color::from(theme.cosmic().background(theme.transparent).on).scale_alpha(if faint { 0.4 } else { 1.0 })),
+            color: Some(match shade {
+                Shade::Alert => theme.cosmic().destructive_color().into(),
+                _ => Color::from(theme.cosmic().background(theme.transparent).on).scale_alpha(if shade == Shade::Faint { 0.4 } else { 1.0 }),
+            }),
         })))
         .into()
 }
@@ -2957,6 +2948,7 @@ impl cosmic::Application for App {
             cpu_history: std::collections::VecDeque::new(),
             sampling: false,
             tasks: None,
+            completing: Vec::new(),
             timers: Vec::new(),
             clock_input: String::new(),
             clock_matches: Vec::new(),
@@ -2970,6 +2962,7 @@ impl cosmic::Application for App {
             wifi_was_up: false,
             custom_on: Vec::new(),
             custom_asked: None,
+            custom_polling: false,
             custom_form: None,
             suggestions: Vec::new(),
             pomodoro: pomodoro::Pomodoro::default(),
@@ -3117,8 +3110,10 @@ impl cosmic::Application for App {
                         self.wifi_lost = None;
                     }
                 }
-                // The user's tiles' states, every few seconds while it shows.
-                if self.popup.is_some() && self.custom_asked.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
+                // The user's tiles' states: every few seconds while the popup
+                // shows, now and then for the panel; one round at a time.
+                let every = Duration::from_secs(if self.popup.is_some() { 3 } else { 30 });
+                if !self.custom_polling && self.custom_asked.is_none_or(|t| t.elapsed() >= every) {
                     let checks: Vec<(u32, String)> = self
                         .prefs
                         .custom
@@ -3128,10 +3123,15 @@ impl cosmic::Application for App {
                         .collect();
                     self.custom_asked = Some(Instant::now());
                     if !checks.is_empty() {
+                        self.custom_polling = true;
                         tasks.push(run(async move {
                             let mut on = Vec::new();
                             for (id, status) in checks {
-                                let ok = crate::host::command("sh").args(["-c", &status]).output().await.is_ok_and(|o| o.status.success());
+                                // One that hangs counts as off, and is ended.
+                                let run = crate::host::command("sh").args(["-c", &status]).kill_on_drop(true).output();
+                                let ok = tokio::time::timeout(Duration::from_secs(2), run)
+                                    .await
+                                    .is_ok_and(|out| out.is_ok_and(|o| o.status.success()));
                                 if ok {
                                     on.push(id);
                                 }
@@ -3169,7 +3169,9 @@ impl cosmic::Application for App {
             Message::FlagsChanged => {
                 self.dnd = DND.get();
                 self.dark = DARK.get();
+                // cosmic-comp's: the keyboard layouts, the touchpad.
                 self.layouts = keyboard::layouts();
+                self.touchpad = desktop::touchpad();
             }
             Message::Network(net) => {
                 if let Some(net) = net {
@@ -3238,10 +3240,7 @@ impl cosmic::Application for App {
                     self.events = events;
                 }
             }
-            Message::ToggleCalendar => {
-                self.prefs.calendar_open = !self.prefs.calendar_open;
-                self.prefs.save();
-            }
+            Message::ToggleCalendar => self.pref(|p| p.calendar_open = !p.calendar_open),
             Message::CheckCamera if self.camera_checking => {}
             Message::CheckCamera => {
                 self.camera_checking = true;
@@ -3356,14 +3355,8 @@ impl cosmic::Application for App {
                     return self.update(Message::PickPlace(place));
                 }
             }
-            Message::WeatherPanel(on) => {
-                self.prefs.weather_panel = on;
-                self.prefs.save();
-            }
-            Message::ToggleWeather => {
-                self.prefs.weather_open = !self.prefs.weather_open;
-                self.prefs.save();
-            }
+            Message::WeatherPanel(on) => self.pref(|p| p.weather_panel = on),
+            Message::ToggleWeather => self.pref(|p| p.weather_open = !p.weather_open),
             Message::Notification(event) => {
                 match event {
                     notifications::Event::New(mut n) => {
@@ -3415,10 +3408,7 @@ impl cosmic::Application for App {
                 self.notifications.extend(kept);
                 self.notifications.truncate(50);
             }
-            Message::ToggleNotifications => {
-                self.prefs.notifications_open = !self.prefs.notifications_open;
-                self.prefs.save();
-            }
+            Message::ToggleNotifications => self.pref(|p| p.notifications_open = !p.notifications_open),
             Message::MoveSection(i, up) => {
                 if let Some(j) = self.neighbor(i, up) {
                     self.prefs.sections.swap(i, j);
@@ -3444,14 +3434,26 @@ impl cosmic::Application for App {
                     self.sample = Some(sample);
                 }
             }
-            Message::Tasks(tasks) => self.tasks = tasks,
-            Message::CompleteTask(i) => {
-                if let Some(task) = self.tasks.as_mut().filter(|t| i < t.len()).map(|t| t.remove(i)) {
-                    return run(async move {
-                        tasks::complete(task).await;
-                        Message::Tasks(tasks::open().await)
-                    });
+            Message::Tasks(mut tasks) => {
+                // Ones being ticked off stay off, whatever a read in between says.
+                if let Some(tasks) = tasks.as_mut() {
+                    tasks.retain(|t| !self.completing.contains(&t.uid));
                 }
+                self.tasks = tasks;
+            }
+            Message::CompleteTask(uid) => {
+                let Some(list) = self.tasks.as_mut() else { return Task::none() };
+                let Some(i) = list.iter().position(|t| t.uid == uid) else { return Task::none() };
+                let task = list.remove(i);
+                self.completing.push(uid.clone());
+                return run(async move {
+                    tasks::complete(task).await;
+                    Message::TaskDone(uid, tasks::open().await)
+                });
+            }
+            Message::TaskDone(uid, tasks) => {
+                self.completing.retain(|u| *u != uid);
+                return self.update(Message::Tasks(tasks));
             }
             Message::Extras(dns, charge, light, gamemode) => {
                 self.dns = dns;
@@ -3465,7 +3467,7 @@ impl cosmic::Application for App {
                 self.dns = Some(choice);
                 return run(async move {
                     log("dns", sys::set_dns(choice).await);
-                    Message::Extras(sys::dns().await, sys::charge_limit().await, sys::keyboard_light().await, desktop::gamemode().await)
+                    extras().await
                 });
             }
             Message::SetChargeLimit(on) => {
@@ -3483,7 +3485,7 @@ impl cosmic::Application for App {
             }
             Message::GameModeHeld(held) => {
                 self.gamemode_held = held;
-                return run(async { Message::Extras(sys::dns().await, sys::charge_limit().await, sys::keyboard_light().await, desktop::gamemode().await) });
+                return run(extras());
             }
             Message::RunCustom(id) => {
                 if let Some(c) = self.prefs.custom.iter().find(|c| c.id == id) {
@@ -3493,7 +3495,10 @@ impl cosmic::Application for App {
                 }
                 return self.close();
             }
-            Message::CustomOn(on) => self.custom_on = on,
+            Message::CustomOn(on) => {
+                self.custom_polling = false;
+                self.custom_on = on;
+            }
             Message::EditCustom(id) => {
                 self.custom_form = Some(match id.and_then(|id| self.prefs.custom.iter().find(|c| c.id == id)) {
                     Some(c) => c.clone(),
@@ -3502,12 +3507,7 @@ impl cosmic::Application for App {
             }
             Message::CustomForm(field, value) => {
                 if let Some(form) = self.custom_form.as_mut() {
-                    *match field {
-                        CustomField::Name => &mut form.name,
-                        CustomField::Command => &mut form.command,
-                        CustomField::Icon => &mut form.icon,
-                        CustomField::Status => &mut form.status,
-                    } = value;
+                    *field(form) = value;
                 }
             }
             Message::CustomConfirm(on) => {
@@ -3525,6 +3525,7 @@ impl cosmic::Application for App {
                             self.prefs.custom.push(form);
                         }
                     }
+                    self.prefs.save_custom();
                     self.prefs.save();
                 }
             }
@@ -3533,6 +3534,8 @@ impl cosmic::Application for App {
                     self.prefs.custom.retain(|c| c.id != form.id);
                     self.prefs.tiles.retain(|t| *t != Tile::Custom(form.id));
                     self.prefs.small.retain(|t| *t != Tile::Custom(form.id));
+                    self.custom_on.retain(|id| *id != form.id);
+                    self.prefs.save_custom();
                     self.prefs.save();
                 }
             }
@@ -3542,26 +3545,18 @@ impl cosmic::Application for App {
                 let id = self.prefs.custom.iter().map(|c| c.id).max().unwrap_or(0) + 1;
                 self.prefs.custom.push(crate::config::Custom {
                     id,
-                    name: s.name().to_string(),
+                    name: s.name.to_string(),
                     command: s.command.to_string(),
                     icon: s.icon.to_string(),
                     ..Default::default()
                 });
                 self.prefs.tiles.push(Tile::Custom(id));
+                self.prefs.save_custom();
                 self.prefs.save();
             }
-            Message::LowBatteryBadge(on) => {
-                self.prefs.low_battery_badge = on;
-                self.prefs.save();
-            }
-            Message::TileStyle(style) => {
-                self.prefs.tile_style = style;
-                self.prefs.save();
-            }
-            Message::WifiBadge(badge) => {
-                self.prefs.wifi_badge = badge;
-                self.prefs.save();
-            }
+            Message::LowBatteryBadge(on) => self.pref(|p| p.low_battery_badge = on),
+            Message::TileStyle(style) => self.pref(|p| p.tile_style = style),
+            Message::WifiBadge(badge) => self.pref(|p| p.wifi_badge = badge),
             Message::TimerInput(input) => {
                 // Digits only, a day at most.
                 self.timer_input = input.chars().filter(char::is_ascii_digit).take(4).collect();
@@ -3571,11 +3566,7 @@ impl cosmic::Application for App {
                 let length = Duration::from_secs(minutes * 60);
                 self.timers.push((Instant::now() + length, length));
             }
-            Message::StopTimer(i) => {
-                if i < self.timers.len() {
-                    self.timers.remove(i);
-                }
-            }
+            Message::StopTimer(ends) => self.timers.retain(|(e, _)| *e != ends),
             Message::ClockInput(input) => {
                 let wanted = input.trim().to_lowercase().replace(' ', "_");
                 self.clock_matches = if wanted.len() < 2 {
@@ -3604,22 +3595,10 @@ impl cosmic::Application for App {
                     self.prefs.save();
                 }
             }
-            Message::WeatherHourly(on) => {
-                self.prefs.weather_hourly = on;
-                self.prefs.save();
-            }
-            Message::WeatherHours(n) => {
-                self.prefs.weather_hours = n;
-                self.prefs.save();
-            }
-            Message::WeatherDays(n) => {
-                self.prefs.weather_days = n;
-                self.prefs.save();
-            }
-            Message::SetColumns(n) => {
-                self.prefs.columns = Some(n);
-                self.prefs.save();
-            }
+            Message::WeatherHourly(on) => self.pref(|p| p.weather_hourly = on),
+            Message::WeatherHours(n) => self.pref(|p| p.weather_hours = n),
+            Message::WeatherDays(n) => self.pref(|p| p.weather_days = n),
+            Message::SetColumns(n) => self.pref(|p| p.columns = Some(n)),
             Message::SectionColumn(section, next) => {
                 let column = self.prefs.column(section);
                 let to = if next { column + 1 } else { column.wrapping_sub(1) };
@@ -3648,10 +3627,7 @@ impl cosmic::Application for App {
             }
             Message::PomodoroSkip => self.pomodoro.skip(Instant::now()),
             Message::PomodoroReset => self.pomodoro.reset(),
-            Message::PomodoroPanel(on) => {
-                self.prefs.pomodoro_panel = on;
-                self.prefs.save();
-            }
+            Message::PomodoroPanel(on) => self.pref(|p| p.pomodoro_panel = on),
             // A drag only moves the slider; the level is set once, on release.
             Message::StreamVolume(index, level) => self.stream_drag = Some((index, level)),
             Message::StreamRelease => {
@@ -3664,10 +3640,7 @@ impl cosmic::Application for App {
                 }
             }
             Message::StreamMute(index) => return fire(audio::toggle_stream_mute(index)),
-            Message::ToggleMixer => {
-                self.prefs.mixer_open = !self.prefs.mixer_open;
-                self.prefs.save();
-            }
+            Message::ToggleMixer => self.pref(|p| p.mixer_open = !p.mixer_open),
             Message::CheckUpdates => return run(async { Message::Updates(updates::count().await) }),
             Message::Updates(count) => self.updates = count,
             Message::SetBluetooth(on) => {
@@ -3755,18 +3728,9 @@ impl cosmic::Application for App {
                 self.prefs.small.clear();
                 self.prefs.save();
             }
-            Message::PanelIcons(icons) => {
-                self.prefs.panel_icons = icons;
-                self.prefs.save();
-            }
-            Message::SetSpacing(spacing) => {
-                self.prefs.spacing = spacing;
-                self.prefs.save();
-            }
-            Message::SetIslands(on) => {
-                self.prefs.islands = on;
-                self.prefs.save();
-            }
+            Message::PanelIcons(icons) => self.pref(|p| p.panel_icons = icons),
+            Message::SetSpacing(spacing) => self.pref(|p| p.spacing = spacing),
+            Message::SetIslands(on) => self.pref(|p| p.islands = on),
             Message::A11y(desktop::A11y::Ready(tx)) => self.a11y = Some(tx),
             Message::A11y(desktop::A11y::Event(event)) => match event {
                 desktop::AccessibilityEvent::Magnifier(on) => self.magnifier = Some(on),
@@ -3801,7 +3765,6 @@ impl cosmic::Application for App {
                     _ = tx.send(workspaces::Command::Layout(i as u32));
                 }
             }
-            Message::CompChanged => self.touchpad = desktop::touchpad(),
             Message::Inhibited(cookie) => {
                 self.inhibiting = false;
                 self.inhibit = cookie;
@@ -3820,10 +3783,7 @@ impl cosmic::Application for App {
                 let close = self.close();
                 return Task::batch([close, self.open()]).chain(self.update(Message::Page(Page::Edit)));
             }
-            Message::ShowClock(on) => {
-                self.prefs.clock = on;
-                self.prefs.save();
-            }
+            Message::ShowClock(on) => self.pref(|p| p.clock = on),
             Message::Spawn(program, args) => {
                 crate::host::spawn(program, args);
                 return self.close();
@@ -3842,7 +3802,6 @@ impl cosmic::Application for App {
             if preview().is_some() { Subscription::none() } else { agent::subscription().map(Message::Secret) },
             desktop::a11y().map(Message::A11y),
             desktop::screen_reader().map(Message::Reader),
-            desktop::comp_changes().map(|()| Message::CompChanged),
             workspaces::subscription().map(Message::Workspaces),
             iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
             iced::event::listen_with(|event, _, _| {
@@ -3884,7 +3843,7 @@ impl cosmic::Application for App {
         let applet = &self.core.applet;
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
-        let push = |icons: &mut Vec<Element<'_, Message>>, name: &str| icons.push(status_icon(named(name), size, false));
+        let push = |icons: &mut Vec<Element<'_, Message>>, name: &str| icons.push(status_icon(named(name), size, Shade::Plain));
         // Do not disturb: no bell either; they still wait in the center.
         if !self.notifications.is_empty() && !self.dnd {
             push(&mut icons, "notification-new-symbolic");
@@ -3903,7 +3862,7 @@ impl cosmic::Application for App {
             Some(_) => push(&mut icons, wifi_icon(
                 self.net.access_points.iter().find(|a| a.active).map_or(0, |a| a.strength),
             )),
-            None if self.wifi_lost.is_some() => icons.push(alert_icon(named("network-wireless-offline-symbolic"), size)),
+            None if self.wifi_lost.is_some() => icons.push(status_icon(named("network-wireless-offline-symbolic"), size, Shade::Alert)),
             None if self.net.wifi_enabled => push(&mut icons, "network-wireless-offline-symbolic"),
             None => push(&mut icons, "network-offline-symbolic"),
         }
@@ -3917,15 +3876,15 @@ impl cosmic::Application for App {
             let view = self.tile(*tile);
             let shortcut = matches!(tile, Tile::Screenshot | Tile::Workspaces);
             match self.prefs.panel_icons {
-                PanelIcons::Active if view.on => tile_icons.push(status_icon(view.icon, size, false)),
-                PanelIcons::All if !shortcut => tile_icons.push(status_icon(view.icon, size, !view.on)),
+                PanelIcons::Active if view.on => tile_icons.push(status_icon(view.icon, size, Shade::Plain)),
+                PanelIcons::All if !shortcut => tile_icons.push(status_icon(view.icon, size, if view.on { Shade::Plain } else { Shade::Faint })),
                 _ => {}
             }
         }
         if let Some(b) = &self.battery {
             let handle = icons::battery(b.percent, b.charging);
             let low = self.prefs.low_battery_badge && !b.charging && b.percent <= 20.0;
-            icons.push(if low { alert_icon(handle, size) } else { status_icon(handle, size, false) });
+            icons.push(status_icon(handle, size, if low { Shade::Alert } else { Shade::Plain }));
         }
         // Before the battery and the clock, at the end of the status icons.
         let at = icons.len() - usize::from(self.battery.is_some());
@@ -3938,7 +3897,7 @@ impl cosmic::Application for App {
                 widget::Row::new()
                     .spacing(4)
                     .align_y(Alignment::Center)
-                    .push(status_icon(named(w.condition.icon(w.day)), size, false))
+                    .push(status_icon(named(w.condition.icon(w.day)), size, Shade::Plain))
                     .push(applet.text(format!("{:.0}°", w.temperature)))
                     .into(),
             );

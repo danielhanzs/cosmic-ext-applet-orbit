@@ -4,10 +4,7 @@
 //! reader, high contrast), the touchpad, keeping awake. Adapted from
 //! cosmic-ext-applet-quick-settings, which does these as COSMIC's applets do.
 
-use cosmic::{
-    cosmic_config::{Config, ConfigGet, ConfigSet},
-    iced::{Subscription, stream},
-};
+use cosmic::iced::{Subscription, stream};
 use futures::SinkExt;
 
 pub use cosmic_settings_a11y_manager_subscription::{AccessibilityEvent, AccessibilityRequest, ColorFilter};
@@ -136,25 +133,6 @@ pub fn set_touchpad(enabled: bool) {
     }
 }
 
-/// Fires when cosmic-comp's settings change (touchpad).
-pub fn comp_changes() -> Subscription<()> {
-    Subscription::run(|| {
-        stream::channel(4, async |out| {
-            let out = std::sync::Mutex::new(out);
-            let watcher = Config::new("com.system76.CosmicComp", 1).ok().and_then(|c| {
-                c.watch(move |_, _| {
-                    if let Ok(mut out) = out.lock() {
-                        _ = out.try_send(());
-                    }
-                })
-                .ok()
-            });
-            futures::future::pending::<()>().await;
-            drop(watcher);
-        })
-    })
-}
-
 // ---------------------------------------------------------------- keep awake
 
 
@@ -185,14 +163,14 @@ pub async fn allow_idle(cookie: u32) {
 /// Whether new workspaces tile; the active one is switched through the
 /// workspace protocol (`workspaces.rs`).
 pub fn autotile() -> bool {
-    Config::new("com.system76.CosmicComp", 1).and_then(|c| c.get("autotile")).unwrap_or(false)
+    AUTOTILE.get()
 }
 
 pub fn set_autotile(on: bool) {
-    if let Err(err) = Config::new("com.system76.CosmicComp", 1).and_then(|c| c.set("autotile", on)) {
-        tracing::warn!("cannot set tiling: {err}");
-    }
+    AUTOTILE.set(on);
 }
+
+const AUTOTILE: crate::config::Flag = crate::config::Flag("com.system76.CosmicComp", "autotile");
 
 #[cfg(test)]
 mod tests {
@@ -224,15 +202,18 @@ pub async fn notify(summary: String, body: String) {
 const GAMEMODE: &str = "com.feralinteractive.GameMode";
 
 /// Feral GameMode: None when it isn't installed; else whether it's on.
-/// Asked of the desktop portal (which also works inside the Flatpak), and
-/// only when the daemon already runs: asking would start it.
+/// Asked of the desktop portal. Outside the Flatpak, only once the daemon
+/// runs (asking would start it); inside, the sandbox hides its bus name, so
+/// the portal's answer is what tells it's there.
 pub async fn gamemode() -> Option<bool> {
     let conn = crate::bus::session().await.ok()?;
-    let bus = zbus::fdo::DBusProxy::new(&conn).await.ok()?;
-    let name = zbus::names::BusName::try_from(GAMEMODE).ok()?;
-    if !bus.name_has_owner(name).await.unwrap_or(false) {
-        let installed = bus.list_activatable_names().await.unwrap_or_default().iter().any(|n| n.as_str() == GAMEMODE);
-        return installed.then_some(false);
+    if !crate::host::in_flatpak() {
+        let bus = zbus::fdo::DBusProxy::new(&conn).await.ok()?;
+        let name = zbus::names::BusName::try_from(GAMEMODE).ok()?;
+        if !bus.name_has_owner(name).await.unwrap_or(false) {
+            let installed = bus.list_activatable_names().await.unwrap_or_default().iter().any(|n| n.as_str() == GAMEMODE);
+            return installed.then_some(false);
+        }
     }
     let reply = conn
         .call_method(
@@ -245,7 +226,7 @@ pub async fn gamemode() -> Option<bool> {
         .await
         .ok()?;
     let value: zbus::zvariant::OwnedValue = reply.body().deserialize().ok()?;
-    Some(bool::try_from(value).unwrap_or(false))
+    bool::try_from(value).ok()
 }
 
 /// Holds GameMode on, as a game would, or lets it go. There's no switch:

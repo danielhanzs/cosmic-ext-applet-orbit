@@ -332,13 +332,7 @@ pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPat
     if let Some(saved) = saved {
         return nm.activate_connection(&saved, &device, &root()).await.map(drop);
     }
-    let mut name = [0u8; 64];
-    // SAFETY: the buffer is as long as said, and gethostname ends it with a zero.
-    let host = if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } == 0 {
-        std::ffi::CStr::from_bytes_until_nul(&name).map(|c| c.to_string_lossy().into_owned()).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let host = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default().trim().to_string();
     // SSIDs are at most 32 bytes: cut a long host name on a character boundary.
     let mut ssid = if host.is_empty() { "Orbit".to_string() } else { host };
     while ssid.len() > 32 {
@@ -359,7 +353,7 @@ pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPat
         ),
         (
             "802-11-wireless-security",
-            HashMap::from([("key-mgmt", Value::from("wpa-psk")), ("psk", Value::from(password()))]),
+            HashMap::from([("key-mgmt", Value::from("wpa-psk")), ("psk", Value::from(password().ok_or_else(|| zbus::Error::Failure("no random source".into()))?))]),
         ),
         ("ipv4", HashMap::from([("method", Value::from("shared"))])),
         ("ipv6", HashMap::from([("method", Value::from("ignore"))])),
@@ -367,17 +361,14 @@ pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPat
     nm.add_and_activate_connection(settings, &device, &root()).await.map(drop)
 }
 
-/// Twelve letters and digits, from the kernel's random source.
-fn password() -> String {
+/// Twelve letters and digits, from the kernel's random source; none
+/// without one (a guessable password would be worse than no hotspot).
+fn password() -> Option<String> {
+    use std::io::Read;
     const CHARS: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut bytes = [0u8; 12];
-    // getrandom fills the buffer, or the fallback below is used.
-    let filled = unsafe { libc::getrandom(bytes.as_mut_ptr().cast(), bytes.len(), 0) } == bytes.len() as isize;
-    if !filled {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-        bytes.iter_mut().enumerate().for_each(|(i, b)| *b = (nanos >> (i * 5)) as u8);
-    }
-    bytes.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect()
+    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).ok()?;
+    Some(bytes.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect())
 }
 
 /// The hotspot's password, to show for joining it.
@@ -544,6 +535,13 @@ trait UPowerDevice {
     fn percentage(&self) -> zbus::Result<f64>;
     #[zbus(property)]
     fn power_supply(&self) -> zbus::Result<bool>;
+    #[zbus(property)]
+    fn charge_threshold_settings_supported(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn charge_threshold_supported(&self) -> zbus::Result<bool>;
+    #[zbus(property)]
+    fn charge_threshold_enabled(&self) -> zbus::Result<bool>;
+    fn enable_charge_threshold(&self, enable: bool) -> zbus::Result<()>;
 }
 
 /// A mouse, keyboard, headset, phone… with a battery.
@@ -788,18 +786,8 @@ impl Dns {
     }
 }
 
-/// NetworkManager keeps IPv4 addresses as the four bytes in order, read as
-/// a native integer.
-fn encode(address: [u8; 4]) -> u32 {
-    u32::from_ne_bytes(address)
-}
-
-fn decode(raw: u32) -> [u8; 4] {
-    raw.to_ne_bytes()
-}
-
 /// The connection in use, its settings' path and its device.
-async fn primary() -> zbus::Result<(NmConnectionProxy<'static>, OwnedObjectPath, Option<OwnedObjectPath>)> {
+async fn primary() -> zbus::Result<(NmConnectionProxy<'static>, Option<OwnedObjectPath>)> {
     let conn = crate::bus::system().await?;
     let nm: NmProxy = proxy(&conn, None).await?;
     let active_path = nm.primary_connection().await?;
@@ -809,69 +797,76 @@ async fn primary() -> zbus::Result<(NmConnectionProxy<'static>, OwnedObjectPath,
     let active: NmActiveProxy = proxy(&conn, Some(active_path)).await?;
     let settings_path = active.connection().await?;
     let device = active.devices().await.unwrap_or_default().into_iter().next();
-    Ok((proxy(&conn, Some(settings_path.clone())).await?, settings_path, device))
+    Ok((proxy(&conn, Some(settings_path)).await?, device))
 }
 
-/// The connection in use's name servers: one of ours, or None (its own).
-pub async fn dns() -> Option<Dns> {
-    let (connection, _, _) = primary().await.ok()?;
-    let settings = connection.get_settings().await.ok()?;
-    let ignores = |family: &str| {
-        settings.get(family).and_then(|s| s.get("ignore-auto-dns")).and_then(|v| bool::try_from(v).ok()).unwrap_or(false)
-    };
-    let ipv4 = settings.get("ipv4")?;
-    let servers: Vec<[u8; 4]> = ipv4
-        .get("dns")
-        .and_then(|v| Vec::<u32>::try_from(v.try_clone().ok()?).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .map(decode)
-        .collect();
-    let choice = Dns::of(&servers, !ignores("ipv4") && servers.is_empty())?;
-    // Ours only if IPv6 goes the same way (where the connection has it).
-    (!uses_ipv6(&settings) || ignores("ipv6") == (choice != Dns::Automatic)).then_some(choice)
+fn ignores_auto_dns(settings: &Settings, family: &str) -> bool {
+    settings.get(family).and_then(|s| s.get("ignore-auto-dns")).and_then(|v| bool::try_from(v).ok()).unwrap_or(false)
 }
 
 /// Whether the connection has IPv6 on at all.
 fn uses_ipv6(settings: &Settings) -> bool {
-    let method = settings
-        .get("ipv6")
-        .and_then(|s| s.get("method"))
-        .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
-    !matches!(method.as_deref(), Some("ignore" | "disabled"))
+    !matches!(text(settings, "ipv6", "method").as_deref(), Some("ignore" | "disabled"))
+}
+
+/// The connection in use's name servers: one of ours, or None (its own,
+/// or none to read).
+pub async fn dns() -> Option<Dns> {
+    let (connection, _) = primary().await.ok()?;
+    let settings = connection.get_settings().await.ok()?;
+    // NetworkManager keeps IPv4 addresses as their bytes in order, read as
+    // a native integer.
+    let servers: Vec<[u8; 4]> = settings
+        .get("ipv4")?
+        .get("dns")
+        .and_then(|v| Vec::<u32>::try_from(v.try_clone().ok()?).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(u32::to_ne_bytes)
+        .collect();
+    let choice = Dns::of(&servers, !ignores_auto_dns(&settings, "ipv4") && servers.is_empty())?;
+    // Ours only if IPv6 goes the same way (where the connection has it).
+    (!uses_ipv6(&settings) || ignores_auto_dns(&settings, "ipv6") == (choice != Dns::Automatic)).then_some(choice)
 }
 
 pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
     let conn = crate::bus::system().await?;
-    let (connection, path, device) = primary().await?;
+    let (connection, device) = primary().await?;
     let mut settings = connection.get_settings().await?;
-    let ipv4 = settings.entry("ipv4".into()).or_default();
-    // Read back, NetworkManager refuses these; they're kept on its side.
-    ipv4.remove("addresses");
-    ipv4.remove("routes");
-    let servers: Vec<u32> = choice.servers().iter().copied().map(encode).collect();
-    ipv4.insert("dns".into(), OwnedValue::try_from(Value::from(servers)).map_err(|e| zbus::Error::Failure(e.to_string()))?);
-    // Ours instead of the network's, not added to them.
-    ipv4.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
-    // The same over IPv6, or name lookups would still go to the network's
-    // servers that way.
-    if uses_ipv6(&settings) {
-        let ipv6 = settings.entry("ipv6".into()).or_default();
-        ipv6.remove("addresses");
-        ipv6.remove("routes");
-        let servers: Vec<Vec<u8>> = choice
-            .servers6()
-            .iter()
-            .map(|groups| groups.iter().flat_map(|g| g.to_be_bytes()).collect())
-            .collect();
-        ipv6.insert("dns".into(), OwnedValue::try_from(Value::from(servers)).map_err(|e| zbus::Error::Failure(e.to_string()))?);
-        ipv6.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
+    let ipv6 = uses_ipv6(&settings);
+    // Ours instead of the network's, not added to them; over IPv6 too, or
+    // lookups would still go to the network's servers that way.
+    let mut put = |family: &str, servers: Value<'static>| -> zbus::Result<()> {
+        let section = settings.entry(family.into()).or_default();
+        // Read back, NetworkManager refuses these; it keeps them its side.
+        section.remove("addresses");
+        section.remove("routes");
+        section.insert("dns".into(), OwnedValue::try_from(servers).map_err(|e| zbus::Error::Failure(e.to_string()))?);
+        section.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
+        Ok(())
+    };
+    put("ipv4", Value::from(choice.servers().iter().map(|s| u32::from_ne_bytes(*s)).collect::<Vec<u32>>()))?;
+    if ipv6 {
+        let servers: Vec<Vec<u8>> =
+            choice.servers6().iter().map(|groups| groups.iter().flat_map(|g| g.to_be_bytes()).collect()).collect();
+        put("ipv6", Value::from(servers))?;
     }
     connection.update(settings).await?;
-    // Saved; the running connection takes it when brought up again.
-    if let Some(device) = device {
+    // Saved; the running connection takes it in place, without dropping.
+    // Where it can't (a VPN), it's brought up again.
+    let Some(device) = device else { return Ok(()) };
+    let reapplied = conn
+        .call_method(
+            Some("org.freedesktop.NetworkManager"),
+            &device,
+            Some("org.freedesktop.NetworkManager.Device"),
+            "Reapply",
+            &(HashMap::<&str, HashMap<&str, Value<'_>>>::new(), 0u64, 0u32),
+        )
+        .await;
+    if reapplied.is_err() {
         let nm: NmProxy = proxy(&conn, None).await?;
-        nm.activate_connection(&path.as_ref(), &device.as_ref(), &ObjectPath::try_from("/")?).await?;
+        nm.activate_connection(&connection.inner().path().as_ref(), &device.as_ref(), &root()).await?;
     }
     Ok(())
 }
@@ -883,36 +878,18 @@ pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
 pub async fn charge_limit() -> Option<(OwnedObjectPath, bool)> {
     let conn = crate::bus::system().await.ok()?;
     for path in proxy::<UPowerProxy>(&conn, None).await.ok()?.enumerate_devices().await.ok()? {
-        let get = |name: &'static str| {
-            let (conn, path) = (&conn, &path);
-            async move {
-                let reply = conn
-                    .call_method(
-                        Some("org.freedesktop.UPower"),
-                        path,
-                        Some("org.freedesktop.DBus.Properties"),
-                        "Get",
-                        &("org.freedesktop.UPower.Device", name),
-                    )
-                    .await
-                    .ok()?;
-                reply.body().deserialize::<OwnedValue>().ok()
-            }
-        };
+        let Ok(device) = proxy::<UPowerDeviceProxy>(&conn, Some(path.clone())).await else { continue };
         // 2: a battery; one that powers the computer.
-        let battery = get("Type").await.and_then(|v| u32::try_from(v).ok()) == Some(2)
-            && get("PowerSupply").await.and_then(|v| bool::try_from(v).ok()) == Some(true);
-        if !battery {
+        if device.kind().await.ok() != Some(2) || device.power_supply().await.ok() != Some(true) {
             continue;
         }
         // Newer UPower: a bit field of what can be set; older: a flag.
-        let supported = match get("ChargeThresholdSettingsSupported").await.and_then(|v| u32::try_from(v).ok()) {
-            Some(bits) => bits != 0,
-            None => get("ChargeThresholdSupported").await.and_then(|v| bool::try_from(v).ok()).unwrap_or(false),
+        let supported = match device.charge_threshold_settings_supported().await {
+            Ok(bits) => bits != 0,
+            Err(_) => device.charge_threshold_supported().await.unwrap_or(false),
         };
         if supported {
-            let on = get("ChargeThresholdEnabled").await.and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
-            return Some((path, on));
+            return Some((path, device.charge_threshold_enabled().await.unwrap_or(false)));
         }
     }
     None
@@ -920,9 +897,7 @@ pub async fn charge_limit() -> Option<(OwnedObjectPath, bool)> {
 
 pub async fn set_charge_limit(battery: OwnedObjectPath, on: bool) -> zbus::Result<()> {
     let conn = crate::bus::system().await?;
-    conn.call_method(Some("org.freedesktop.UPower"), &battery, Some("org.freedesktop.UPower.Device"), "EnableChargeThreshold", &(on,))
-        .await
-        .map(drop)
+    proxy::<UPowerDeviceProxy>(&conn, Some(battery)).await?.enable_charge_threshold(on).await
 }
 
 // ---------------------------------------------------------------- keyboard backlight
@@ -959,7 +934,6 @@ mod dns_tests {
 
     #[test]
     fn names_servers() {
-        assert_eq!(decode(encode([149, 112, 112, 112])), [149, 112, 112, 112]);
         assert_eq!(Dns::of(&[[9, 9, 9, 9], [149, 112, 112, 112]], false), Some(Dns::Quad9));
         assert_eq!(Dns::of(&[], true), Some(Dns::Automatic));
         assert_eq!(Dns::of(&[[10, 0, 0, 1]], false), None);

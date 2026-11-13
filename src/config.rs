@@ -127,11 +127,6 @@ impl Section {
         Section::Tasks,
         Section::Clocks,
     ];
-
-    /// Shown at first: the ones added later are there to turn on.
-    pub fn at_first(self) -> bool {
-        !matches!(self, Section::Audio | Section::System | Section::Tasks | Section::Clocks)
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -204,7 +199,11 @@ impl Default for Prefs {
             wifi_badge: WifiBadge::Off,
             custom: Vec::new(),
             tile_style: TileStyle::High,
-            sections: Section::ALL.into_iter().filter(|s| s.at_first()).collect(),
+            // The cards added later start off, there to turn on.
+            sections: Section::ALL
+                .into_iter()
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks))
+                .collect(),
             weather_place: None,
             weather_panel: false,
             weather_open: false,
@@ -299,7 +298,6 @@ impl Prefs {
         if std::env::var_os("ORBIT_PREVIEW").is_some() {
             return;
         }
-        save_custom(&self.custom);
         let Some(c) = config() else { return };
         if let Err(err) = c.set("prefs", self) {
             tracing::warn!("cannot save settings: {err}");
@@ -316,11 +314,26 @@ fn custom_path() -> Option<std::path::PathBuf> {
     Some(base.join(crate::APP_ID).join("custom-tiles.json"))
 }
 
+/// The user's tiles. A file that doesn't read (a hand edit gone wrong) is
+/// moved aside, not later overwritten with nothing.
 fn load_custom() -> Vec<Custom> {
-    custom_path()
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    let Some(path) = custom_path() else { return Vec::new() };
+    let Ok(bytes) = std::fs::read(&path) else { return Vec::new() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|err| {
+        let aside = path.with_extension("json.bad");
+        tracing::warn!("your tiles in {} don't read ({err}); kept as {}", path.display(), aside.display());
+        _ = std::fs::rename(&path, aside);
+        Vec::new()
+    })
+}
+
+impl Prefs {
+    /// The user's tiles, saved on their own: only when they change.
+    pub fn save_custom(&self) {
+        if std::env::var_os("ORBIT_PREVIEW").is_none() {
+            save_custom(&self.custom);
+        }
+    }
 }
 
 /// Written whole and then moved into place, readable by the user alone.

@@ -93,9 +93,9 @@ pub fn rate(bytes: f64) -> String {
     }
 }
 
-/// "5.2 / 15.6 GB"
+/// "5.2 / 15.6 GiB" (from kB)
 pub fn gigabytes((used, total): (u64, u64)) -> String {
-    format!("{:.1} / {:.1} GB", used as f64 / 1048576.0, total as f64 / 1048576.0)
+    format!("{:.1} / {:.1} GiB", used as f64 / 1048576.0, total as f64 / 1048576.0)
 }
 
 #[cfg(test)]

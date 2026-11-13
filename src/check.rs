@@ -32,7 +32,7 @@ pub fn run() {
             "DNS",
             match sys::dns().await {
                 Some(d) => Ok(d.name().unwrap_or("automatic").into()),
-                None => Err("the connection's own servers, or none".into()),
+                None => Ok("the connection's own servers".into()),
             },
         );
         line(
