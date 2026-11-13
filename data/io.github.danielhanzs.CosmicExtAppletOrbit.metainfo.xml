@@ -36,15 +36,15 @@
   <screenshots>
     <screenshot type="default">
       <caption>Quick settings, sliders, calendar and media in one popup</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.6.1/data/screenshots/dropdown.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.7.0/data/screenshots/dropdown.png</image>
     </screenshot>
     <screenshot>
       <caption>As separate islands: calendar, weather, notifications, media</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.6.1/data/screenshots/islands.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.7.0/data/screenshots/islands.png</image>
     </screenshot>
     <screenshot>
       <caption>Fullscreen, in two columns</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.6.1/data/screenshots/fullscreen.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.7.0/data/screenshots/fullscreen.png</image>
     </screenshot>
   </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicExtAppletOrbit.desktop</launchable>
@@ -88,6 +88,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.0" date="2026-11-13">
+      <description>
+        <p>Your own tiles, DNS switching, Game Mode, charge limit, panel badges, --check, and a clearer settings page.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-11-12">
       <description>
         <p>Developer name, more links and keywords in the store listing.</p>
