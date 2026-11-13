@@ -60,6 +60,8 @@ trait Nm {
     fn set_wireless_enabled(&self, value: bool) -> zbus::Result<()>;
     #[zbus(property)]
     fn active_connections(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
+    #[zbus(property)]
+    fn primary_connection(&self) -> zbus::Result<OwnedObjectPath>;
 }
 
 #[zbus::proxy(
@@ -79,6 +81,7 @@ trait NmSettings {
 trait NmConnection {
     fn get_settings(&self) -> zbus::Result<Settings>;
     fn get_secrets(&self, setting_name: &str) -> zbus::Result<Settings>;
+    fn update(&self, properties: Settings) -> zbus::Result<()>;
 }
 
 #[zbus::proxy(
@@ -95,6 +98,8 @@ trait NmActive {
     fn kind(&self) -> zbus::Result<String>;
     #[zbus(property)]
     fn id(&self) -> zbus::Result<String>;
+    #[zbus(property)]
+    fn devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
 }
 
 #[zbus::proxy(
@@ -722,4 +727,203 @@ pub fn changes() -> Subscription<Source> {
             futures::future::pending().await
         })
     })
+}
+
+// ---------------------------------------------------------------- DNS
+
+/// The name servers a connection can use instead of what the network hands
+/// out. Set on the connection in NetworkManager, which lets the user change
+/// their own connections without a password (systemd-resolved would ask
+/// every time). Idea from cosmic-control-center-applet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dns {
+    Automatic,
+    Cloudflare,
+    Google,
+    Quad9,
+    AdGuard,
+}
+
+impl Dns {
+    pub const ALL: [Dns; 5] = [Dns::Automatic, Dns::Cloudflare, Dns::Google, Dns::Quad9, Dns::AdGuard];
+
+    pub fn servers(self) -> &'static [[u8; 4]] {
+        match self {
+            Dns::Automatic => &[],
+            Dns::Cloudflare => &[[1, 1, 1, 1], [1, 0, 0, 1]],
+            Dns::Google => &[[8, 8, 8, 8], [8, 8, 4, 4]],
+            Dns::Quad9 => &[[9, 9, 9, 9], [149, 112, 112, 112]],
+            Dns::AdGuard => &[[94, 140, 14, 14], [94, 140, 15, 15]],
+        }
+    }
+
+    /// The servers' names, for showing.
+    pub fn name(self) -> Option<&'static str> {
+        match self {
+            Dns::Automatic => None,
+            Dns::Cloudflare => Some("Cloudflare"),
+            Dns::Google => Some("Google"),
+            Dns::Quad9 => Some("Quad9"),
+            Dns::AdGuard => Some("AdGuard"),
+        }
+    }
+
+    /// Which one these servers are; None: someone else's choice.
+    fn of(servers: &[[u8; 4]], automatic: bool) -> Option<Dns> {
+        if automatic {
+            return Some(Dns::Automatic);
+        }
+        Dns::ALL.into_iter().find(|d| !d.servers().is_empty() && d.servers() == servers)
+    }
+}
+
+/// NetworkManager keeps IPv4 addresses as the four bytes in order, read as
+/// a native integer.
+fn encode(address: [u8; 4]) -> u32 {
+    u32::from_ne_bytes(address)
+}
+
+fn decode(raw: u32) -> [u8; 4] {
+    raw.to_ne_bytes()
+}
+
+/// The connection in use, its settings' path and its device.
+async fn primary() -> zbus::Result<(NmConnectionProxy<'static>, OwnedObjectPath, Option<OwnedObjectPath>)> {
+    let conn = crate::bus::system().await?;
+    let nm: NmProxy = proxy(&conn, None).await?;
+    let active_path = nm.primary_connection().await?;
+    if active_path.as_str() == "/" {
+        return Err(zbus::Error::Failure("no connection".into()));
+    }
+    let active: NmActiveProxy = proxy(&conn, Some(active_path)).await?;
+    let settings_path = active.connection().await?;
+    let device = active.devices().await.unwrap_or_default().into_iter().next();
+    Ok((proxy(&conn, Some(settings_path.clone())).await?, settings_path, device))
+}
+
+/// The connection in use's name servers: one of ours, or None (its own).
+pub async fn dns() -> Option<Dns> {
+    let (connection, _, _) = primary().await.ok()?;
+    let settings = connection.get_settings().await.ok()?;
+    let ipv4 = settings.get("ipv4")?;
+    let automatic = !ipv4.get("ignore-auto-dns").and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
+    let servers: Vec<[u8; 4]> = ipv4
+        .get("dns")
+        .and_then(|v| Vec::<u32>::try_from(v.try_clone().ok()?).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(decode)
+        .collect();
+    Dns::of(&servers, automatic && servers.is_empty())
+}
+
+pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
+    let conn = crate::bus::system().await?;
+    let (connection, path, device) = primary().await?;
+    let mut settings = connection.get_settings().await?;
+    let ipv4 = settings.entry("ipv4".into()).or_default();
+    // Read back, NetworkManager refuses these; they're kept on its side.
+    ipv4.remove("addresses");
+    ipv4.remove("routes");
+    let servers: Vec<u32> = choice.servers().iter().copied().map(encode).collect();
+    ipv4.insert("dns".into(), OwnedValue::try_from(Value::from(servers)).map_err(|e| zbus::Error::Failure(e.to_string()))?);
+    // Ours instead of the network's, not added to them.
+    ipv4.insert("ignore-auto-dns".into(), OwnedValue::from(choice != Dns::Automatic));
+    connection.update(settings).await?;
+    // Saved; the running connection takes it when brought up again.
+    if let Some(device) = device {
+        let nm: NmProxy = proxy(&conn, None).await?;
+        nm.activate_connection(&path.as_ref(), &device.as_ref(), &ObjectPath::try_from("/")?).await?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- charge limit
+
+/// The laptop's battery, if UPower can stop its charging short of full to
+/// spare it: its path and whether that's on.
+pub async fn charge_limit() -> Option<(OwnedObjectPath, bool)> {
+    let conn = crate::bus::system().await.ok()?;
+    for path in proxy::<UPowerProxy>(&conn, None).await.ok()?.enumerate_devices().await.ok()? {
+        let get = |name: &'static str| {
+            let (conn, path) = (&conn, &path);
+            async move {
+                let reply = conn
+                    .call_method(
+                        Some("org.freedesktop.UPower"),
+                        path,
+                        Some("org.freedesktop.DBus.Properties"),
+                        "Get",
+                        &("org.freedesktop.UPower.Device", name),
+                    )
+                    .await
+                    .ok()?;
+                reply.body().deserialize::<OwnedValue>().ok()
+            }
+        };
+        // 2: a battery; one that powers the computer.
+        let battery = get("Type").await.and_then(|v| u32::try_from(v).ok()) == Some(2)
+            && get("PowerSupply").await.and_then(|v| bool::try_from(v).ok()) == Some(true);
+        if !battery {
+            continue;
+        }
+        // Newer UPower: a bit field of what can be set; older: a flag.
+        let supported = match get("ChargeThresholdSettingsSupported").await.and_then(|v| u32::try_from(v).ok()) {
+            Some(bits) => bits != 0,
+            None => get("ChargeThresholdSupported").await.and_then(|v| bool::try_from(v).ok()).unwrap_or(false),
+        };
+        if supported {
+            let on = get("ChargeThresholdEnabled").await.and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
+            return Some((path, on));
+        }
+    }
+    None
+}
+
+pub async fn set_charge_limit(battery: OwnedObjectPath, on: bool) -> zbus::Result<()> {
+    let conn = crate::bus::system().await?;
+    conn.call_method(Some("org.freedesktop.UPower"), &battery, Some("org.freedesktop.UPower.Device"), "EnableChargeThreshold", &(on,))
+        .await
+        .map(drop)
+}
+
+// ---------------------------------------------------------------- keyboard backlight
+
+/// The keyboard's backlight: its name under /sys/class/leds, and its
+/// level and most, read through the host's files.
+pub async fn keyboard_light() -> Option<(String, u32, u32)> {
+    let script = "for d in /sys/class/leds/*kbd_backlight*; do [ -r \"$d/max_brightness\" ] && \
+                  echo \"${d##*/} $(cat \"$d/brightness\") $(cat \"$d/max_brightness\")\" && break; done";
+    let out = crate::host::command("sh").args(["-c", script]).output().await.ok()?;
+    let line = String::from_utf8_lossy(&out.stdout).lines().next()?.to_string();
+    let mut parts = line.split_whitespace();
+    let (name, level, max) = (parts.next()?, parts.next()?.parse().ok()?, parts.next()?.parse::<u32>().ok()?);
+    (max > 0).then(|| (name.to_string(), level, max))
+}
+
+/// Set through logind, which lets the session's user do it without root.
+pub async fn set_keyboard_light(name: String, level: u32) -> zbus::Result<()> {
+    let conn = crate::bus::system().await?;
+    conn.call_method(
+        Some("org.freedesktop.login1"),
+        "/org/freedesktop/login1/session/auto",
+        Some("org.freedesktop.login1.Session"),
+        "SetBrightness",
+        &("leds", name.as_str(), level),
+    )
+    .await
+    .map(drop)
+}
+
+#[cfg(test)]
+mod dns_tests {
+    use super::*;
+
+    #[test]
+    fn names_servers() {
+        assert_eq!(decode(encode([149, 112, 112, 112])), [149, 112, 112, 112]);
+        assert_eq!(Dns::of(&[[9, 9, 9, 9], [149, 112, 112, 112]], false), Some(Dns::Quad9));
+        assert_eq!(Dns::of(&[], true), Some(Dns::Automatic));
+        assert_eq!(Dns::of(&[[10, 0, 0, 1]], false), None);
+    }
 }

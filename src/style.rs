@@ -95,6 +95,23 @@ pub fn flat() -> theme::Button {
     })
 }
 
+/// A tile's icon on a little square of its own: the accent when lit (the
+/// medium contrast tiles), or a faint one.
+pub fn icon_box(lit: bool) -> theme::Container<'static> {
+    theme::Container::custom(move |theme| {
+        let cosmic = theme.cosmic();
+        let background: Color = if lit { cosmic.accent_color().into() } else { Color::from(cosmic.button.on).scale_alpha(0.08) };
+        let on = if lit { readable(background) } else { cosmic.button.on.into() };
+        cosmic::iced::widget::container::Style {
+            background: Some(Background::Color(background)),
+            icon_color: Some(on),
+            text_color: Some(on),
+            border: cosmic::iced::Border { radius: cosmic.corner_radii.radius_s.into(), ..Default::default() },
+            ..Default::default()
+        }
+    })
+}
+
 /// An icon button inside a tile: no surface of its own, the tile's text color.
 pub fn on_tile(on: bool) -> theme::Button {
     custom(move |t, s| {

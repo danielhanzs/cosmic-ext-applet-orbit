@@ -36,6 +36,57 @@ impl Spacing {
     }
 }
 
+/// A tile of the user's own: a command to run, and optionally one whose
+/// success means "on". Both run through `sh -c`, on the host.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Custom {
+    pub id: u32,
+    pub name: String,
+    pub command: String,
+    /// An icon name; empty: a generic one.
+    pub icon: String,
+    /// Exit 0: the tile is lit. Empty: a plain launcher.
+    pub status: String,
+    /// Ask before running (log out, power off…).
+    pub confirm: bool,
+}
+
+/// How strongly a tile shows that it's on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TileStyle {
+    /// The whole tile in the accent.
+    High,
+    /// Only its icon, on a square of the accent.
+    Medium,
+    /// Never lit: its text tells.
+    Low,
+}
+
+/// How long a dropped Wi-Fi is marked on the panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum WifiBadge {
+    Off,
+    HalfMinute,
+    Minute,
+    FiveMinutes,
+    /// Until it's back.
+    Back,
+}
+
+impl WifiBadge {
+    pub fn lasts(self) -> Option<std::time::Duration> {
+        let secs = match self {
+            WifiBadge::Off => 0,
+            WifiBadge::HalfMinute => 30,
+            WifiBadge::Minute => 60,
+            WifiBadge::FiveMinutes => 300,
+            WifiBadge::Back => return None,
+        };
+        Some(std::time::Duration::from_secs(secs))
+    }
+}
+
 /// Which tiles show their icon on the panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PanelIcons {
@@ -102,6 +153,13 @@ pub struct Prefs {
     pub mixer_open: bool,
     /// The pomodoro's time left on the panel while it runs.
     pub pomodoro_panel: bool,
+    /// The battery on the panel red when low and not charging.
+    pub low_battery_badge: bool,
+    /// How long the panel shows that Wi-Fi dropped.
+    pub wifi_badge: WifiBadge,
+    /// Tiles of the user's own, each running a command.
+    pub custom: Vec<Custom>,
+    pub tile_style: TileStyle,
     /// Shown parts of the popup, in order; the rest are hidden.
     pub sections: Vec<Section>,
     /// The weather's place; none: the time zone's city.
@@ -139,6 +197,10 @@ impl Default for Prefs {
             spacing: Spacing::Medium,
             mixer_open: false,
             pomodoro_panel: true,
+            low_battery_badge: true,
+            wifi_badge: WifiBadge::Off,
+            custom: Vec::new(),
+            tile_style: TileStyle::High,
             sections: Section::ALL.into_iter().filter(|s| s.at_first()).collect(),
             weather_place: None,
             weather_panel: false,

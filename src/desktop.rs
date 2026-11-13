@@ -218,3 +218,60 @@ pub async fn notify(summary: String, body: String) {
         )
         .await;
 }
+
+// ---------------------------------------------------------------- Game Mode
+
+const GAMEMODE: &str = "com.feralinteractive.GameMode";
+
+/// Feral GameMode: None when it isn't installed; else whether it's on.
+/// Asked of the desktop portal (which also works inside the Flatpak), and
+/// only when the daemon already runs: asking would start it.
+pub async fn gamemode() -> Option<bool> {
+    let conn = crate::bus::session().await.ok()?;
+    let bus = zbus::fdo::DBusProxy::new(&conn).await.ok()?;
+    let name = zbus::names::BusName::try_from(GAMEMODE).ok()?;
+    if !bus.name_has_owner(name).await.unwrap_or(false) {
+        let installed = bus.list_activatable_names().await.unwrap_or_default().iter().any(|n| n.as_str() == GAMEMODE);
+        return installed.then_some(false);
+    }
+    let reply = conn
+        .call_method(
+            Some("org.freedesktop.portal.Desktop"),
+            "/org/freedesktop/portal/desktop",
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.portal.GameMode", "Active"),
+        )
+        .await
+        .ok()?;
+    let value: zbus::zvariant::OwnedValue = reply.body().deserialize().ok()?;
+    Some(bool::try_from(value).unwrap_or(false))
+}
+
+/// Holds GameMode on, as a game would, or lets it go. There's no switch:
+/// a registered process is what keeps it on (and its going ends it).
+pub async fn hold_gamemode(on: bool) -> bool {
+    let Ok(conn) = crate::bus::session().await else { return false };
+    let pid = std::process::id() as i32;
+    let reply = conn
+        .call_method(
+            Some("org.freedesktop.portal.Desktop"),
+            "/org/freedesktop/portal/desktop",
+            Some("org.freedesktop.portal.GameMode"),
+            if on { "RegisterGame" } else { "UnregisterGame" },
+            &(pid,),
+        )
+        .await;
+    // GameMode answers a refusal with a negative number, not an error.
+    match reply.and_then(|r| r.body().deserialize::<i32>().map_err(Into::into)) {
+        Ok(result) if result >= 0 => true,
+        Ok(result) => {
+            tracing::warn!("game mode refused: {result}");
+            false
+        }
+        Err(err) => {
+            tracing::warn!("game mode: {err}");
+            false
+        }
+    }
+}

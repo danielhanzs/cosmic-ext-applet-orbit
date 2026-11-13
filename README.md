@@ -24,7 +24,7 @@ for the COSMIC™ desktop with libcosmic, following your system theme.
 Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
 Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors ·
 Screen reader · High contrast · Touchpad · Hotspot · Pomodoro · Keyboard
-layout, plus
+layout · DNS · Game Mode, plus
 shortcuts to Screenshot and Workspaces.
 
 - **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
@@ -32,6 +32,16 @@ shortcuts to Screenshot and Workspaces.
   level), VPN connections, power profiles, the hotspot's name and password,
   the pomodoro timer, the keyboard layouts (the tile itself switches to the
   next one).
+- **Your own tiles**: any command as a tile, with an icon, optionally a
+  status command whose success lights the tile up, and optionally asking
+  before it runs. Installed launchers (Terminal, Files, Text editor, System
+  monitor, App store) are offered as one-click tiles.
+- **DNS**: switch the connection in use between its own name servers and
+  Cloudflare, Google, Quad9 or AdGuard, through NetworkManager, without a
+  password.
+- **Game Mode**: hold Feral GameMode on (shown only when it is installed).
+- **Charge limit** on the power page, where UPower can stop charging short
+  of full; **keyboard backlight** as a slider, where there is one.
 - **Edit tiles**: drag to reorder, click to switch between wide (name and
   state) and small (icon only), remove with −, add with +, or reset.
 - On a bright accent color (lime, yellow…) text turns black so it stays
@@ -74,8 +84,12 @@ Status icons (network, VPN, Bluetooth, volume, battery, notifications,
 camera and microphone in use), the clock, optionally the weather and the
 pomodoro's time left, and the tiles' own icons: none, only the active ones,
 or all of them with the inactive ones faint. The space between them is
-yours to set. The battery icon shows its charge and a clear bolt while
-plugged in.
+yours to set (or COSMIC's own, from the interface density). The battery
+icon shows its charge and a clear bolt while plugged in.
+
+**Badges** mark what's worth knowing without opening the popup: the
+battery turns red at 20% or less unless charging, and a dropped Wi-Fi shows
+red for 30 seconds, a minute, five, or until it's back (off by default).
 
 ### Status and actions
 Battery, and the charge of mice, keyboards, headsets and phones UPower
@@ -262,6 +276,14 @@ rm -r ~/.cache/io.github.danielhanzs.CosmicExtAppletOrbit           # cover art
 
 ## Troubleshooting
 
+What Orbit finds on this system, one line a service:
+
+```sh
+cosmic-ext-applet-orbit --check
+# in the Flatpak:
+flatpak run io.github.danielhanzs.CosmicExtAppletOrbit --check
+```
+
 The panel collects the applet's log:
 
 ```sh
@@ -295,6 +317,7 @@ cargo test
 | `src/config.rs` | saved preferences and COSMIC settings |
 | `src/i18n.rs` | loading translations, date formats |
 | `src/weather.rs` | Open-Meteo weather and place search |
+| `src/check.rs` | `--check`: what Orbit finds on this system |
 | `src/system.rs` | processor, memory and network use |
 | `src/tasks.rs` | Evolution Data Server to-dos |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
@@ -315,7 +338,7 @@ only (nothing is saved), framed in magenta to cut it out of a screenshot:
 ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-applet-orbit
 ```
 
-Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `calendar`,
+Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `medium`, `low` (tile styles), `calendar`,
 `weather`, `audio`, `system`, `tasks`, `clocks` (those cards), `1`, `2`,
 `3` (columns), `general`,
 `tiles`, `cards` (the editor, on that tab).

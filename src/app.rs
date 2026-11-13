@@ -61,10 +61,14 @@ pub enum Tile {
     Hotspot,
     Pomodoro,
     Keyboard,
+    Dns,
+    GameMode,
+    /// The user's own, by its id.
+    Custom(u32),
 }
 
 impl Tile {
-    pub const ALL: [Tile; 20] = [
+    pub const ALL: [Tile; 22] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -85,6 +89,8 @@ impl Tile {
         Tile::Hotspot,
         Tile::Pomodoro,
         Tile::Keyboard,
+        Tile::Dns,
+        Tile::GameMode,
     ];
 
     /// Shown at first, and after a reset.
@@ -121,6 +127,9 @@ impl Tile {
             Tile::Hotspot => T.hotspot,
             Tile::Pomodoro => T.pomodoro,
             Tile::Keyboard => T.keyboard,
+            Tile::Dns => "DNS",
+            Tile::GameMode => T.game_mode,
+            Tile::Custom(_) => "",
         }
     }
 
@@ -153,6 +162,7 @@ pub enum Slider {
     Volume,
     Brightness,
     Mic,
+    KeyboardLight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +176,9 @@ pub enum Page {
     Hotspot,
     Pomodoro,
     Keyboard,
+    Dns,
+    /// Asking before running one of the user's tiles.
+    Confirm(u32),
     Edit,
     Password,
 }
@@ -220,8 +233,8 @@ pub struct App {
     pending: HashSet<Source>,
     dirty: HashSet<Source>,
     /// Per slider: the value waiting to be set, and whether a set runs.
-    waiting: [Option<f32>; 3],
-    writing: [bool; 3],
+    waiting: [Option<f32>; 4],
+    writing: [bool; 4],
     audio_pending: bool,
     audio_dirty: bool,
     /// The month the events were read for, and when.
@@ -255,6 +268,25 @@ pub struct App {
     clock_matches: Vec<String>,
     /// A timer's own length being typed, in minutes.
     timer_input: String,
+    /// The connection's name servers: ours, or (None) its own or unknown.
+    dns: Option<sys::Dns>,
+    /// The battery's charge limit, where it has one: its path, and on.
+    charge_limit: Option<(zbus::zvariant::OwnedObjectPath, bool)>,
+    /// The keyboard's backlight: name, level, most.
+    keyboard_light: Option<(String, u32, u32)>,
+    /// Game Mode: None, not installed; and whether we hold it on.
+    gamemode: Option<bool>,
+    gamemode_held: bool,
+    /// When Wi-Fi last dropped, while that's shown; and whether it was up.
+    wifi_lost: Option<Instant>,
+    wifi_was_up: bool,
+    /// The user's tiles whose status says on; when last asked.
+    custom_on: Vec<u32>,
+    custom_asked: Option<Instant>,
+    /// The user's tile being made or changed in the editor.
+    custom_form: Option<crate::config::Custom>,
+    /// Launchers installed here, offered as tiles.
+    suggestions: Vec<Suggestion>,
     pomodoro: pomodoro::Pomodoro,
     weather: Option<Weather>,
     /// When the weather was last asked for, and which ask is the latest.
@@ -376,6 +408,26 @@ pub enum Message {
     StartTimer(u64),
     StopTimer(usize),
     TimerInput(String),
+    /// The extras read when the popup opens.
+    Extras(Option<sys::Dns>, Option<(zbus::zvariant::OwnedObjectPath, bool)>, Option<(String, u32, u32)>, Option<bool>),
+    SetDns(sys::Dns),
+    SetChargeLimit(bool),
+    KeyboardLight(f32),
+    GameModeHeld(bool),
+    LowBatteryBadge(bool),
+    RunCustom(u32),
+    CustomOn(Vec<u32>),
+    /// The editor's form: open on a tile (or a new one), edited, saved, gone.
+    EditCustom(Option<u32>),
+    CustomForm(CustomField, String),
+    CustomConfirm(bool),
+    SaveCustom,
+    DeleteCustom,
+    CancelCustom,
+    Suggestions(Vec<Suggestion>),
+    AddSuggestion(Suggestion),
+    WifiBadge(crate::config::WifiBadge),
+    TileStyle(crate::config::TileStyle),
     ClockInput(String),
     AddClock(String),
     RemoveClock(usize),
@@ -426,7 +478,7 @@ fn wifi_icon(strength: u8) -> &'static str {
 /// A tile as shown: icon, subtitle, lit, and the page with more of it.
 struct TileView {
     icon: icon::Handle,
-    title: &'static str,
+    title: String,
     subtitle: String,
     on: bool,
     page: Option<Page>,
@@ -484,11 +536,17 @@ impl App {
         }
         let Some(level) = self.waiting[index].take() else { return Task::none() };
         self.writing[index] = true;
+        let light = self.keyboard_light.clone();
         run(async move {
             match slider {
                 Slider::Volume => audio::set_volume(level).await,
                 Slider::Brightness => log("brightness", sys::set_brightness(level).await),
                 Slider::Mic => audio::set_mic_volume(level).await,
+                Slider::KeyboardLight => {
+                    if let Some((name, _, max)) = light {
+                        log("keyboard light", sys::set_keyboard_light(name, (level * max as f32).round() as u32).await);
+                    }
+                }
             }
             Message::Written(slider)
         })
@@ -529,7 +587,7 @@ impl App {
                 let wired = self.net.primary.as_ref().filter(|p| p.wired);
                 return TileView {
                     icon: named("network-wired-symbolic"),
-                    title: T.wired,
+                    title: T.wired.into(),
                     subtitle: wired.map_or(T.not_connected.into(), |p| p.name.clone()),
                     on: wired.is_some(),
                     page: None,
@@ -629,6 +687,26 @@ impl App {
                 };
                 (named("network-wireless-hotspot-symbolic"), on, subtitle, Some(Page::Hotspot))
             }
+            Tile::Dns => {
+                let name = match self.dns {
+                    Some(choice) => choice.name().unwrap_or(T.automatic).to_string(),
+                    None => String::new(),
+                };
+                let on = self.dns.is_some_and(|d| d != sys::Dns::Automatic);
+                (named("network-server-symbolic"), on, name, Some(Page::Dns))
+            }
+            Tile::GameMode => {
+                let on = self.gamemode == Some(true);
+                (named("input-gaming-symbolic"), on, on_off(on), None)
+            }
+            Tile::Custom(id) => {
+                let custom = self.prefs.custom.iter().find(|c| c.id == id);
+                let icon = custom.map_or("", |c| c.icon.as_str());
+                let on = self.custom_on.contains(&id);
+                let stateful = custom.is_some_and(|c| !c.status.trim().is_empty());
+                let icon = named(if icon.trim().is_empty() { "application-x-executable-symbolic" } else { icon.trim() });
+                (icon, on, if stateful { on_off(on) } else { String::new() }, None)
+            }
             Tile::Keyboard => {
                 let name = self.layouts.get(self.layout).map_or(String::new(), |l| l.name.clone());
                 (named("input-keyboard-symbolic"), false, name, Some(Page::Keyboard))
@@ -639,7 +717,7 @@ impl App {
                 (named(icon), on, on_off(on), None)
             }
         };
-        TileView { icon, title: tile.name(), subtitle, on, page }
+        TileView { icon, title: self.tile_name(tile), subtitle, on, page }
     }
 
     fn click(&mut self, tile: Tile) -> app::Task<Message> {
@@ -735,6 +813,20 @@ impl App {
             Tile::Screenshot => self.update(Message::Spawn("cosmic-screenshot", &[])),
             Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
             Tile::Pomodoro => self.update(Message::PomodoroToggle),
+            Tile::Dns => self.update(Message::Page(Page::Dns)),
+            Tile::Custom(id) => match self.prefs.custom.iter().find(|c| c.id == id) {
+                Some(c) if c.confirm => self.update(Message::Page(Page::Confirm(id))),
+                Some(_) => self.update(Message::RunCustom(id)),
+                None => Task::none(),
+            },
+            Tile::GameMode => {
+                let hold = !self.gamemode_held;
+                self.gamemode = Some(hold);
+                run(async move {
+                    let done = desktop::hold_gamemode(hold).await;
+                    Message::GameModeHeld(if done { hold } else { !hold })
+                })
+            }
             // On to the next layout; with one, its page.
             Tile::Keyboard if self.layouts.len() > 1 => {
                 self.update(Message::KeyboardLayout((self.layout + 1) % self.layouts.len()))
@@ -767,6 +859,11 @@ impl App {
             self.visible = today.first_of_month();
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
+        tasks.push(run(async {
+            let (dns, charge, light, gamemode) =
+                tokio::join!(sys::dns(), sys::charge_limit(), sys::keyboard_light(), desktop::gamemode());
+            Message::Extras(dns, charge, light, gamemode)
+        }));
         if self.prefs.sections.contains(&Section::Tasks) {
             tasks.push(run(async { Message::Tasks(tasks::open().await) }));
         }
@@ -869,12 +966,13 @@ impl App {
     }
 
     fn sliders(&self) -> Element<'_, Message> {
-        let line = |name: &'static str, mute: Option<Message>, slider: Element<'static, Message>, page: Option<Page>| {
+        let line = |name: &'static str, mute: Option<Message>, slider: Element<'static, Message>, level: f32, page: Option<Page>| {
             let mut row = widget::Row::new()
                 .spacing(8)
                 .align_y(Alignment::Center)
                 .push(button::icon(icon::from_name(name)).padding(6).on_press_maybe(mute))
-                .push(slider);
+                .push(slider)
+                .push(percent(level));
             if let Some(page) = page {
                 row = row.push(button::icon(icon::from_name("go-next-symbolic")).padding(6).on_press(Message::Page(page)));
             }
@@ -888,14 +986,21 @@ impl App {
         let mut column = widget::Column::new().spacing(4);
         // The sound card has its own.
         if !self.prefs.sections.contains(&Section::Audio) {
-            column = column.push(line(volume_icon, Some(Message::Mute), volume, Some(Page::Sound)));
+            column = column.push(line(volume_icon, Some(Message::Mute), volume, self.audio.volume, Some(Page::Sound)));
         }
         if let Some(level) = self.brightness {
             let slider = widget::slider(0.05..=1.0, level, Message::SetBrightness)
                 .step(0.01_f32)
                 .on_release(Message::Released)
                 .into();
-            column = column.push(line("display-brightness-symbolic", None, slider, None));
+            column = column.push(line("display-brightness-symbolic", None, slider, level, None));
+        }
+        if let Some((_, level, max)) = &self.keyboard_light {
+            let slider = widget::slider(0.0..=1.0, *level as f32 / *max as f32, Message::KeyboardLight)
+                .step(1.0 / *max as f32)
+                .on_release(Message::Released)
+                .into();
+            column = column.push(line("keyboard-brightness-symbolic", None, slider, *level as f32 / *max as f32, None));
         }
         column.into()
     }
@@ -903,22 +1008,35 @@ impl App {
     fn tile_view(&self, tile: Tile) -> Element<'_, Message> {
         let view = self.tile(tile);
         let small = self.prefs.small.contains(&tile);
+        let style = self.prefs.tile_style;
+        let lit = view.on && style == crate::config::TileStyle::High;
+        // Medium and low: the icon on a square of its own, lit at medium.
+        let glyph = |handle: icon::Handle| -> Element<'_, Message> {
+            if style == crate::config::TileStyle::High {
+                icon::icon(handle).size(20).into()
+            } else {
+                container(icon::icon(handle).size(18))
+                    .padding(7)
+                    .class(style::icon_box(view.on && style == crate::config::TileStyle::Medium))
+                    .into()
+            }
+        };
         let content: Element<'_, Message> = if small {
-            widget::container(icon::icon(view.icon.clone()).size(20)).center(Length::Fill).into()
+            widget::container(glyph(view.icon.clone())).center(Length::Fill).into()
         } else {
-            let mut label = widget::Column::new().push(text::body(view.title).font(cosmic::font::bold()));
+            let mut label = widget::Column::new().push(text::body(view.title.clone()).font(cosmic::font::bold()));
             if !view.subtitle.is_empty() {
                 label = label.push(text::caption(view.subtitle).wrapping(iced::widget::text::Wrapping::None));
             }
             let mut row = widget::Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(icon::icon(view.icon.clone()).size(20))
+                .push(glyph(view.icon.clone()))
                 .push(widget::container(label).width(Length::Fill).clip(true));
             if let Some(page) = view.page {
                 row = row.push(
                     button::icon(icon::from_name("go-next-symbolic"))
-                        .class(style::on_tile(view.on))
+                        .class(style::on_tile(lit))
                         .padding(4)
                         .on_press(Message::Page(page)),
                 );
@@ -926,7 +1044,7 @@ impl App {
             row.into()
         };
         let button = button::custom(content)
-            .class(style::tile(view.on))
+            .class(style::tile(lit))
             .padding(if small { [10, 0] } else { [10, 12] })
             .width(Length::Fill)
             .height(Length::Fixed(60.0))
@@ -940,9 +1058,9 @@ impl App {
     }
 
     fn tiles(&self) -> Element<'_, Message> {
-        let shown = &self.prefs.tiles;
+        let shown: Vec<Tile> = self.prefs.tiles.iter().copied().filter(|t| self.available(*t)).collect();
         let mut column = widget::Column::new().spacing(8);
-        for row in rows(shown, &self.prefs.small) {
+        for row in rows(&shown, &self.prefs.small) {
             let mut line = widget::Row::new().spacing(8);
             let mut used = 0;
             for (_, tile) in row {
@@ -1244,6 +1362,22 @@ impl App {
         (applet.suggested_size(true).1 + 2 * applet.suggested_padding(true).0) as f32 + 16.0
     }
 
+    fn tile_name(&self, tile: Tile) -> String {
+        match tile {
+            Tile::Custom(id) => self.prefs.custom.iter().find(|c| c.id == id).map_or(String::new(), |c| c.name.clone()),
+            _ => tile.name().to_string(),
+        }
+    }
+
+    /// Whether a tile has something to work with here.
+    fn available(&self, tile: Tile) -> bool {
+        match tile {
+            Tile::GameMode => self.gamemode.is_some(),
+            Tile::Custom(id) => self.prefs.custom.iter().any(|c| c.id == id),
+            _ => true,
+        }
+    }
+
     /// Each second: the pomodoro's phase, and a new day.
     fn tick(&mut self) -> app::Task<Message> {
         if let Some(phase) = self.pomodoro.tick(Instant::now()) {
@@ -1490,6 +1624,7 @@ impl App {
                 "vpn" => &["vpn"],
                 "power" => &["power"],
                 "keyboard" => &["keyboard"],
+                "wired" => &["wired"],
                 _ => &["sound"],
             }))
             .into()
@@ -1565,7 +1700,45 @@ impl App {
                         Some(Message::Profile(profile.clone())),
                     ));
                 }
+                if let Some((_, on)) = &self.charge_limit {
+                    column = column.push(
+                        widget::Column::new()
+                            .padding([8, 10])
+                            .spacing(2)
+                            .push(switch(T.charge_limit, *on, Message::SetChargeLimit))
+                            .push(text::caption(T.charge_limit_hint)),
+                    );
+                }
                 column = column.push(self.more("power"));
+            }
+            Page::Confirm(id) => {
+                let name = self.tile_name(Tile::Custom(id));
+                column = column
+                    .push(self.page_header(&name, None))
+                    .push(container(text::body(T.confirm_run)).padding([8, 10]))
+                    .push(
+                        widget::Row::new()
+                            .spacing(8)
+                            .padding([8, 10])
+                            .push(widget::space().width(Length::Fill))
+                            .push(button::standard(T.cancel).on_press(Message::Page(Page::Main)))
+                            .push(button::destructive(T.run).on_press(Message::RunCustom(id))),
+                    );
+            }
+            Page::Dns => {
+                column = column.push(self.page_header("DNS", None));
+                for choice in sys::Dns::ALL {
+                    let servers = choice.servers().iter().map(|s| format!("{}.{}.{}.{}", s[0], s[1], s[2], s[3])).collect::<Vec<_>>().join(", ");
+                    column = column.push(self.item(
+                        named("network-server-symbolic"),
+                        choice.name().unwrap_or(T.automatic),
+                        Some(if servers.is_empty() { T.dns_automatic_hint.to_string() } else { servers }),
+                        self.dns == Some(choice),
+                        Some(Message::SetDns(choice)),
+                    ));
+                }
+                column = column.push(container(text::caption(T.dns_hint)).padding([8, 10]));
+                column = column.push(self.more("wired"));
             }
             Page::Sound => {
                 column = column.push(self.page_header(T.sound_output, None));
@@ -1743,6 +1916,7 @@ impl App {
                 .align_y(Alignment::Center)
                 .push(button::icon(icon::from_name(icon)).padding(6).on_press(mute))
                 .push(widget::slider(0.0..=1.0, value, set).step(0.01_f32).on_release(Message::Released))
+                .push(percent(value))
         };
         let mut column = widget::Column::new()
             .spacing(4)
@@ -1963,9 +2137,36 @@ impl App {
                 widget::tooltip::Position::Bottom,
             ));
         }
-        let mut tabs = widget::Row::new().spacing(4);
-        for (tab, name) in [(EditTab::General, T.general), (EditTab::Tiles, T.tiles), (EditTab::Cards, T.cards)] {
-            tabs = tabs.push(choice(name, tab == self.edit_tab, Message::EditTab(tab)).width(Length::Fill));
+        // Tabs: the picked one in the accent, underlined.
+        let mut tabs = widget::Row::new();
+        for (tab, name) in
+            [(EditTab::General, T.general), (EditTab::Tiles, T.tiles), (EditTab::Cards, T.cards), (EditTab::About, T.about)]
+        {
+            let picked = tab == self.edit_tab;
+            let label = button::custom(
+                container(text::body(name).wrapping(iced::widget::text::Wrapping::None)).center_x(Length::Fill).clip(true),
+            )
+                .class(style::flat())
+                .padding([8, 4])
+                .width(Length::Fill)
+                .on_press(Message::EditTab(tab));
+            let line = container(widget::space())
+                .width(Length::Fill)
+                .height(Length::Fixed(2.0))
+                .class(theme::Container::custom(move |theme| container::Style {
+                    background: picked.then(|| Color::from(theme.cosmic().accent_color()).into()),
+                    ..Default::default()
+                }));
+            let label: Element<'_, Message> = if picked {
+                container(label).class(theme::Container::custom(|theme| container::Style {
+                    text_color: Some(theme.cosmic().accent_text_color().into()),
+                    ..Default::default()
+                }))
+                .into()
+            } else {
+                label.into()
+            };
+            tabs = tabs.push(widget::Column::new().width(Length::Fill).push(label).push(line));
         }
         widget::Column::new()
             .spacing(12)
@@ -1975,51 +2176,131 @@ impl App {
                 EditTab::General => self.edit_general(),
                 EditTab::Tiles => self.edit_tiles(),
                 EditTab::Cards => self.edit_cards(),
+                EditTab::About => self.edit_about(),
             })
             .into()
     }
 
-    /// How the popup opens and sits, and what the panel shows.
+    /// How the popup opens and sits, the cards in it, the tiles' look, and
+    /// what the panel shows.
     fn edit_general(&self) -> Element<'_, Message> {
-        let mut layouts = widget::Row::new().spacing(4);
-        for (layout, name) in [(Layout::Dropdown, T.dropdown), (Layout::Side, T.side), (Layout::Fullscreen, T.fullscreen)] {
-            layouts = layouts.push(choice(name, layout == self.prefs.layout, Message::SetLayout(layout)));
-        }
+        use crate::config::{TileStyle, WifiBadge};
+        let opens = widget::Column::new()
+            .spacing(10)
+            .push(option(T.dropdown, T.dropdown_hint, Layout::Dropdown, self.prefs.layout, Message::SetLayout))
+            .push(option(T.side, T.side_hint, Layout::Side, self.prefs.layout, Message::SetLayout))
+            .push(option(T.fullscreen, T.fullscreen_hint, Layout::Fullscreen, self.prefs.layout, Message::SetLayout));
         let mut column_count = widget::Row::new().spacing(4);
         for n in 1..=3u8 {
             column_count = column_count.push(choice(number(n), n as usize == self.prefs.columns(), Message::SetColumns(n)));
         }
+        let looks = widget::Column::new()
+            .spacing(10)
+            .push(option(T.style_high, T.style_high_hint, TileStyle::High, self.prefs.tile_style, Message::TileStyle))
+            .push(option(T.style_medium, T.style_medium_hint, TileStyle::Medium, self.prefs.tile_style, Message::TileStyle))
+            .push(option(T.style_low, T.style_low_hint, TileStyle::Low, self.prefs.tile_style, Message::TileStyle));
         let mut icons = widget::Row::new().spacing(4);
         for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
             icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
         }
         let mut spacing = widget::Row::new().spacing(4);
-        for (size, name) in [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large), (Spacing::Native, T.native)] {
+        for (size, name) in
+            [(Spacing::Small, T.small), (Spacing::Medium, T.medium), (Spacing::Large, T.large), (Spacing::Native, T.native)]
+        {
             spacing = spacing.push(choice(name, size == self.prefs.spacing, Message::SetSpacing(size)));
         }
+        let mut wifi = widget::Row::new().spacing(4);
+        for (badge, name) in [
+            (WifiBadge::Off, T.off),
+            (WifiBadge::HalfMinute, "30 s"),
+            (WifiBadge::Minute, "1 min"),
+            (WifiBadge::FiveMinutes, "5 min"),
+            (WifiBadge::Back, T.until_back),
+        ] {
+            wifi = wifi.push(choice(name, badge == self.prefs.wifi_badge, Message::WifiBadge(badge)));
+        }
         widget::Column::new()
-            .spacing(10)
-            .push(text::heading(T.layout))
-            .push(layouts)
-            .push(text::body(T.columns))
-            .push(column_count)
-            .push(switch(T.islands, self.prefs.islands, Message::SetIslands))
-            .push(widget::divider::horizontal::default())
-            .push(text::heading(T.cards))
-            .push(self.edit_sections())
-            .push(widget::divider::horizontal::default())
-            .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
-            .push(text::body(T.panel_icons))
-            .push(icons)
-            .push(text::body(T.panel_spacing))
-            .push(spacing)
+            .spacing(16)
+            .push(group(T.layout, T.layout_hint, opens.into()))
+            .push(group(
+                T.columns,
+                T.columns_hint,
+                widget::Column::new()
+                    .spacing(10)
+                    .push(column_count)
+                    .push(described(switch(T.islands, self.prefs.islands, Message::SetIslands), T.islands_hint))
+                    .into(),
+            ))
+            .push(group(T.cards, T.cards_hint, self.edit_sections()))
+            .push(group(T.tile_style, T.tile_style_hint, looks.into()))
+            .push(group(
+                T.panel,
+                T.panel_hint,
+                widget::Column::new()
+                    .spacing(10)
+                    .push(switch(T.show_clock, self.prefs.clock, Message::ShowClock))
+                    .push(text::body(T.panel_icons))
+                    .push(icons)
+                    .push(text::body(T.panel_spacing))
+                    .push(spacing)
+                    .into(),
+            ))
+            .push(group(
+                T.badges,
+                T.badges_hint,
+                widget::Column::new()
+                    .spacing(10)
+                    .push(described(switch(T.low_battery, self.prefs.low_battery_badge, Message::LowBatteryBadge), T.low_battery_hint))
+                    .push(described(text::body(T.wifi_dropped).into(), T.wifi_dropped_hint))
+                    .push(wifi)
+                    .into(),
+            ))
+            .into()
+    }
+
+    /// Who made Orbit, and where to find more.
+    fn edit_about(&self) -> Element<'_, Message> {
+        const HOME: &str = "https://github.com/danielhanzs/cosmic-ext-applet-orbit";
+        let link = |label: &'static str, url: String| {
+            button::custom(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(text::body(label).width(Length::Fill))
+                    .push(icon::from_name("go-next-symbolic").size(16)),
+            )
+            .class(style::flat())
+            .padding([8, 10])
+            .width(Length::Fill)
+            .on_press(Message::OpenUrl(url))
+        };
+        widget::Column::new()
+            .spacing(12)
+            .push(
+                widget::Column::new()
+                    .spacing(4)
+                    .push(text::title3("Orbit"))
+                    .push(text::caption(format!("{} {}", T.version, env!("CARGO_PKG_VERSION"))))
+                    .push(text::body(T.about_text)),
+            )
+            .push(
+                widget::Row::new()
+                    .push(text::body(T.developer).width(Length::Fill))
+                    .push(text::body("Dániel Hánzs")),
+            )
+            .push(widget::Row::new().push(text::body(T.license).width(Length::Fill)).push(text::body("GPL-3.0")))
+            .push(widget::divider::horizontal::light())
+            .push(link(T.website, HOME.to_string()))
+            .push(link(T.report_problem, format!("{HOME}/issues")))
+            .push(link(T.help_translate, format!("{HOME}/tree/main/i18n")))
+            .push(text::caption(T.trademark))
             .into()
     }
 
     /// The editor's tiles: the shown ones as they lay out (drag to move,
     /// click to resize, − to hide), and the others to add.
     fn edit_tiles(&self) -> Element<'_, Message> {
-        let mut column = widget::Column::new().spacing(10).push(text::caption(T.edit_hint));
+        let mut column = widget::Column::new().spacing(10);
 
         // The shown tiles, as they lay out: drag to move, click to resize.
         let mut grid = widget::Column::new().spacing(8);
@@ -2036,7 +2317,7 @@ impl App {
                     .push(icon::icon(self.tile(tile).icon).size(18));
                 if !small {
                     inner = inner.push(
-                        widget::container(text::body(tile.name()).wrapping(iced::widget::text::Wrapping::None))
+                        widget::container(text::body(self.tile_name(tile)).wrapping(iced::widget::text::Wrapping::None))
                             .width(Length::Fill)
                             .clip(true),
                     );
@@ -2100,7 +2381,11 @@ impl App {
         );
 
         // The others, to add.
-        let hidden: Vec<Tile> = Tile::ALL.into_iter().filter(|t| !self.prefs.tiles.contains(t)).collect();
+        let hidden: Vec<Tile> = Tile::ALL
+            .into_iter()
+            .chain(self.prefs.custom.iter().map(|c| Tile::Custom(c.id)))
+            .filter(|t| !self.prefs.tiles.contains(t) && self.available(*t))
+            .collect();
         if !hidden.is_empty() {
             column = column.push(text::heading(T.add));
             for four in hidden.chunks(4) {
@@ -2121,7 +2406,7 @@ impl App {
                             .padding([12, 14])
                             .on_press(Message::ShowTile(*tile, true)),
                         )
-                        .push(text::caption(tile.name()).align_x(iced::alignment::Horizontal::Center));
+                        .push(text::caption(self.tile_name(*tile)).align_x(iced::alignment::Horizontal::Center));
                     line = line.push(widget::container(cell).center_x(Length::FillPortion(1)));
                 }
                 for _ in four.len()..4 {
@@ -2131,6 +2416,91 @@ impl App {
             }
         }
 
+        widget::Column::new()
+            .spacing(16)
+            .push(group(T.tiles, T.edit_hint, column.into()))
+            .push(group(T.your_tiles, T.your_tiles_hint, self.edit_custom()))
+            .into()
+    }
+
+    /// The user's own tiles: each to change, a new one, launchers to add.
+    fn edit_custom(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(8);
+        if let Some(form) = &self.custom_form {
+            let field = |label: &'static str, hint: &'static str, value: &str, which: CustomField| {
+                widget::Column::new()
+                    .spacing(4)
+                    .push(text::body(label))
+                    .push(widget::text_input(hint, value.to_string()).on_input(move |v| Message::CustomForm(which, v)))
+            };
+            let ready = !form.name.trim().is_empty() && !form.command.trim().is_empty();
+            let mut buttons = widget::Row::new().spacing(8).push(widget::space().width(Length::Fill));
+            if form.id != 0 {
+                buttons = buttons.push(button::destructive(T.delete).on_press(Message::DeleteCustom));
+            }
+            buttons = buttons
+                .push(button::standard(T.cancel).on_press(Message::CancelCustom))
+                .push(button::suggested(T.save).on_press_maybe(ready.then_some(Message::SaveCustom)));
+            return column
+                .push(field(T.name, "", &form.name, CustomField::Name))
+                .push(field(T.command, "cosmic-term", &form.command, CustomField::Command))
+                .push(field(T.icon_name, "application-x-executable-symbolic", &form.icon, CustomField::Icon))
+                .push(described(
+                    field(T.status_command, "systemctl --user is-active -q syncthing", &form.status, CustomField::Status).into(),
+                    T.status_command_hint,
+                ))
+                .push(switch(T.ask_first, form.confirm, Message::CustomConfirm))
+                .push(buttons)
+                .into();
+        }
+        for c in &self.prefs.custom {
+            let icon = if c.icon.trim().is_empty() { "application-x-executable-symbolic" } else { c.icon.trim() };
+            column = column.push(
+                button::custom(
+                    widget::Row::new()
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(icon::from_name(icon).size(18))
+                        .push(
+                            widget::Column::new()
+                                .push(text::body(c.name.as_str()))
+                                .push(text::caption(c.command.as_str()).wrapping(iced::widget::text::Wrapping::None))
+                                .width(Length::Fill),
+                        )
+                        .push(icon::from_name("edit-symbolic").size(16)),
+                )
+                .class(style::flat())
+                .padding([6, 8])
+                .width(Length::Fill)
+                .on_press(Message::EditCustom(Some(c.id))),
+            );
+        }
+        column = column.push(button::standard(T.new_tile).leading_icon(icon::from_name("list-add-symbolic")).on_press(Message::EditCustom(None)));
+        // Installed launchers not yet a tile.
+        let offered: Vec<Suggestion> = self
+            .suggestions
+            .iter()
+            .copied()
+            .filter(|s| !self.prefs.custom.iter().any(|c| c.command == s.command))
+            .collect();
+        if !offered.is_empty() {
+            column = column.push(text::body(T.suggestions));
+            let row = offered.into_iter().fold(widget::Row::new().spacing(6), |row, s| {
+                row.push(
+                    button::custom(
+                        widget::Row::new()
+                            .spacing(6)
+                            .align_y(Alignment::Center)
+                            .push(icon::from_name(s.icon).size(16))
+                            .push(text::caption(s.name())),
+                    )
+                    .class(style::tile(false))
+                    .padding([6, 10])
+                    .on_press(Message::AddSuggestion(s)),
+                )
+            });
+            column = column.push(widget::scrollable::horizontal(row.padding([0, 0, 8, 0])));
+        }
         column.into()
     }
 
@@ -2183,7 +2553,6 @@ impl App {
         };
         let mut weather = widget::Column::new()
             .spacing(10)
-            .push(text::heading(T.weather))
             .push(widget::Row::new().spacing(8).align_y(Alignment::Center).push(text::body(T.city)).push(city))
             .push(self.places.iter().fold(widget::Column::new(), |column, place| {
                 column.push(
@@ -2200,10 +2569,7 @@ impl App {
             weather = weather.push(text::body(T.hours)).push(count(&[6, 12, 24], self.prefs.weather_hours, Message::WeatherHours));
         }
         weather = weather.push(text::body(T.days)).push(count(&[3, 5, 7], self.prefs.weather_days, Message::WeatherDays));
-        let mut clocks = widget::Column::new()
-            .spacing(10)
-            .push(widget::divider::horizontal::default())
-            .push(text::heading(T.section_clocks));
+        let mut clocks = widget::Column::new().spacing(10);
         for (i, zone) in self.prefs.clocks.iter().enumerate() {
             clocks = clocks.push(
                 widget::Row::new()
@@ -2223,7 +2589,11 @@ impl App {
                         .on_press(Message::AddClock(zone.clone())),
                 )
             }));
-        widget::Column::new().spacing(10).push(weather).push(clocks).into()
+        widget::Column::new()
+            .spacing(16)
+            .push(group(T.weather, T.weather_hint, weather.into()))
+            .push(group(T.section_clocks, T.clocks_hint, clocks.into()))
+            .into()
     }
 
     fn password_page(&self) -> Element<'_, Message> {
@@ -2340,6 +2710,63 @@ fn volume_icon(muted: bool, level: f32) -> &'static str {
     }
 }
 
+/// The editor's fields of a tile of the user's.
+#[derive(Debug, Clone, Copy)]
+pub enum CustomField {
+    Name,
+    Command,
+    Icon,
+    Status,
+}
+
+/// A launcher offered as a tile, when it's installed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Suggestion {
+    key: &'static str,
+    command: &'static str,
+    icon: &'static str,
+}
+
+impl Suggestion {
+    const ALL: [Suggestion; 5] = [
+        Suggestion { key: "terminal", command: "cosmic-term", icon: "utilities-terminal-symbolic" },
+        Suggestion { key: "files", command: "cosmic-files", icon: "system-file-manager-symbolic" },
+        Suggestion { key: "editor", command: "cosmic-edit", icon: "accessories-text-editor-symbolic" },
+        Suggestion { key: "monitor", command: "observatory", icon: "utilities-system-monitor-symbolic" },
+        Suggestion { key: "store", command: "cosmic-store", icon: "system-software-install-symbolic" },
+    ];
+
+    fn name(self) -> &'static str {
+        match self.key {
+            "terminal" => T.terminal,
+            "files" => T.files,
+            "editor" => T.text_editor,
+            "monitor" => T.system_monitor,
+            _ => T.app_store,
+        }
+    }
+
+    /// The ones installed on the host.
+    async fn installed() -> Vec<Suggestion> {
+        let mut found = Vec::new();
+        for s in Self::ALL {
+            let script = format!("command -v {}", s.command);
+            if crate::host::command("sh").args(["-c", &script]).output().await.is_ok_and(|o| o.status.success()) {
+                found.push(s);
+            }
+        }
+        found
+    }
+}
+
+/// A slider's level beside it: "45%", in a fixed width so sliders line up.
+fn percent(level: f32) -> Element<'static, Message> {
+    text::caption(format!("{:.0}%", level * 100.0))
+        .width(Length::Fixed(34.0))
+        .align_x(iced::alignment::Horizontal::Right)
+        .into()
+}
+
 /// A choice among a few: the picked one lit.
 fn choice(label: &'static str, picked: bool, message: Message) -> button::TextButton<'static, Message> {
     let b = button::text(label).on_press(message);
@@ -2370,6 +2797,37 @@ pub enum EditTab {
     General,
     Tiles,
     Cards,
+    About,
+}
+
+/// A group of settings: its title, a line saying what it's for, then it.
+fn group<'a>(title: &'static str, description: &'static str, content: Element<'a, Message>) -> Element<'a, Message> {
+    widget::Column::new()
+        .spacing(10)
+        .push(widget::divider::horizontal::light())
+        .push(widget::Column::new().spacing(2).push(text::title4(title)).push(text::caption(description)))
+        .push(content)
+        .into()
+}
+
+/// A setting with a line under it saying what it does.
+fn described<'a>(setting: Element<'a, Message>, description: &'static str) -> Element<'a, Message> {
+    widget::Column::new().spacing(2).push(setting).push(text::caption(description)).into()
+}
+
+/// One of a few, by a radio button, with what it means under it.
+fn option<V: Copy + Eq + 'static>(
+    label: &'static str,
+    description: &'static str,
+    value: V,
+    picked: V,
+    message: fn(V) -> Message,
+) -> Element<'static, Message> {
+    widget::Column::new()
+        .spacing(2)
+        .push(widget::radio(label, value, Some(picked), message))
+        .push(container(text::caption(description)).padding([0, 0, 0, 28]))
+        .into()
 }
 
 /// How a section sits in the popup.
@@ -2415,6 +2873,16 @@ fn named(name: &str) -> icon::Handle {
 }
 
 /// An icon on the panel, in the panel's color; faint for a function that's off.
+/// A panel icon in the theme's warning red: a low battery, a dropped Wi-Fi.
+fn alert_icon<'a>(handle: icon::Handle, size: u16) -> Element<'a, Message> {
+    icon::icon(handle)
+        .size(size)
+        .class(theme::Svg::Custom(std::rc::Rc::new(|theme| iced::widget::svg::Style {
+            color: Some(theme.cosmic().destructive_color().into()),
+        })))
+        .into()
+}
+
 fn status_icon<'a>(handle: icon::Handle, size: u16, faint: bool) -> Element<'a, Message> {
     icon::icon(handle)
         .size(size)
@@ -2471,8 +2939,8 @@ impl cosmic::Application for App {
             pending: HashSet::new(),
             dirty: HashSet::new(),
             adjusting: None,
-            waiting: [None; 3],
-            writing: [false; 3],
+            waiting: [None; 4],
+            writing: [false; 4],
             audio_pending: false,
             audio_dirty: false,
             events_read: None,
@@ -2493,6 +2961,17 @@ impl cosmic::Application for App {
             clock_input: String::new(),
             clock_matches: Vec::new(),
             timer_input: String::new(),
+            dns: None,
+            charge_limit: None,
+            keyboard_light: None,
+            gamemode: None,
+            gamemode_held: false,
+            wifi_lost: None,
+            wifi_was_up: false,
+            custom_on: Vec::new(),
+            custom_asked: None,
+            custom_form: None,
+            suggestions: Vec::new(),
             pomodoro: pomodoro::Pomodoro::default(),
             weather: None,
             weather_read: None,
@@ -2531,6 +3010,8 @@ impl cosmic::Application for App {
                     "islands" => app.prefs.islands = true,
                     "single" => app.prefs.islands = false,
                     "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
+                    "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
+                    "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
                     "audio" | "system" | "tasks" | "clocks" => {
                         let section = match option {
                             "audio" => Section::Audio,
@@ -2631,6 +3112,34 @@ impl cosmic::Application for App {
                     tasks.push(fire(desktop::notify(T.timer_done.to_string(), pomodoro::clock(*length))));
                 }
                 self.timers.retain(|(ends, _)| *ends > now);
+                if let (Some(at), Some(lasts)) = (self.wifi_lost, self.prefs.wifi_badge.lasts()) {
+                    if at.elapsed() >= lasts {
+                        self.wifi_lost = None;
+                    }
+                }
+                // The user's tiles' states, every few seconds while it shows.
+                if self.popup.is_some() && self.custom_asked.is_none_or(|t| t.elapsed() >= Duration::from_secs(3)) {
+                    let checks: Vec<(u32, String)> = self
+                        .prefs
+                        .custom
+                        .iter()
+                        .filter(|c| !c.status.trim().is_empty() && self.prefs.tiles.contains(&Tile::Custom(c.id)))
+                        .map(|c| (c.id, c.status.clone()))
+                        .collect();
+                    self.custom_asked = Some(Instant::now());
+                    if !checks.is_empty() {
+                        tasks.push(run(async move {
+                            let mut on = Vec::new();
+                            for (id, status) in checks {
+                                let ok = crate::host::command("sh").args(["-c", &status]).output().await.is_ok_and(|o| o.status.success());
+                                if ok {
+                                    on.push(id);
+                                }
+                            }
+                            Message::CustomOn(on)
+                        }));
+                    }
+                }
                 // The machine's load every two seconds, while it shows.
                 if self.popup.is_some()
                     && self.prefs.sections.contains(&Section::System)
@@ -2666,6 +3175,14 @@ impl cosmic::Application for App {
                 if let Some(net) = net {
                     self.net = net;
                 }
+                // Wi-Fi was up and is gone, though not turned off: mark it a while.
+                let up = self.net.access_points.iter().any(|a| a.active);
+                if up {
+                    self.wifi_lost = None;
+                } else if self.wifi_was_up && self.net.wifi_enabled && self.prefs.wifi_badge != crate::config::WifiBadge::Off {
+                    self.wifi_lost = Some(Instant::now());
+                }
+                self.wifi_was_up = up;
                 // A hotspot made from its page: show its password once it's there.
                 if self.page == Page::Hotspot && self.hotspot_password.is_none() {
                     if let Some(path) = self.net.hotspot.as_ref().map(|h| h.path.clone()) {
@@ -2908,7 +3425,12 @@ impl cosmic::Application for App {
                     self.prefs.save();
                 }
             }
-            Message::EditTab(tab) => self.edit_tab = tab,
+            Message::EditTab(tab) => {
+                self.edit_tab = tab;
+                if tab == EditTab::Tiles && self.suggestions.is_empty() {
+                    return run(async { Message::Suggestions(Suggestion::installed().await) });
+                }
+            }
             Message::System(sample) => {
                 self.sampling = false;
                 if let Some(sample) = sample {
@@ -2930,6 +3452,115 @@ impl cosmic::Application for App {
                         Message::Tasks(tasks::open().await)
                     });
                 }
+            }
+            Message::Extras(dns, charge, light, gamemode) => {
+                self.dns = dns;
+                self.charge_limit = charge;
+                if !self.adjusting() {
+                    self.keyboard_light = light;
+                }
+                self.gamemode = gamemode;
+            }
+            Message::SetDns(choice) => {
+                self.dns = Some(choice);
+                return run(async move {
+                    log("dns", sys::set_dns(choice).await);
+                    Message::Extras(sys::dns().await, sys::charge_limit().await, sys::keyboard_light().await, desktop::gamemode().await)
+                });
+            }
+            Message::SetChargeLimit(on) => {
+                if let Some((path, _)) = self.charge_limit.clone() {
+                    self.charge_limit = Some((path.clone(), on));
+                    return fire(async move { log("charge limit", sys::set_charge_limit(path, on).await) });
+                }
+            }
+            Message::KeyboardLight(level) => {
+                if let Some(light) = self.keyboard_light.as_mut() {
+                    light.1 = (level * light.2 as f32).round() as u32;
+                    self.adjusting = Some(Instant::now());
+                    return self.write(Slider::KeyboardLight, Some(level));
+                }
+            }
+            Message::GameModeHeld(held) => {
+                self.gamemode_held = held;
+                return run(async { Message::Extras(sys::dns().await, sys::charge_limit().await, sys::keyboard_light().await, desktop::gamemode().await) });
+            }
+            Message::RunCustom(id) => {
+                if let Some(c) = self.prefs.custom.iter().find(|c| c.id == id) {
+                    crate::host::spawn("sh", &["-c", c.command.as_str()]);
+                    // Its state, soon after.
+                    self.custom_asked = None;
+                }
+                return self.close();
+            }
+            Message::CustomOn(on) => self.custom_on = on,
+            Message::EditCustom(id) => {
+                self.custom_form = Some(match id.and_then(|id| self.prefs.custom.iter().find(|c| c.id == id)) {
+                    Some(c) => c.clone(),
+                    None => crate::config::Custom::default(),
+                });
+            }
+            Message::CustomForm(field, value) => {
+                if let Some(form) = self.custom_form.as_mut() {
+                    *match field {
+                        CustomField::Name => &mut form.name,
+                        CustomField::Command => &mut form.command,
+                        CustomField::Icon => &mut form.icon,
+                        CustomField::Status => &mut form.status,
+                    } = value;
+                }
+            }
+            Message::CustomConfirm(on) => {
+                if let Some(form) = self.custom_form.as_mut() {
+                    form.confirm = on;
+                }
+            }
+            Message::SaveCustom => {
+                if let Some(mut form) = self.custom_form.take().filter(|f| !f.name.trim().is_empty() && !f.command.trim().is_empty()) {
+                    match self.prefs.custom.iter_mut().find(|c| c.id == form.id && form.id != 0) {
+                        Some(c) => *c = form,
+                        None => {
+                            form.id = self.prefs.custom.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                            self.prefs.tiles.push(Tile::Custom(form.id));
+                            self.prefs.custom.push(form);
+                        }
+                    }
+                    self.prefs.save();
+                }
+            }
+            Message::DeleteCustom => {
+                if let Some(form) = self.custom_form.take() {
+                    self.prefs.custom.retain(|c| c.id != form.id);
+                    self.prefs.tiles.retain(|t| *t != Tile::Custom(form.id));
+                    self.prefs.small.retain(|t| *t != Tile::Custom(form.id));
+                    self.prefs.save();
+                }
+            }
+            Message::CancelCustom => self.custom_form = None,
+            Message::Suggestions(found) => self.suggestions = found,
+            Message::AddSuggestion(s) => {
+                let id = self.prefs.custom.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                self.prefs.custom.push(crate::config::Custom {
+                    id,
+                    name: s.name().to_string(),
+                    command: s.command.to_string(),
+                    icon: s.icon.to_string(),
+                    ..Default::default()
+                });
+                self.prefs.tiles.push(Tile::Custom(id));
+                self.prefs.save();
+            }
+            Message::LowBatteryBadge(on) => {
+                self.prefs.low_battery_badge = on;
+                self.prefs.save();
+            }
+            Message::TileStyle(style) => {
+                self.prefs.tile_style = style;
+                self.prefs.save();
+            }
+            Message::WifiBadge(badge) => {
+                self.prefs.wifi_badge = badge;
+                self.prefs.save();
             }
             Message::TimerInput(input) => {
                 // Digits only, a day at most.
@@ -3253,35 +3884,36 @@ impl cosmic::Application for App {
         let applet = &self.core.applet;
         let size = applet.suggested_size(true).0;
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
-        let mut push = |name: &str| icons.push(status_icon(named(name), size, false));
+        let push = |icons: &mut Vec<Element<'_, Message>>, name: &str| icons.push(status_icon(named(name), size, false));
         // Do not disturb: no bell either; they still wait in the center.
         if !self.notifications.is_empty() && !self.dnd {
-            push("notification-new-symbolic");
+            push(&mut icons, "notification-new-symbolic");
         }
         if !self.camera.is_empty() {
-            push("camera-web-symbolic");
+            push(&mut icons, "camera-web-symbolic");
         }
         if !self.audio.recording.is_empty() {
-            push("audio-input-microphone-symbolic");
+            push(&mut icons, "audio-input-microphone-symbolic");
         }
         if self.vpn_on() {
-            push("network-vpn-symbolic");
+            push(&mut icons, "network-vpn-symbolic");
         }
         match &self.net.primary {
-            Some(p) if p.wired => push("network-wired-symbolic"),
-            Some(_) => push(wifi_icon(
+            Some(p) if p.wired => push(&mut icons, "network-wired-symbolic"),
+            Some(_) => push(&mut icons, wifi_icon(
                 self.net.access_points.iter().find(|a| a.active).map_or(0, |a| a.strength),
             )),
-            None if self.net.wifi_enabled => push("network-wireless-offline-symbolic"),
-            None => push("network-offline-symbolic"),
+            None if self.wifi_lost.is_some() => icons.push(alert_icon(named("network-wireless-offline-symbolic"), size)),
+            None if self.net.wifi_enabled => push(&mut icons, "network-wireless-offline-symbolic"),
+            None => push(&mut icons, "network-offline-symbolic"),
         }
         if self.bt.devices.iter().any(|d| d.connected) {
-            push("bluetooth-active-symbolic");
+            push(&mut icons, "bluetooth-active-symbolic");
         }
-        push(if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
+        push(&mut icons, if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
         // The tiles' own icons: the ones on, or all with the off ones faint.
         let mut tile_icons = Vec::new();
-        for tile in self.prefs.tiles.iter().filter(|t| !t.has_status_icon()) {
+        for tile in self.prefs.tiles.iter().filter(|t| !t.has_status_icon() && self.available(**t)) {
             let view = self.tile(*tile);
             let shortcut = matches!(tile, Tile::Screenshot | Tile::Workspaces);
             match self.prefs.panel_icons {
@@ -3291,7 +3923,9 @@ impl cosmic::Application for App {
             }
         }
         if let Some(b) = &self.battery {
-            icons.push(status_icon(icons::battery(b.percent, b.charging), size, false));
+            let handle = icons::battery(b.percent, b.charging);
+            let low = self.prefs.low_battery_badge && !b.charging && b.percent <= 20.0;
+            icons.push(if low { alert_icon(handle, size) } else { status_icon(handle, size, false) });
         }
         // Before the battery and the clock, at the end of the status icons.
         let at = icons.len() - usize::from(self.battery.is_some());

@@ -26,7 +26,9 @@
       <li>VPN and Wi-Fi passwords from the keyring, or asked in the popup</li>
       <li>Weather now, hour by hour and days ahead, a notification center, a pomodoro timer, hotspot, updates</li>
       <li>System load, open to-dos from your task lists, world clocks and timers</li>
-      <li>Keyboard layout switching</li>
+      <li>Keyboard layout switching, DNS switching, Game Mode, battery charge limit and keyboard backlight</li>
+      <li>Tiles of your own from any command, lit by a status command of your choice</li>
+      <li>Panel badges for a low battery and a dropped Wi-Fi</li>
       <li>Opens as a dropdown, side panel or fullscreen, in one to three columns; one surface or separate islands, each card shown or hidden and in any order</li>
       <li>In 76 languages, with dates in the region's format</li>
     </ul>

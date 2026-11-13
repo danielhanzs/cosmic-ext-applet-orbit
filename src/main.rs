@@ -5,6 +5,7 @@ mod app;
 mod audio;
 mod bus;
 mod calendar;
+mod check;
 mod config;
 mod desktop;
 mod host;
@@ -33,5 +34,9 @@ fn main() -> cosmic::iced::Result {
                 .unwrap_or_else(|_| "warn,cosmic_ext_applet_orbit=info".into()),
         )
         .init();
+    if std::env::args().any(|a| a == "--check") {
+        check::run();
+        return Ok(());
+    }
     cosmic::applet::run::<app::App>(())
 }
