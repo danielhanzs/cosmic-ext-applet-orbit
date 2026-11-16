@@ -11,11 +11,12 @@ for the COSMIC™ desktop with libcosmic, following your system theme.
 </p>
 
 <p align="center">
-  <img src="data/screenshots/dropdown.png" alt="Orbit as a dropdown" height="440">
-  <img src="data/screenshots/islands.png" alt="Orbit as separate islands" height="440">
+  <img src="data/screenshots/dropdown.png" alt="Orbit as a dropdown: tiles, calendar, the weather hour by hour" height="480">
+  <img src="data/screenshots/islands.png" alt="Orbit as separate islands, with medium-contrast tiles" height="480">
+  <img src="data/screenshots/settings.png" alt="The settings, each with a line on what it does" height="480">
 </p>
 <p align="center">
-  <img src="data/screenshots/fullscreen.png" alt="Orbit fullscreen, in two columns" width="720">
+  <img src="data/screenshots/columns.png" alt="Orbit in three columns, with the tasks, clocks, note and system cards" width="760">
 </p>
 
 ## Install
@@ -355,8 +356,11 @@ cargo test
 only (nothing is saved), framed in magenta to cut it out of a screenshot:
 
 ```sh
-ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-applet-orbit
+LC_ALL=en_GB.UTF-8 ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-applet-orbit
 ```
+
+Your name and picture stay out of a preview (its screenshots go public),
+unless `user` is among the options.
 
 Options:
 - layout: `dropdown`, `side`, `fullscreen`; `islands`, `single`; `1`, `2`,
@@ -365,6 +369,7 @@ Options:
   `clocks`, `notes`
 - a page: `displays`, `network`, `keepawake`; the editor on a tab:
   `general`, `tiles`, `cards`
+- `user`: your name and picture in the header
 
 ### Releasing
 

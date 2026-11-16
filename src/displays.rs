@@ -15,6 +15,13 @@ pub struct Display {
     pub mode: Option<(u32, u32, u32)>,
 }
 
+impl Display {
+    /// A laptop's own screen, by its connector.
+    pub fn builtin(&self) -> bool {
+        ["eDP", "LVDS", "DSI"].iter().any(|p| self.name.starts_with(p))
+    }
+}
+
 async fn randr(args: &[&str]) -> Option<String> {
     let out = crate::host::command("cosmic-randr").args(args).kill_on_drop(true).output().await.ok()?;
     if !out.status.success() {

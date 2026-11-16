@@ -1013,21 +1013,22 @@ impl App {
     // ------------------------------------------------------------ views
 
     fn header(&self) -> Element<'_, Message> {
-        let mut row = widget::Row::new().spacing(8).align_y(Alignment::Center);
-        // Who's logged in: their picture, and first name.
-        if let Some(user) = &self.user {
-            // The whole name: which part is the given one differs by language.
-            let first = user.name.clone();
+        // Who's logged in, on a line of their own above the rest: their
+        // picture and their whole name (which part is the given one
+        // differs by language).
+        let who: Option<Element<'_, Message>> = self.user.as_ref().map(|user| {
             let picture: Element<'_, Message> = match &user.picture {
-                Some(picture) => widget::image(picture.clone()).width(28).height(28).border_radius(14.0).into(),
-                None => icon::from_name("avatar-default-symbolic").size(24).into(),
+                Some(picture) => widget::image(picture.clone()).width(32).height(32).border_radius(16.0).into(),
+                None => icon::from_name("avatar-default-symbolic").size(28).into(),
             };
-            row = row.push(widget::tooltip(
-                widget::Row::new().spacing(6).align_y(Alignment::Center).push(picture).push(text::body(first)),
-                text::caption(user.name.clone()),
-                widget::tooltip::Position::Bottom,
-            ));
-        }
+            widget::Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(picture)
+                .push(text::heading(user.name.clone()).wrapping(iced::widget::text::Wrapping::None))
+                .into()
+        });
+        let mut row = widget::Row::new().spacing(8).align_y(Alignment::Center);
         if let Some(b) = &self.battery {
             // "82% (3:20)": the time left until empty, or full.
             let left = b.left.map_or(String::new(), |d| format!(" ({})", hours_minutes(d)));
@@ -1060,12 +1061,15 @@ impl App {
                 widget::tooltip::Position::Bottom,
             ));
         }
-        row
+        let row = row
             .push(action("edit-symbolic", Message::Page(Page::Edit)))
             .push(action("emblem-system-symbolic", Message::Spawn("cosmic-settings", &[])))
             .push(action("system-lock-screen-symbolic", Message::Spawn("loginctl", &["lock-session"])))
-            .push(action("system-shutdown-symbolic", Message::Spawn("cosmic-osd", &["shutdown"])))
-            .into()
+            .push(action("system-shutdown-symbolic", Message::Spawn("cosmic-osd", &["shutdown"])));
+        match who {
+            Some(who) => widget::Column::new().spacing(6).push(who).push(row).into(),
+            None => row.into(),
+        }
     }
 
     fn sliders(&self) -> Element<'_, Message> {
@@ -1096,7 +1100,8 @@ impl App {
                 .step(0.01_f32)
                 .on_release(Message::Released)
                 .into();
-            column = column.push(line("display-brightness-symbolic", None, slider, level, None));
+            // The built-in screen's: a laptop's, as icon.
+            column = column.push(line("laptop-symbolic", None, slider, level, None));
         }
         for m in &self.monitors {
             let level = m.level as f32 / m.max as f32;
@@ -1105,7 +1110,7 @@ impl App {
                 .step(0.01_f32)
                 .on_release(Message::Released)
                 .into();
-            let row = line("display-brightness-symbolic", None, slider, level, None);
+            let row = line("video-display-symbolic", None, slider, level, None);
             column = column.push(widget::tooltip(row, text::caption(m.name.clone()), widget::tooltip::Position::Top));
         }
         if let Some((_, level, max)) = &self.keyboard_light {
@@ -1931,7 +1936,7 @@ impl App {
                         widget::Row::new()
                             .spacing(8)
                             .align_y(Alignment::Center)
-                            .push(icon::from_name("video-display-symbolic").size(20))
+                            .push(icon::from_name(if d.builtin() { "laptop-symbolic" } else { "video-display-symbolic" }).size(20))
                             .push(
                                 widget::Column::new()
                                     .push(text::body(if d.model.is_empty() { d.name.clone() } else { d.model.clone() }))
@@ -3351,7 +3356,10 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
-        tasks.push(run(async { Message::User(sys::user().await) }));
+        // Not in a preview: its screenshots go public.
+        if preview().is_none_or(|p| p.split(',').any(|o| o == "user")) {
+            tasks.push(run(async { Message::User(sys::user().await) }));
+        }
         // Kept notifications: their icons are looked up in the apps' entries, off this thread.
         tasks.push(run(async {
             Message::NotificationsLoaded(tokio::task::spawn_blocking(notifications::load).await.unwrap_or_default())
@@ -3386,7 +3394,10 @@ impl cosmic::Application for App {
                         }
                     }
                     "calendar" => app.prefs.calendar_open = true,
-                    "weather" => app.prefs.weather_open = true,
+                    "weather" => {
+                        app.prefs.weather_open = true;
+                        app.prefs.weather_hourly = true;
+                    }
                     "displays" | "network" | "keepawake" => {
                         let page = match option {
                             "displays" => Page::Displays,
