@@ -38,19 +38,19 @@
   <screenshots>
     <screenshot type="default">
       <caption>Quick tiles, sliders, the calendar and the weather hour by hour, in one popup</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/main/data/screenshots/dropdown.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.8.0/data/screenshots/dropdown.png</image>
     </screenshot>
     <screenshot>
       <caption>In three columns: the calendar, weather, tasks, clocks, a note and the system load</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/main/data/screenshots/columns.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.8.0/data/screenshots/columns.png</image>
     </screenshot>
     <screenshot>
       <caption>As separate islands, with medium-contrast tiles</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/main/data/screenshots/islands.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.8.0/data/screenshots/islands.png</image>
     </screenshot>
     <screenshot>
       <caption>Settings, each with a line on what it does</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/main/data/screenshots/settings.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.8.0/data/screenshots/settings.png</image>
     </screenshot>
   </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicExtAppletOrbit.desktop</launchable>
@@ -94,6 +94,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.0" date="2026-11-16">
+      <description>
+        <p>Displays, drives, network details with Wi-Fi QR, monitor brightness, quick to-dos and events, a note card, seeking, new screenshots and more.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-13">
       <description>
         <p>Your own tiles, DNS switching, Game Mode, charge limit, panel badges, --check, and a clearer settings page.</p>
