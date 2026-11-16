@@ -182,3 +182,4 @@ mirror = ミラーリング
 eject = 取り出す
 section-notes = メモ
 note-placeholder = メモを入力…
+today = 今日

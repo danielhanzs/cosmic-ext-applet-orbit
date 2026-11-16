@@ -182,3 +182,4 @@ mirror = Κατοπτρισμός
 eject = Εξαγωγή
 section-notes = Σημείωση
 note-placeholder = Γράψτε κάτι…
+today = Σήμερα

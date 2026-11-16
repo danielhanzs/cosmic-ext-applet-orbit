@@ -182,3 +182,4 @@ mirror = שיקוף
 eject = שליפה
 section-notes = פתק
 note-placeholder = לכתוב משהו…
+today = היום

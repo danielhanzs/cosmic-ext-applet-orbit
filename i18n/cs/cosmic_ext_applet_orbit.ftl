@@ -182,3 +182,4 @@ mirror = Zrcadlit
 eject = Vysunout
 section-notes = Poznámka
 note-placeholder = Napište něco…
+today = Dnes

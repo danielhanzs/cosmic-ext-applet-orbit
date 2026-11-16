@@ -182,3 +182,4 @@ mirror = Neynik
 eject = Derxe
 section-notes = Not
 note-placeholder = Tiştekî binivîse…
+today = Îro

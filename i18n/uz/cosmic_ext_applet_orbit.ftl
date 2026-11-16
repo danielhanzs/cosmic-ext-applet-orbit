@@ -182,3 +182,4 @@ mirror = Aks ettirish
 eject = Chiqarish
 section-notes = Qayd
 note-placeholder = Biror narsa yozing…
+today = Bugun

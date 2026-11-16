@@ -182,3 +182,4 @@ mirror = Spiegelen
 eject = Uitwerpen
 section-notes = Notitie
 note-placeholder = Schrijf iets…
+today = Vandaag

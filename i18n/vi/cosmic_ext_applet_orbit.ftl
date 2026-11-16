@@ -182,3 +182,4 @@ mirror = Phản chiếu
 eject = Đẩy ra
 section-notes = Ghi chú
 note-placeholder = Viết gì đó…
+today = Hôm nay

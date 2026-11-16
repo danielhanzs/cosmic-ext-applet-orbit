@@ -182,3 +182,4 @@ mirror = مطابقة الشاشة
 eject = إخراج
 section-notes = ملاحظة
 note-placeholder = اكتب شيئًا…
+today = اليوم

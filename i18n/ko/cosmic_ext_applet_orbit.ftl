@@ -182,3 +182,4 @@ mirror = 미러링
 eject = 꺼내기
 section-notes = 메모
 note-placeholder = 무엇이든 적어 보세요…
+today = 오늘

@@ -182,3 +182,4 @@ mirror = ပုံတူပြသရန်
 eject = ထုတ်ရန်
 section-notes = မှတ်စု
 note-placeholder = တစ်ခုခု ရေးပါ…
+today = ယနေ့

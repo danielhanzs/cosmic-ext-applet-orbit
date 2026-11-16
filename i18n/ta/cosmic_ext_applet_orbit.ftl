@@ -182,3 +182,4 @@ mirror = பிரதிபலி
 eject = வெளியேற்று
 section-notes = குறிப்பு
 note-placeholder = ஏதாவது எழுதுங்கள்…
+today = இன்று

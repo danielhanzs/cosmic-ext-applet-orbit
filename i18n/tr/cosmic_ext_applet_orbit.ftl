@@ -182,3 +182,4 @@ mirror = Yansıt
 eject = Çıkar
 section-notes = Not
 note-placeholder = Bir şeyler yazın…
+today = Bugün

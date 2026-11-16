@@ -182,3 +182,4 @@ mirror = Cermin
 eject = Lenting
 section-notes = Nota
 note-placeholder = Tulis sesuatu…
+today = Hari ini

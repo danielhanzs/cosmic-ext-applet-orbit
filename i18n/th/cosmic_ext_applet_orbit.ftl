@@ -182,3 +182,4 @@ mirror = มิเรอร์
 eject = นำออก
 section-notes = โน้ต
 note-placeholder = เขียนอะไรสักอย่าง…
+today = วันนี้

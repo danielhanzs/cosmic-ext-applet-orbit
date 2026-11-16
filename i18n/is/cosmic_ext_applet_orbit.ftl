@@ -182,3 +182,4 @@ mirror = Spegla
 eject = Spýta út
 section-notes = Minnispunktur
 note-placeholder = Skrifaðu eitthvað…
+today = Í dag

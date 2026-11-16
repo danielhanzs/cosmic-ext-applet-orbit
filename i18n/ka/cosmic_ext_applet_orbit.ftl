@@ -182,3 +182,4 @@ mirror = დუბლირება
 eject = ამოღება
 section-notes = შენიშვნა
 note-placeholder = დაწერეთ რამე…
+today = დღეს

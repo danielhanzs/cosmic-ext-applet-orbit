@@ -182,3 +182,4 @@ mirror = ᱢᱤᱨᱚᱨ
 eject = ᱚᱰᱚᱠ ᱢᱮ
 section-notes = ᱱᱚᱴ
 note-placeholder = ᱪᱮᱫ ᱦᱚᱸ ᱚᱞ ᱢᱮ…
+today = ᱛᱮᱦᱮᱧ

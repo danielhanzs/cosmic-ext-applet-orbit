@@ -182,3 +182,4 @@ mirror = Powielanie
 eject = Wysuń
 section-notes = Notatka
 note-placeholder = Napisz coś…
+today = Dziś

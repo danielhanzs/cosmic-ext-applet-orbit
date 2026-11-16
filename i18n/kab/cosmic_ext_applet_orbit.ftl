@@ -182,3 +182,4 @@ mirror = Lemri
 eject = Ssufeɣ
 section-notes = Tazmilt
 note-placeholder = Aru kra…
+today = Ass-a

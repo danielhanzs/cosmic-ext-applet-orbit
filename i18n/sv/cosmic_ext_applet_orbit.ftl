@@ -182,3 +182,4 @@ mirror = Spegla
 eject = Mata ut
 section-notes = Anteckning
 note-placeholder = Skriv något…
+today = I dag

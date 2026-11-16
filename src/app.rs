@@ -431,6 +431,7 @@ pub enum Message {
     MediaControl(&'static str),
     Day(jiff::civil::Date),
     PrevMonth,
+    Today,
     NextMonth,
     Secret(agent::Event),
     PasswordInput(String),
@@ -1199,6 +1200,8 @@ impl App {
                 .align_y(Alignment::Center)
                 .push(button::icon(icon::from_name("go-previous-symbolic")).on_press(Message::PrevMonth))
                 .push(widget::container(text::heading(title)).center_x(Length::Fill))
+                // Back to today, from another day or month.
+                .push(button::text(T.today).on_press_maybe((self.selected != today || first != today.first_of_month()).then_some(Message::Today)))
                 .push(button::icon(icon::from_name("go-next-symbolic")).on_press(Message::NextMonth)),
         );
         let mut names = widget::Row::new();
@@ -4159,6 +4162,7 @@ impl cosmic::Application for App {
                     return self.load_events();
                 }
             }
+            Message::Today => return self.update(Message::Day(self.now.date())),
             Message::PrevMonth | Message::NextMonth => {
                 let step = jiff::Span::new().months(if matches!(message, Message::PrevMonth) { -1 } else { 1 });
                 self.visible = self.visible.saturating_add(step);

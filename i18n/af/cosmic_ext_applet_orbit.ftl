@@ -182,3 +182,4 @@ mirror = Spieël
 eject = Skiet uit
 section-notes = Nota
 note-placeholder = Skryf iets…
+today = Vandag

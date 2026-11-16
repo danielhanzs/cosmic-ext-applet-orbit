@@ -182,3 +182,4 @@ mirror = મિરર કરો
 eject = બહાર કાઢો
 section-notes = નોંધ
 note-placeholder = કંઈક લખો…
+today = આજે

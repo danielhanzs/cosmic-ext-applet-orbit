@@ -182,3 +182,4 @@ mirror = 鏡像
 eject = 退出
 section-notes = 筆記
 note-placeholder = 寫低啲嘢…
+today = 今日

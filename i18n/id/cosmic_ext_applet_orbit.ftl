@@ -182,3 +182,4 @@ mirror = Cerminkan
 eject = Keluarkan
 section-notes = Catatan
 note-placeholder = Tulis sesuatu…
+today = Hari ini

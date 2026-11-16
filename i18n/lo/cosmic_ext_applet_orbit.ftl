@@ -182,3 +182,4 @@ mirror = ສະທ້ອນຈໍ
 eject = ເອົາອອກ
 section-notes = ບັນທຶກຊ່ວຍຈຳ
 note-placeholder = ຂຽນບາງຢ່າງ…
+today = ມື້ນີ້

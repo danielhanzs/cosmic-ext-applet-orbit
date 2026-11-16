@@ -182,3 +182,4 @@ mirror = Дубляваць
 eject = Выняць
 section-notes = Нататка
 note-placeholder = Напішыце што-небудзь…
+today = Сёння

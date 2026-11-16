@@ -182,3 +182,4 @@ mirror = Zrcali
 eject = Izvrzi
 section-notes = Opomba
 note-placeholder = Napišite nekaj…
+today = Danes

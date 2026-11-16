@@ -182,3 +182,4 @@ mirror = Қайталау
 eject = Шығару
 section-notes = Жазба
 note-placeholder = Бірдеңе жазыңыз…
+today = Бүгін

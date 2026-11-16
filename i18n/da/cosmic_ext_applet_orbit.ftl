@@ -182,3 +182,4 @@ mirror = Spejl
 eject = Skub ud
 section-notes = Note
 note-placeholder = Skriv noget…
+today = I dag

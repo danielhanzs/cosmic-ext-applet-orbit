@@ -182,3 +182,4 @@ mirror = Tükrözés
 eject = Kiadás
 section-notes = Jegyzet
 note-placeholder = Írj valamit…
+today = Ma

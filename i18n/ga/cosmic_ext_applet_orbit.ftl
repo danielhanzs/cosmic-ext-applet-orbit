@@ -182,3 +182,4 @@ mirror = Scáthánú
 eject = Díchuir
 section-notes = Nóta
 note-placeholder = Scríobh rud éigin…
+today = Inniu

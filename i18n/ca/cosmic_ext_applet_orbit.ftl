@@ -182,3 +182,4 @@ mirror = Duplica
 eject = Expulsa
 section-notes = Nota
 note-placeholder = Escriu alguna cosa…
+today = Avui

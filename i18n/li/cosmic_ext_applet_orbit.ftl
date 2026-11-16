@@ -182,3 +182,4 @@ mirror = Sjpiegele
 eject = Oetwerpe
 section-notes = Notitie
 note-placeholder = Sjrief get…
+today = Vandaag

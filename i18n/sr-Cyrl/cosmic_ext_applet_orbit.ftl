@@ -182,3 +182,4 @@ mirror = Пресликај
 eject = Избаци
 section-notes = Белешка
 note-placeholder = Напишите нешто…
+today = Данас

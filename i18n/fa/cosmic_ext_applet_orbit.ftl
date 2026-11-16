@@ -182,3 +182,4 @@ mirror = آینه
 eject = بیرون دادن
 section-notes = یادداشت
 note-placeholder = چیزی بنویسید…
+today = امروز

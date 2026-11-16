@@ -182,3 +182,4 @@ mirror = Oglindește
 eject = Scoate
 section-notes = Notă
 note-placeholder = Scrie ceva…
+today = Azi

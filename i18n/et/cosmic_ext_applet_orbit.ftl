@@ -182,3 +182,4 @@ mirror = Peegelda
 eject = Väljuta
 section-notes = Märkus
 note-placeholder = Kirjuta midagi…
+today = Täna

@@ -182,3 +182,4 @@ mirror = Spegular
 eject = Ejecter
 section-notes = Nota
 note-placeholder = Scri alquo…
+today = Hodie

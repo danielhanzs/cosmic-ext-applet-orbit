@@ -182,3 +182,4 @@ mirror = Spegelje
 eject = Útsmite
 section-notes = Notysje
 note-placeholder = Skriuw wat…
+today = Hjoed

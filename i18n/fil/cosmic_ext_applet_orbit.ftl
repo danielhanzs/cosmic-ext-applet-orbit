@@ -182,3 +182,4 @@ mirror = I-mirror
 eject = I-eject
 section-notes = Tala
 note-placeholder = Magsulat ng kahit ano…
+today = Ngayon

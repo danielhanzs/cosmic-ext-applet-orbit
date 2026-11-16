@@ -182,3 +182,4 @@ mirror = মিরর করুন
 eject = বের করুন
 section-notes = নোট
 note-placeholder = কিছু লিখুন…
+today = আজ

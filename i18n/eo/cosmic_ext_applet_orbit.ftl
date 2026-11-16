@@ -182,3 +182,4 @@ mirror = Speguli
 eject = Elĵeti
 section-notes = Noto
 note-placeholder = Skribu ion…
+today = Hodiaŭ

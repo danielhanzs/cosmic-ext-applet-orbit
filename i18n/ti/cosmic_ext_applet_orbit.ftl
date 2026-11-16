@@ -182,3 +182,4 @@ mirror = ኣንጸባርቕ
 eject = ኣውጽእ
 section-notes = መዘኻኸሪ
 note-placeholder = ገለ ጽሓፍ…
+today = ሎሚ

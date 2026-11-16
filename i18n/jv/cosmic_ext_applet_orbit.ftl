@@ -182,3 +182,4 @@ mirror = Cermin
 eject = Wetokake
 section-notes = Cathetan
 note-placeholder = Tulis apa wae…
+today = Dina iki

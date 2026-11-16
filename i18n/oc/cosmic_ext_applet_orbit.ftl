@@ -182,3 +182,4 @@ mirror = Duplicar
 eject = Ejectar
 section-notes = Nòta
 note-placeholder = Escrivètz quicòm…
+today = Uèi

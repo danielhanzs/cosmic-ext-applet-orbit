@@ -182,3 +182,4 @@ mirror = Peilaa
 eject = Poista asemasta
 section-notes = Muistiinpano
 note-placeholder = Kirjoita jotain…
+today = Tänään

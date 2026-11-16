@@ -182,3 +182,4 @@ mirror = Espelhar
 eject = Ejetar
 section-notes = Nota
 note-placeholder = Escreva algo…
+today = Hoje

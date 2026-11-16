@@ -182,3 +182,4 @@ mirror = Огледален образ
 eject = Изваждане
 section-notes = Бележка
 note-placeholder = Напишете нещо…
+today = Днес

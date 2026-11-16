@@ -182,3 +182,4 @@ mirror = Zrkadliť
 eject = Vysunúť
 section-notes = Poznámka
 note-placeholder = Napíšte niečo…
+today = Dnes

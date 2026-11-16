@@ -236,6 +236,7 @@ strings!(
     eject,
     section_notes,
     note_placeholder,
+    today,
     no_more_events,
 );
 

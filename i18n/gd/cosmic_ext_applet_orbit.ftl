@@ -182,3 +182,4 @@ mirror = Sgàthanaich
 eject = Gluais a-mach
 section-notes = Nòta
 note-placeholder = Sgrìobh rudeigin…
+today = An-diugh

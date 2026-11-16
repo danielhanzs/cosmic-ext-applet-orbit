@@ -182,3 +182,4 @@ mirror = Ispilatu
 eject = Egotzi
 section-notes = Oharra
 note-placeholder = Idatzi zerbait…
+today = Gaur
