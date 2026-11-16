@@ -1200,8 +1200,6 @@ impl App {
                 .align_y(Alignment::Center)
                 .push(button::icon(icon::from_name("go-previous-symbolic")).on_press(Message::PrevMonth))
                 .push(widget::container(text::heading(title)).center_x(Length::Fill))
-                // Back to today, from another day or month.
-                .push(button::text(T.today).on_press_maybe((self.selected != today || first != today.first_of_month()).then_some(Message::Today)))
                 .push(button::icon(icon::from_name("go-next-symbolic")).on_press(Message::NextMonth)),
         );
         let mut names = widget::Row::new();
@@ -1299,7 +1297,15 @@ impl App {
                 );
             }
             Some(days) => {
-                column = column.push(text::heading(i18n::long_date(self.selected)));
+                // The picked day, and back to today from another.
+                column = column.push(
+                    widget::Row::new()
+                        .align_y(Alignment::Center)
+                        .push(text::heading(i18n::long_date(self.selected)).width(Length::Fill))
+                        .push(button::text(T.today).on_press_maybe(
+                            (self.selected != today || self.visible != today.first_of_month()).then_some(Message::Today),
+                        )),
+                );
                 let events = days.get(&self.selected).map(Vec::as_slice).unwrap_or_default();
                 if events.is_empty() {
                     column = column.push(text::caption(T.no_events));

@@ -18,158 +18,143 @@ for the COSMIC™ desktop with libcosmic, following your system theme.
   <img src="data/screenshots/fullscreen.png" alt="Orbit fullscreen, in two columns" width="720">
 </p>
 
+## Install
+
+**From the COSMIC Store:** search for *Orbit* (it's listed under
+**Applets**), install it, then add it to the panel in **Settings → Desktop
+→ Panel → Applets → Add applet → Orbit**.
+
+Building it yourself, or as a local Flatpak: see [Building](#building).
+
 ## Features
 
-### Quick tiles
-Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
-Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors ·
-Screen reader · High contrast · Touchpad · Hotspot · Pomodoro · Keyboard
-layout · DNS · Game Mode · Displays · Drives, plus
-shortcuts to Screenshot and Workspaces.
+### On the panel
+- Status icons: network, VPN, Bluetooth, volume, battery (its charge, and a
+  bolt while plugged in), notifications, and the camera or microphone in
+  use.
+- The clock, and optionally the weather and the pomodoro's time left.
+- The tiles' own icons: none, only the active ones, or all of them with the
+  inactive ones faint.
+- The space between them: small, medium, large, or **native** (COSMIC's
+  interface density).
+- **Badges** for what's worth knowing without opening the popup: the
+  battery turns red at 20% or less unless charging, and a dropped Wi-Fi
+  shows red for 30 seconds, a minute, five, or until it's back (off by
+  default).
 
-- **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
-  networks (join, with a password prompt), Bluetooth devices (connect, battery
-  level), VPN connections, power profiles, the hotspot's name and password,
-  the pomodoro timer, the keyboard layouts (the tile itself switches to the
-  next one).
-- **Your own tiles**: any command as a tile, with an icon, optionally a
-  status command whose success lights the tile up, and optionally asking
-  before it runs. Installed launchers (Terminal, Files, Text editor, System
-  monitor, App store) are offered as one-click tiles.
-- **DNS**: switch the connection in use between its own name servers and
-  Cloudflare, Google, Quad9 or AdGuard, through NetworkManager, without a
-  password.
-- **Game Mode**: hold Feral GameMode on (shown only when it is installed).
-- **Keep awake** for 30 minutes, 1, 2 or 4 hours, or until turned off.
-- **Displays**: turn each on or off, set its scale, or mirror another
-  (through `cosmic-randr`).
-- **Drives**: removable drives that are mounted, to open or eject (UDisks2;
-  the tile shows only while one is plugged in).
-- **Network details**: the connection's IPv4 and IPv6 address, gateway and
-  DNS, each to copy; the Wi-Fi in use shared as a QR code on request.
-- **External monitors' brightness** as sliders, over DDC/CI, where
-  `ddcutil` is installed and may use `/dev/i2c-*`.
-- **Charge limit** on the power page, where UPower can stop charging short
-  of full; **keyboard backlight** as a slider, where there is one.
-- **Edit tiles**: drag to reorder, click to switch between wide (name and
-  state) and small (icon only), remove with −, add with +, or reset.
-- On a bright accent color (lime, yellow…) text turns black so it stays
-  readable; on dark accents it stays white.
-- State is **live in both directions**: Orbit listens to NetworkManager,
-  BlueZ, UPower, power-profiles-daemon, PipeWire, the compositor and COSMIC's
-  own settings, so changes made anywhere else show up immediately.
-
-### Your popup, your order
-The popup is made of parts — status and actions, tiles and sliders,
-calendar, weather, notifications, dynamic island, sound, system, tasks,
-clocks — each shown or hidden and moved up or down in the editor, on one surface or as **separate
-islands**, in **one, two or three columns** (each part moved left or right
-between them). Open it as a **dropdown** under the panel, a **side panel**
-sliding in from the edge, or **fullscreen**.
+### The popup
+- Opens as a **dropdown** under the panel, a **side panel** sliding in from
+  the edge, or **fullscreen**.
+- Made of **cards**, each shown or hidden, in **one, two or three columns**
+  (as many as the screen has room for), in any order; on one surface or as
+  **separate islands**.
+- Follows your **Appearance** settings: accent color, dark or light,
+  roundness and **frosted glass**. On a bright accent (lime, yellow…) text
+  turns black so it stays readable.
+- **Live in both directions**: Orbit listens to NetworkManager, BlueZ,
+  UPower, power-profiles-daemon, PipeWire, the compositor and COSMIC's own
+  settings, so changes made anywhere else show up at once.
 
 ### Status
-Your picture and name (from AccountsService), the battery with the time
-until it's empty or full, the charge of peripherals, updates, and actions.
+Your picture and name (AccountsService); the battery with the time until
+it's empty or full; the charge of mice, keyboards, headsets and phones;
+updates waiting (packages and Flatpaks, opening the COSMIC Store); and the
+editor, COSMIC Settings, lock and power off.
 
-### System, tasks and clocks
-Cards of their own, off until you turn them on:
+### Tiles and sliders
+Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
+Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors
+· Screen reader · High contrast · Touchpad · Hotspot · Pomodoro · Keyboard
+layout · DNS · Game Mode · Displays · Drives, plus shortcuts to Screenshot
+and Workspaces — and **tiles of your own**.
+
+- **Click** a tile to switch it; **its arrow** opens its page:
+  - **Wi-Fi**: networks to join (with a password prompt); the one in use
+    opens its **details** — IPv4 and IPv6 address, gateway, DNS, each to
+    copy — and shares itself as a **QR code** when you ask.
+  - **Wired**: the same details.
+  - **Bluetooth**: devices to connect, with their battery level.
+  - **VPN**: connections to bring up or down.
+  - **Power mode**: power profiles, and the battery's **charge limit**
+    where UPower can stop charging short of full.
+  - **Hotspot**: its name, password and a QR code to join it.
+  - **Keep awake**: for 30 minutes, 1, 2 or 4 hours, or until turned off.
+  - **Keyboard layout**: the layouts set in COSMIC (the tile itself switches
+    to the next one).
+  - **DNS**: the connection's own servers, or Cloudflare, Google, Quad9 or
+    AdGuard, over IPv4 and IPv6, set through NetworkManager without a
+    password.
+  - **Displays**: each one on or off, its scale, or mirroring another
+    (through `cosmic-randr`).
+  - **Drives**: removable drives that are mounted, to open or eject
+    (UDisks2; the tile shows only while one is plugged in).
+  - **Pomodoro**: the timer, whether it shows on the panel, and **Do not
+    disturb while focusing**.
+- **Game Mode** holds Feral GameMode on (shown only where it's installed).
+- **Your own tiles**: any command as a tile, with an icon; optionally a
+  status command that lights the tile while it succeeds, and asking before
+  it runs. Installed launchers (Terminal, Files, Text editor, System
+  monitor, App store) are offered as one-click tiles.
+- **Sliders**: volume (its arrow: outputs, microphones and each app's
+  volume), screen brightness, **external monitors' brightness** over DDC/CI
+  (where `ddcutil` is installed), and the keyboard backlight, each with its
+  level.
+- **Edit**: drag to reorder, click to switch between wide (name and state)
+  and small (icon only), remove with −, add with +, or reset. Tiles can be
+  lit fully (high contrast), only their icon (medium) or never (low).
+
+### Cards
+- **Calendar**: today and your next event at a glance; open, the month,
+  with the weeks around filled in faint, a **Today** button, dots on busy
+  days, the picked day's events, and **Join** buttons for Google Meet, Zoom,
+  Teams, Jitsi, Webex, Whereby and GoTo meetings. Type an event for the
+  picked day: "14:30 Dentist" for an hour from then, or all day without a
+  time. Events come from the calendars synced to the system (Evolution Data
+  Server, filled by GNOME Online Accounts: Google, Microsoft 365, Nextcloud,
+  CalDAV…), repeating events included.
+- **Weather**: now (temperature, feels like, wind), the next 6, 12 or 24
+  hours (five at a time, scrolled sideways: temperature, chance and amount
+  of rain or snow, wind) and 3, 5 or 7 days ahead, from
+  [Open-Meteo](https://open-meteo.com) — free, no account. Your city, picked
+  with suggestions as you type, or your time zone's. Fahrenheit where the
+  region uses it; can show on the panel too.
+- **Notifications**: as COSMIC shows them, newest first, kept after their
+  popups go and across restarts (for a week, readable only by you; ones
+  their apps mark transient are never saved). Click one to open it, dismiss
+  one or all.
+- **Dynamic island**: what's running that you should know about — the media
+  playing (any MPRIS player) with its cover, controls and a position to
+  seek; a video meeting about to start, with a Join button; the pomodoro
+  while it runs; and apps using the **camera** (green) or the **microphone**
+  (orange), also shown on the panel.
+
+Off until you turn them on:
+- **Sound**: output and microphone levels, each with its device (a click
+  lists the others), and every playing app's volume. It takes the volume
+  slider over from the tiles.
 - **System**: processor use with its last minute as bars, memory, and the
-  network's speed down and up (read from `/proc`).
-- **Tasks**: the open to-dos of the task lists synced to the system
-  (Evolution Data Server: Google Tasks, Nextcloud…), soonest due first;
-  tick one to mark it done, or type a new one.
-- **Note**: a note that stays, kept privately.
-- **Clocks**: other cities' time (added in the editor, by name), and 5, 10,
-  15 or 30-minute timers, or one of any length in minutes, that notify when
-  they end.
-
-### Sound card
-A card of its own, off until you turn it on: the output and microphone
-levels, each with its device (a click lists the others to switch to), and
-every playing app's volume.
-
-### Follows your appearance settings
-Orbit follows your **Appearance** settings: accent color, dark/light,
-roundness (round, slightly round, square) and **frosted glass** for applet
-popups.
-
-### Panel
-Status icons (network, VPN, Bluetooth, volume, battery, notifications,
-camera and microphone in use), the clock, optionally the weather and the
-pomodoro's time left, and the tiles' own icons: none, only the active ones,
-or all of them with the inactive ones faint. The space between them is
-yours to set (or COSMIC's own, from the interface density). The battery
-icon shows its charge and a clear bolt while plugged in.
-
-**Badges** mark what's worth knowing without opening the popup: the
-battery turns red at 20% or less unless charging, and a dropped Wi-Fi shows
-red for 30 seconds, a minute, five, or until it's back (off by default).
-
-### Status and actions
-Battery, and the charge of mice, keyboards, headsets and phones UPower
-knows; updates waiting (packages and Flatpaks), opening the COSMIC Store;
-the editor, settings, lock and power off.
-
-### Sound
-Volume and brightness sliders. Behind the volume's arrow: the output and the
-microphone to use, and each playing app's own volume and mute (folded away
-until you open it).
-
-### Calendar
-- Today's date and your next event at a glance; click to open the month
-  (remembered).
-- Days with events are marked with a dot; pick a day to see its events,
-  or add one: "14:30 Dentist" for an hour from then, or all day without a
-  time. The months before and after fill the first and last weeks.
-- **Join** buttons for Google Meet, Zoom, Teams, Jitsi, Webex, Whereby and
-  GoTo meetings; the next one also shows in the island from ten minutes
-  before it starts.
-- Events come from the calendars synced to the system — Evolution Data
-  Server, filled by GNOME Online Accounts (Google, Microsoft 365, Nextcloud,
-  CalDAV…). Repeating events are handled.
-
-### Weather
-Now (temperature, feels like, wind), the next hours (6, 12 or 24, five at a
-time, scrolled sideways: temperature, chance and amount of rain or snow,
-wind; or none) and 3, 5 or 7 days ahead, from
-[Open-Meteo](https://open-meteo.com) — free, no account. Pick your city in
-the editor (it suggests places as you type), or leave it empty to use your
-time zone's city. Fahrenheit where the region uses it. Can show on the
-panel too.
-
-*Privacy:* the chosen place's coordinates (or the time zone's city name) go
-to Open-Meteo to look up the weather.
-
-### Notifications
-A notification center: notifications as COSMIC shows them, newest first,
-kept after their popups go and across restarts (for a week, readable only by
-you; ones their apps mark transient are never saved). Click one to open it,
-dismiss one or all.
-
-### Dynamic island
-At the bottom of the popup, what's running that you should know about:
-- the media playing (any MPRIS player: Spotify, browsers, …) with cover art
-  and controls,
-- a video meeting about to start, with a Join button,
-- the pomodoro timer while it runs,
-- apps using the **camera** (green) or the **microphone** (orange) — also
-  shown as icons on the panel.
+  network's speed down and up.
+- **Tasks**: the open to-dos of your synced task lists (Google Tasks,
+  Nextcloud…), soonest due first; tick one off, or type a new one.
+- **Note**: a note that stays.
+- **Clocks**: other cities' time, and timers of 5, 10, 15 or 30 minutes or
+  any length, which notify when they end.
 
 ### Pomodoro
 25 minutes of focus, a 5-minute break, 15 minutes after every fourth; each
 phase starts the next with a notification. Start, pause, skip and reset from
-its tile, its page or the island.
+its tile, its page or the island; optionally with Do not disturb on while
+you focus.
 
-### Localization
-Orbit speaks the 76 languages COSMIC itself is translated into, following
-your interface language (`LC_MESSAGES`), with English for anything a
-translation lacks. Dates, month and day names, the first day of the week and
-the 12/24-hour clock follow your **region format** (`LC_TIME`) through ICU,
-as COSMIC's own clock does — so an English system with Hungarian formats
-shows "október 29., csütörtök".
-
-Most translations are machine-made to start with: corrections from native
-speakers are very welcome (see *Translations* below).
+### Settings
+The editor (the pencil in the popup) has four tabs, each setting with a
+line on what it does:
+- **General**: how the popup opens, its columns, separate islands, which
+  cards show and where, the tiles' style, what the panel shows, and badges.
+- **Tiles**: the tile grid, tiles to add, and your own tiles.
+- **Cards**: each card's own settings — the weather's place and how much of
+  it shows, the clocks' cities.
+- **About**: version, links, license.
 
 ### VPN and Wi-Fi passwords that just work
 Connections whose password is stored "for this user only" (agent-owned)
@@ -185,19 +170,44 @@ fail to connect from other applets. **Orbit is a secret agent itself**:
 Only NetworkManager itself may ask Orbit for secrets; other callers are
 refused.
 
+### Localization
+Orbit speaks the 76 languages COSMIC itself is translated into, following
+your interface language (`LC_MESSAGES`), with English for anything a
+translation lacks. Dates, month and day names, the first day of the week and
+the 12/24-hour clock follow your **region format** (`LC_TIME`) through ICU,
+as COSMIC's own clock does — so an English system with Hungarian formats
+shows "október 29., csütörtök".
+
+Most translations are machine-made to start with: corrections from native
+speakers are very welcome (see [Translations](#translations)).
+
+### Privacy
+- Weather: the chosen place's coordinates (or the time zone's city name) go
+  to Open-Meteo. Nothing else leaves the computer.
+- Your own tiles and the note are kept in Orbit's own folder, readable only
+  by you (in the Flatpak, private to Orbit), not in COSMIC's shared settings.
+- A Wi-Fi password shows only on the hotspot's page, or as a QR code when
+  you ask to share the network in use.
+
 ## Requirements
 
 - COSMIC desktop 1.11 or newer (built against the same libcosmic as
   COSMIC 1.11's own applets; tested on Pop!_OS 24.04)
 - NetworkManager, BlueZ, UPower, power-profiles-daemon
 - PipeWire with WirePlumber (`wpctl`) and `pactl`
-- `curl` (cover art), `cosmic-settings`, `cosmic-osd`
-- Optional, for calendar events: `evolution-data-server` and
-  `gnome-online-accounts-gtk`
+- `curl` (weather, cover art), `cosmic-settings`, `cosmic-osd`,
+  `cosmic-randr` (displays)
+- Optional:
+  - calendar events and to-dos: `evolution-data-server` and
+    `gnome-online-accounts-gtk`
+  - external monitors' brightness: `ddcutil`, with access to `/dev/i2c-*`
+    (the `i2c` group)
+  - drives: UDisks2; your picture and name: AccountsService; Game Mode:
+    `gamemode`
 
-## Installation
+## Building
 
-### 1. Build dependencies
+### Dependencies
 
 ```sh
 sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev \
@@ -210,7 +220,7 @@ Rust (1.93 or newer, as libcosmic asks) from [rustup.rs](https://rustup.rs):
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-### 2. Build and install
+### Build and install
 
 ```sh
 git clone https://github.com/danielhanzs/cosmic-ext-applet-orbit.git
@@ -220,23 +230,21 @@ cd cosmic-ext-applet-orbit
 # sudo ./install.sh /usr
 ```
 
-### 3. Add it to the panel
-
-**Settings → Desktop → Panel → Applets → Add applet → Orbit.**
-
-If it doesn't show up in the list, log out and back in once, so the panel
+Then add it in **Settings → Desktop → Panel → Applets → Add applet →
+Orbit**. If it isn't in the list, log out and back in once, so the panel
 picks up the new desktop entry.
 
-### 4. Calendar (optional)
+### Optional extras
 
 ```sh
+# calendar and to-dos
 sudo apt install evolution-data-server gnome-online-accounts-gtk
 gnome-online-accounts-gtk     # add your Google / Microsoft / Nextcloud account
+# external monitors' brightness (log out and in after)
+sudo apt install ddcutil && sudo usermod -aG i2c "$USER"
 ```
 
-Orbit shows a button to open the accounts dialog while no calendar is set up.
-
-### Or as a Flatpak
+### As a local Flatpak
 
 ```sh
 flatpak install --user flathub org.flatpak.Builder org.freedesktop.Sdk//25.08 \
@@ -245,29 +253,17 @@ flatpak run org.flatpak.Builder --user --install --force-clean \
     flatpak/build flatpak/local.json
 ```
 
-`flatpak/local.json` builds the working tree, fetching crates while it
-builds. `flatpak/io.github.danielhanzs.CosmicExtAppletOrbit.json` is the manifest for
-the COSMIC Flatpak repository: it builds the `v0.1.1` tag offline, from
+`flatpak/local.json` builds the working tree, fetching crates as it builds.
+`flatpak/io.github.danielhanzs.CosmicExtAppletOrbit.json` is the manifest
+for the COSMIC Flatpak repository: it builds the release tag offline, from
 `flatpak/cargo-sources.json`, which `flatpak/generate-sources.sh` makes from
 `Cargo.lock`.
 
-In the sandbox Orbit runs `wpctl`, `pactl`, `curl`, `cosmic-settings`… on
-the host through `flatpak-spawn --host`, as COSMIC applets in Flatpak do.
+In the sandbox Orbit runs `wpctl`, `pactl`, `curl`, `cosmic-randr`,
+`ddcutil`, `cosmic-settings`… on the host through `flatpak-spawn --host`,
+as COSMIC applets in Flatpak do.
 
-## Releasing
-
-```sh
-./release.sh 0.2.1 "What changed, in a sentence or two."
-./release.sh --dry-run 0.2.1 "..."   # shows what it would do, changes nothing
-```
-
-Bumps the version (Cargo, AppStream metainfo with the notes, the Flatpak
-manifest), regenerates `flatpak/cargo-sources.json`, runs the tests, commits,
-tags and pushes, then updates the cosmic-flatpak fork in `../cosmic-flatpak`
-(the open submission's branch, or a new update branch) and prints the links
-for the GitHub release and the pull request.
-
-## Updating
+### Updating
 
 ```sh
 cd cosmic-ext-applet-orbit
@@ -278,7 +274,7 @@ git pull
 The panel keeps running the old binary until the applet restarts: log out
 and in, or remove Orbit from the panel and add it again.
 
-## Uninstalling
+### Uninstalling
 
 Remove Orbit from the panel first, then:
 
@@ -287,6 +283,7 @@ rm ~/.local/bin/cosmic-ext-applet-orbit \
    ~/.local/share/applications/io.github.danielhanzs.CosmicExtAppletOrbit.desktop \
    ~/.local/share/icons/hicolor/scalable/apps/io.github.danielhanzs.CosmicExtAppletOrbit*.svg
 rm -r ~/.config/cosmic/io.github.danielhanzs.CosmicExtAppletOrbit   # settings
+rm -r ~/.config/io.github.danielhanzs.CosmicExtAppletOrbit          # your tiles, the note
 rm -r ~/.cache/io.github.danielhanzs.CosmicExtAppletOrbit           # cover art
 ```
 
@@ -306,14 +303,17 @@ The panel collects the applet's log:
 journalctl --user -f | grep CosmicExtAppletOrbit
 ```
 
-More detail: set `RUST_LOG=cosmic_ext_applet_orbit=debug` in the environment the panel
-starts with.
+More detail: set `RUST_LOG=cosmic_ext_applet_orbit=debug` in the
+environment the panel starts with.
 
-- **No calendar events** — check that `evolution-data-server` is installed
-  and an account with a calendar is added in GNOME Online Accounts.
+- **No calendar events or to-dos** — check that `evolution-data-server` is
+  installed and an account is added in GNOME Online Accounts.
 - **VPN asks for a password every time** — turn on *Remember* in the prompt.
-- **Brightness slider missing** — the screen exposes no backlight to COSMIC
-  (common on desktop monitors).
+- **No brightness slider** — the screen exposes no backlight to COSMIC
+  (common on desktop monitors); for external monitors install `ddcutil` and
+  join the `i2c` group (see [Optional extras](#optional-extras)).
+- **No Game Mode tile** — `gamemode` isn't installed.
+- **No Drives tile** — it shows only while a removable drive is mounted.
 
 ## Development
 
@@ -324,27 +324,29 @@ cargo test
 
 | File | What it does |
 |------|--------------|
-| `src/app.rs` | the applet: panel button, popup layouts, tiles, pages |
-| `src/sys.rs` | NetworkManager, BlueZ, UPower, power profiles, brightness, change signals |
+| `src/app.rs` | the applet: panel button, popup layouts, tiles, cards, pages, editor |
+| `src/sys.rs` | NetworkManager (incl. DNS, details, hotspot), BlueZ, UPower, power profiles, brightness, drives, the user, change signals |
 | `src/agent.rs` | NetworkManager secret agent and keyring access |
 | `src/audio.rs` | volume, outputs, microphone and camera use |
-| `src/media.rs` | MPRIS player and cover art |
-| `src/calendar.rs` | Evolution Data Server events |
-| `src/config.rs` | saved preferences and COSMIC settings |
-| `src/i18n.rs` | loading translations, date formats |
+| `src/media.rs` | MPRIS player, cover art, seeking |
+| `src/calendar.rs` | Evolution Data Server events, adding events |
+| `src/tasks.rs` | Evolution Data Server to-dos |
 | `src/weather.rs` | Open-Meteo weather and place search |
-| `src/check.rs` | `--check`: what Orbit finds on this system |
+| `src/notifications.rs` | the notification center's feed and history |
 | `src/system.rs` | processor, memory and network use |
 | `src/ddc.rs` | external monitors' brightness over DDC/CI |
 | `src/displays.rs` | displays through cosmic-randr |
-| `src/tasks.rs` | Evolution Data Server to-dos |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
 | `src/workspaces.rs` | tiling and the keyboard layout in use, from the compositor |
-| `src/notifications.rs` | the notification center's feed and history |
+| `src/desktop.rs` | accessibility, touchpad, keep awake, tiling, Game Mode, notifications sent |
 | `src/pomodoro.rs` | the pomodoro timer |
 | `src/updates.rs` | counting updates |
-| `src/desktop.rs` | accessibility, touchpad, keep awake, tiling settings |
-| `src/host.rs` | host programs and files, from a Flatpak too |
+| `src/config.rs` | saved preferences, your tiles and note, COSMIC settings |
+| `src/check.rs` | `--check`: what Orbit finds on this system |
+| `src/i18n.rs` | loading translations, date formats |
+| `src/icons.rs`, `src/style.rs` | drawn icons and QR codes; tile and button styles |
+| `src/swipe.rs` | lets sideways swipes reach sideways lists inside the popup |
+| `src/host.rs`, `src/bus.rs` | host programs and files (from a Flatpak too); shared D-Bus connections |
 | `i18n/<language>/cosmic_ext_applet_orbit.ftl` | the words, one file per language |
 
 ### Screenshots
@@ -356,24 +358,44 @@ only (nothing is saved), framed in magenta to cut it out of a screenshot:
 ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-applet-orbit
 ```
 
-Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `medium`, `low` (tile styles), `calendar`,
-`weather`, `audio`, `system`, `tasks`, `clocks` (those cards), `1`, `2`,
-`3` (columns), `notes`, `displays`, `network`, `keepawake` (those pages), `general`,
-`tiles`, `cards` (the editor, on that tab).
+Options:
+- layout: `dropdown`, `side`, `fullscreen`; `islands`, `single`; `1`, `2`,
+  `3` (columns); `medium`, `low` (tile styles)
+- cards open or added: `calendar`, `weather`, `audio`, `system`, `tasks`,
+  `clocks`, `notes`
+- a page: `displays`, `network`, `keepawake`; the editor on a tab:
+  `general`, `tiles`, `cards`
+
+### Releasing
+
+```sh
+./release.sh 0.8.0 "What changed, in a sentence or two."
+./release.sh --dry-run 0.8.0 "..."   # shows what it would do, changes nothing
+FLATPAK_BRANCH=cosmic-ext-applet-orbit-v0.7.0 ./release.sh 0.8.0 "..."   # updates that open pull request
+```
+
+Bumps the version (Cargo, AppStream metainfo with the notes, the Flatpak
+manifest), regenerates `flatpak/cargo-sources.json`, runs the tests, commits,
+tags and pushes, then updates the cosmic-flatpak fork in `../cosmic-flatpak`
+(a new update branch, or the one named) — you write that commit's message
+— and prints the links for the GitHub release and the pull request.
 
 ### Translations
 
 The words live in [Fluent](https://projectfluent.org) files,
-`i18n/<language>/cosmic_ext_applet_orbit.ftl`, one `id = text` per line, as in COSMIC's
-own applets. To fix or add a language, edit or copy `i18n/en/cosmic_ext_applet_orbit.ftl`,
-keep the ids, translate the text, and open a pull request; `cargo test`
-checks every file has every id and loads.
+`i18n/<language>/cosmic_ext_applet_orbit.ftl`, one `id = text` per line, as
+in COSMIC's own applets. To fix or add a language, edit or copy
+`i18n/en/cosmic_ext_applet_orbit.ftl`, keep the ids, translate the text, and
+open a pull request; `cargo test` checks every file has every id and loads.
 
 ## Credits
 
-Inspired by DrakRosmann's
-[cosmic-ext-applet-quick-settings](https://github.com/DrakRosmann/cosmic-ext-applet-quick-settings),
-whose approach to COSMIC's settings and protocols informed this rewrite.
+- Inspired by DrakRosmann's
+  [cosmic-ext-applet-quick-settings](https://github.com/DrakRosmann/cosmic-ext-applet-quick-settings),
+  whose approach to COSMIC's settings and protocols informed this rewrite.
+- Several ideas — tiles of your own, panel badges, DNS switching, Game Mode,
+  the charge limit, `--check`, described settings — come from jjnuthuagen's
+  [cosmic-control-center-applet](https://github.com/jjnuthuagen/cosmic-control-center-applet).
 
 ## Trademarks
 
