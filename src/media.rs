@@ -21,6 +21,29 @@ pub struct Media {
     pub artist: String,
     pub playing: bool,
     pub art: Option<image::Handle>,
+    /// How long the track is, where the player says and lets it be sought.
+    pub length: Option<std::time::Duration>,
+    /// Where it was when read, and when that was.
+    pub position: std::time::Duration,
+    pub read_at: std::time::Instant,
+    /// The track's id, which seeking names.
+    track: zbus::zvariant::OwnedObjectPath,
+}
+
+impl Media {
+    /// Where it is now: playing on since it was read.
+    pub fn at(&self) -> std::time::Duration {
+        let now = if self.playing { self.position + self.read_at.elapsed() } else { self.position };
+        self.length.map_or(now, |l| now.min(l))
+    }
+}
+
+/// To `position` in the track `media` shows.
+pub async fn seek(media: Media, position: std::time::Duration) {
+    if let Ok(conn) = crate::bus::session().await {
+        let micros = position.as_micros() as i64;
+        _ = conn.call_method(Some(media.bus.as_str()), PATH, Some(PLAYER), "SetPosition", &(&media.track, micros)).await;
+    }
 }
 
 async fn props(conn: &zbus::Connection, bus: &str) -> zbus::Result<HashMap<String, OwnedValue>> {
@@ -55,12 +78,29 @@ pub async fn read() -> Option<Media> {
             .and_then(|v| Vec::<String>::try_from(v.try_clone().ok()?).ok())
             .map(|a| a.join(", "))
             .unwrap_or_default();
+        let micros = |v: Option<&OwnedValue>| {
+            let v = v?.try_clone().ok()?;
+            i64::try_from(v.try_clone().ok()?).ok().or_else(|| u64::try_from(v).ok().map(|u| u as i64))
+        };
+        let can_seek = props.get("CanSeek").and_then(|v| bool::try_from(v).ok()).unwrap_or(false);
+        let track = meta
+            .get("mpris:trackid")
+            .and_then(|v| zbus::zvariant::OwnedObjectPath::try_from(v.try_clone().ok()?).ok())
+            .or_else(|| zbus::zvariant::OwnedObjectPath::try_from(string("mpris:trackid")).ok());
+        let length = micros(meta.get("mpris:length"))
+            // A stream says "forever" (i64::MAX): no length then.
+            .filter(|l| *l > 0 && *l < 24 * 3600 * 1_000_000 && can_seek && track.is_some())
+            .map(|l| std::time::Duration::from_micros(l as u64));
         let media = Media {
             bus: name.to_string(),
             title: string("xesam:title"),
             artist,
             playing: status == "Playing",
             art: None,
+            length,
+            position: std::time::Duration::from_micros(micros(props.get("Position")).unwrap_or(0).max(0) as u64),
+            read_at: std::time::Instant::now(),
+            track: track.unwrap_or_else(|| zbus::zvariant::OwnedObjectPath::try_from("/").expect("a path")),
         };
         if media.title.is_empty() {
             continue;

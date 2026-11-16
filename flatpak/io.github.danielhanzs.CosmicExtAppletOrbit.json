@@ -28,7 +28,9 @@
     "--system-talk-name=org.freedesktop.UPower",
     "--system-talk-name=org.freedesktop.UPower.PowerProfiles",
     "--system-talk-name=net.hadess.PowerProfiles",
-    "--system-talk-name=org.freedesktop.login1"
+    "--system-talk-name=org.freedesktop.login1",
+    "--system-talk-name=org.freedesktop.UDisks2",
+    "--system-talk-name=org.freedesktop.Accounts"
   ],
   "build-options": {
     "append-path": "/usr/lib/sdk/rust-stable/bin",

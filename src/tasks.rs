@@ -62,6 +62,17 @@ pub async fn complete(task: Task) {
     }
 }
 
+/// Adds a to-do, to the user's account's list if there is one.
+pub async fn add(summary: String) -> zbus::Result<()> {
+    let now = jiff::Timestamp::now().strftime("%Y%m%dT%H%M%SZ").to_string();
+    let ics = format!(
+        "BEGIN:VTODO\r\nUID:{}\r\nDTSTAMP:{now}\r\nCREATED:{now}\r\nSUMMARY:{}\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO",
+        crate::calendar::new_uid(),
+        crate::calendar::escape(summary.trim())
+    );
+    crate::calendar::add("Task List", "OpenTaskList", ics).await
+}
+
 /// Long lines go on in lines that start with a space or a tab.
 fn unfold(ics: &str) -> String {
     ics.replace("\r\n ", "").replace("\r\n\t", "").replace("\n ", "").replace("\n\t", "").replace('\r', "")

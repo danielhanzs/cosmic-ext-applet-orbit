@@ -24,7 +24,7 @@ for the COSMIC™ desktop with libcosmic, following your system theme.
 Wi-Fi · Bluetooth · VPN · Power mode · Do not disturb · Dark style ·
 Airplane mode · Microphone · Keep awake · Tiling · Magnifier · Invert colors ·
 Screen reader · High contrast · Touchpad · Hotspot · Pomodoro · Keyboard
-layout · DNS · Game Mode, plus
+layout · DNS · Game Mode · Displays · Drives, plus
 shortcuts to Screenshot and Workspaces.
 
 - **Click** a tile to switch it; **the arrow** opens its details: Wi-Fi
@@ -40,6 +40,15 @@ shortcuts to Screenshot and Workspaces.
   Cloudflare, Google, Quad9 or AdGuard, through NetworkManager, without a
   password.
 - **Game Mode**: hold Feral GameMode on (shown only when it is installed).
+- **Keep awake** for 30 minutes, 1, 2 or 4 hours, or until turned off.
+- **Displays**: turn each on or off, set its scale, or mirror another
+  (through `cosmic-randr`).
+- **Drives**: removable drives that are mounted, to open or eject (UDisks2;
+  the tile shows only while one is plugged in).
+- **Network details**: the connection's IPv4 and IPv6 address, gateway and
+  DNS, each to copy; the Wi-Fi in use shared as a QR code on request.
+- **External monitors' brightness** as sliders, over DDC/CI, where
+  `ddcutil` is installed and may use `/dev/i2c-*`.
 - **Charge limit** on the power page, where UPower can stop charging short
   of full; **keyboard backlight** as a slider, where there is one.
 - **Edit tiles**: drag to reorder, click to switch between wide (name and
@@ -58,13 +67,18 @@ islands**, in **one, two or three columns** (each part moved left or right
 between them). Open it as a **dropdown** under the panel, a **side panel**
 sliding in from the edge, or **fullscreen**.
 
+### Status
+Your picture and name (from AccountsService), the battery with the time
+until it's empty or full, the charge of peripherals, updates, and actions.
+
 ### System, tasks and clocks
 Cards of their own, off until you turn them on:
 - **System**: processor use with its last minute as bars, memory, and the
   network's speed down and up (read from `/proc`).
 - **Tasks**: the open to-dos of the task lists synced to the system
   (Evolution Data Server: Google Tasks, Nextcloud…), soonest due first;
-  tick one to mark it done.
+  tick one to mark it done, or type a new one.
+- **Note**: a note that stays, kept privately.
 - **Clocks**: other cities' time (added in the editor, by name), and 5, 10,
   15 or 30-minute timers, or one of any length in minutes, that notify when
   they end.
@@ -104,7 +118,9 @@ until you open it).
 ### Calendar
 - Today's date and your next event at a glance; click to open the month
   (remembered).
-- Days with events are marked with a dot; pick a day to see its events.
+- Days with events are marked with a dot; pick a day to see its events,
+  or add one: "14:30 Dentist" for an hour from then, or all day without a
+  time. The months before and after fill the first and last weeks.
 - **Join** buttons for Google Meet, Zoom, Teams, Jitsi, Webex, Whereby and
   GoTo meetings; the next one also shows in the island from ten minutes
   before it starts.
@@ -319,6 +335,8 @@ cargo test
 | `src/weather.rs` | Open-Meteo weather and place search |
 | `src/check.rs` | `--check`: what Orbit finds on this system |
 | `src/system.rs` | processor, memory and network use |
+| `src/ddc.rs` | external monitors' brightness over DDC/CI |
+| `src/displays.rs` | displays through cosmic-randr |
 | `src/tasks.rs` | Evolution Data Server to-dos |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
 | `src/workspaces.rs` | tiling and the keyboard layout in use, from the compositor |
@@ -340,7 +358,7 @@ ORBIT_PREVIEW=dropdown,islands,calendar,weather ./target/release/cosmic-ext-appl
 
 Options: `dropdown`, `side`, `fullscreen`, `islands`, `single`, `medium`, `low` (tile styles), `calendar`,
 `weather`, `audio`, `system`, `tasks`, `clocks` (those cards), `1`, `2`,
-`3` (columns), `general`,
+`3` (columns), `notes`, `displays`, `network`, `keepawake` (those pages), `general`,
 `tiles`, `cards` (the editor, on that tab).
 
 ### Translations

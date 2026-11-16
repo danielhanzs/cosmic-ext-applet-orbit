@@ -6,6 +6,18 @@
 
 use cosmic::widget::icon;
 
+/// A QR code of `text`, dark on light, to scan from the screen.
+pub fn qr(text: &str) -> Option<icon::Handle> {
+    let code = qrcode::QrCode::new(text.as_bytes()).ok()?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .quiet_zone(true)
+        .build();
+    Some(icon::from_svg_bytes(svg.into_bytes()))
+}
+
 fn svg(body: &str) -> icon::Handle {
     svg_with("", body)
 }

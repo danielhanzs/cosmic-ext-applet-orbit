@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    keyboard, swipe::swipe, system, tasks, workspaces,
+    ddc, displays, keyboard, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -63,12 +63,14 @@ pub enum Tile {
     Keyboard,
     Dns,
     GameMode,
+    Displays,
+    Drives,
     /// The user's own, by its id.
     Custom(u32),
 }
 
 impl Tile {
-    pub const ALL: [Tile; 22] = [
+    pub const ALL: [Tile; 24] = [
         Tile::Wifi,
         Tile::Bluetooth,
         Tile::Vpn,
@@ -91,6 +93,8 @@ impl Tile {
         Tile::Keyboard,
         Tile::Dns,
         Tile::GameMode,
+        Tile::Displays,
+        Tile::Drives,
     ];
 
     /// Shown at first, and after a reset.
@@ -129,6 +133,8 @@ impl Tile {
             Tile::Keyboard => T.keyboard,
             Tile::Dns => "DNS",
             Tile::GameMode => T.game_mode,
+            Tile::Displays => T.displays,
+            Tile::Drives => T.drives,
             Tile::Custom(_) => "",
         }
     }
@@ -177,6 +183,11 @@ pub enum Page {
     Pomodoro,
     Keyboard,
     Dns,
+    KeepAwake,
+    /// The connection in use: addresses, sharing.
+    Network,
+    Displays,
+    Drives,
     /// Asking before running one of the user's tiles.
     Confirm(u32),
     Edit,
@@ -219,6 +230,29 @@ pub struct App {
     /// Keeping awake: the inhibition's cookie.
     inhibit: Option<u32>,
     inhibiting: bool,
+    /// The connection in use, and its Wi-Fi password, for its page.
+    details: Option<sys::Details>,
+    wifi_password: Option<String>,
+    show_qr: bool,
+    displays: Vec<displays::Display>,
+    user: Option<sys::User>,
+    /// The note card's text; changed since it was saved.
+    note: iced::widget::text_editor::Content,
+    note_changed: Option<Instant>,
+    /// The track's position being dragged to, in seconds.
+    seek_drag: Option<f32>,
+    /// Removable drives, mounted.
+    drives: Vec<sys::Drive>,
+    /// External monitors' brightness, when last asked, and writes: one at a
+    /// time a monitor, the latest level waiting.
+    monitors: Vec<ddc::Monitor>,
+    ddc_read: Option<Instant>,
+    ddc_writing: Vec<u8>,
+    ddc_waiting: Vec<(u8, u16)>,
+    /// Keep awake ends then, after the minutes chosen; None: when turned off.
+    awake_until: Option<(Zoned, u32)>,
+    /// Do not disturb turned on for a pomodoro focus, to turn off after.
+    dnd_for_focus: bool,
     workspaces: Option<cosmic::cctk::sctk::reexports::calloop::channel::Sender<workspaces::Command>>,
     /// The keyboard layouts set, and which is in use.
     layouts: Vec<keyboard::Layout>,
@@ -263,6 +297,9 @@ pub struct App {
     tasks: Option<Vec<tasks::Task>>,
     /// The UIDs of to-dos being ticked off.
     completing: Vec<String>,
+    /// A to-do, and an event for the picked day, being typed.
+    task_input: String,
+    event_input: String,
     /// Running timers: when each ends, and how long it was.
     timers: Vec<(Instant, Duration)>,
     /// The editor's clock search, and the time zones it matches.
@@ -314,6 +351,27 @@ pub enum Message {
     Page(Page),
     Screen(String, Option<(u32, u32)>),
     Tick,
+    KeepAwake(Option<u32>),
+    Details(Option<sys::Details>, Option<String>),
+    Copy(String),
+    ShowQr(bool),
+    Monitors(Vec<ddc::Monitor>),
+    Displays(Vec<displays::Display>),
+    DisplayOn(String, bool),
+    DisplayScale(String, f32),
+    /// The first shows what the second does.
+    Mirror(String, String),
+    Drives(Vec<sys::Drive>),
+    User(Option<sys::User>),
+    SeekDrag(f32),
+    Note(iced::widget::text_editor::Action),
+    Seek,
+    Eject(sys::Drive),
+    OpenPath(String),
+    /// A monitor's brightness, 0..1.
+    MonitorLevel(u8, f32),
+    MonitorWritten(u8),
+    FocusDnd(bool),
     Frame,
     Changed(Source),
     AudioChanged,
@@ -408,6 +466,11 @@ pub enum Message {
     /// By its UID: the list may have been read again meanwhile.
     CompleteTask(String),
     TaskDone(String, Option<Vec<tasks::Task>>),
+    TaskInput(String),
+    AddTask,
+    EventInput(String),
+    AddEvent,
+    EventAdded,
     /// A timer of this many minutes.
     StartTimer(u64),
     /// By when it ends: others may have ended meanwhile.
@@ -595,7 +658,7 @@ impl App {
                     title: T.wired.into(),
                     subtitle: wired.map_or(T.not_connected.into(), |p| p.name.clone()),
                     on: wired.is_some(),
-                    page: None,
+                    page: wired.is_some().then_some(Page::Network),
                 };
             }
             Tile::Wifi => {
@@ -650,7 +713,14 @@ impl App {
                 let subtitle = if muted { T.muted } else { T.on };
                 (named(icon), muted, subtitle.into(), None)
             }
-            Tile::KeepAwake => (icons::keep_awake(), self.inhibit.is_some(), on_off(self.inhibit.is_some()), None),
+            Tile::KeepAwake => {
+                let on = self.inhibit.is_some();
+                let subtitle = match &self.awake_until {
+                    Some((until, _)) if on => format!("→ {}", i18n::clock(until.time())),
+                    _ => on_off(on),
+                };
+                (icons::keep_awake(), on, subtitle, Some(Page::KeepAwake))
+            }
             Tile::Tiling => {
                 let on = self.tiling.unwrap_or_else(desktop::autotile);
                 (named("view-grid-symbolic"), on, on_off(on), None)
@@ -699,6 +769,14 @@ impl App {
                 };
                 let on = self.dns.is_some_and(|d| d != sys::Dns::Automatic);
                 (named("network-server-symbolic"), on, name, Some(Page::Dns))
+            }
+            Tile::Displays => {
+                let on: Vec<&str> = self.displays.iter().filter(|d| d.enabled).map(|d| d.name.as_str()).collect();
+                (named("video-display-symbolic"), on.len() > 1, on.join(", "), Some(Page::Displays))
+            }
+            Tile::Drives => {
+                let names: Vec<&str> = self.drives.iter().map(|d| d.name.as_str()).collect();
+                (named("drive-removable-media-symbolic"), !names.is_empty(), names.join(", "), Some(Page::Drives))
             }
             Tile::GameMode => {
                 let on = self.gamemode == Some(true);
@@ -776,13 +854,7 @@ impl App {
             // One request at a time: a double click would leave an
             // inhibition no one releases.
             Tile::KeepAwake if self.inhibiting => Task::none(),
-            Tile::KeepAwake => match self.inhibit.take() {
-                Some(cookie) => fire(desktop::allow_idle(cookie)),
-                None => {
-                    self.inhibiting = true;
-                    run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) })
-                }
-            },
+            Tile::KeepAwake => self.update(Message::KeepAwake(if self.inhibit.is_some() { None } else { Some(0) })),
             Tile::Tiling => {
                 let on = !self.tiling.unwrap_or_else(desktop::autotile);
                 match &self.workspaces {
@@ -819,6 +891,8 @@ impl App {
             Tile::Workspaces => self.update(Message::Spawn("cosmic-workspaces", &[])),
             Tile::Pomodoro => self.update(Message::PomodoroToggle),
             Tile::Dns => self.update(Message::Page(Page::Dns)),
+            Tile::Displays => self.update(Message::Page(Page::Displays)),
+            Tile::Drives => self.update(Message::Page(Page::Drives)),
             Tile::Custom(id) => match self.prefs.custom.iter().find(|c| c.id == id) {
                 Some(c) if c.confirm => self.update(Message::Page(Page::Confirm(id))),
                 Some(_) => self.update(Message::RunCustom(id)),
@@ -865,6 +939,13 @@ impl App {
         }
         let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
         tasks.push(run(extras()));
+        tasks.push(run(async { Message::Displays(displays::list().await) }));
+        tasks.push(run(async { Message::Drives(sys::drives().await.unwrap_or_default()) }));
+        // External monitors: slow to ask, so once a minute at most.
+        if self.ddc_read.is_none_or(|at| at.elapsed() > Duration::from_secs(60)) {
+            self.ddc_read = Some(Instant::now());
+            tasks.push(run(async { Message::Monitors(ddc::monitors().await) }));
+        }
         if self.prefs.sections.contains(&Section::Tasks) {
             tasks.push(run(async { Message::Tasks(tasks::open().await) }));
         }
@@ -918,6 +999,7 @@ impl App {
         if self.page != Page::Password {
             self.page = Page::Main;
         }
+        self.save_note();
         // Next time, the load from then: not averaged over the time closed.
         self.sample = None;
         self.cpu_history.clear();
@@ -931,10 +1013,26 @@ impl App {
 
     fn header(&self) -> Element<'_, Message> {
         let mut row = widget::Row::new().spacing(8).align_y(Alignment::Center);
+        // Who's logged in: their picture, and first name.
+        if let Some(user) = &self.user {
+            // The whole name: which part is the given one differs by language.
+            let first = user.name.clone();
+            let picture: Element<'_, Message> = match &user.picture {
+                Some(picture) => widget::image(picture.clone()).width(28).height(28).border_radius(14.0).into(),
+                None => icon::from_name("avatar-default-symbolic").size(24).into(),
+            };
+            row = row.push(widget::tooltip(
+                widget::Row::new().spacing(6).align_y(Alignment::Center).push(picture).push(text::body(first)),
+                text::caption(user.name.clone()),
+                widget::tooltip::Position::Bottom,
+            ));
+        }
         if let Some(b) = &self.battery {
+            // "82% (3:20)": the time left until empty, or full.
+            let left = b.left.map_or(String::new(), |d| format!(" ({})", hours_minutes(d)));
             row = row
                 .push(icon::icon(icons::battery(b.percent, b.charging)).size(16))
-                .push(text::body(format!("{:.0}%", b.percent)));
+                .push(text::body(format!("{:.0}%{left}", b.percent)));
         }
         // Mice, headsets, phones…: their charge, named on hover.
         for p in self.peripherals.iter().take(3) {
@@ -998,6 +1096,16 @@ impl App {
                 .on_release(Message::Released)
                 .into();
             column = column.push(line("display-brightness-symbolic", None, slider, level, None));
+        }
+        for m in &self.monitors {
+            let level = m.level as f32 / m.max as f32;
+            let display = m.display;
+            let slider = widget::slider(0.0..=1.0, level, move |v| Message::MonitorLevel(display, v))
+                .step(0.01_f32)
+                .on_release(Message::Released)
+                .into();
+            let row = line("display-brightness-symbolic", None, slider, level, None);
+            column = column.push(widget::tooltip(row, text::caption(m.name.clone()), widget::tooltip::Position::Top));
         }
         if let Some((_, level, max)) = &self.keyboard_light {
             let slider = widget::slider(0.0..=1.0, *level as f32 / *max as f32, Message::KeyboardLight)
@@ -1106,15 +1214,18 @@ impl App {
             let mut row = widget::Row::new().spacing(2);
             for i in 0..7 {
                 let day = monday.saturating_add(jiff::Span::new().days(i));
-                if day.month() != first.month() {
-                    row = row.push(widget::space().width(Length::Fill).height(Length::Fixed(38.0)));
-                    continue;
-                }
+                // The months before and after fill the rows, faint.
+                let other = day.month() != first.month();
                 let selected = day == self.selected;
                 let busy = self.events.as_ref().is_some_and(|e| e.contains_key(&day));
                 let mut number = text::body(day.day().to_string());
                 if day == today && !selected {
                     number = number.class(theme::Text::Accent).font(cosmic::font::bold());
+                } else if other && !selected {
+                    number = number.class(theme::Text::Custom(|theme| iced::widget::text::Style {
+                        color: Some(Color::from(theme.cosmic().background(false).on).scale_alpha(0.4)),
+                        ..Default::default()
+                    }));
                 }
                 let dot: Element<'_, Message> = if busy { dot(selected) } else { widget::space().height(5).into() };
                 let cell = widget::Column::new()
@@ -1209,6 +1320,12 @@ impl App {
                             .push_maybe(self.join_button(event)),
                     );
                 }
+                // "14:30 Dentist": an hour then; without a time, all day.
+                column = column.push(
+                    widget::text_input(T.add_event, self.event_input.as_str())
+                        .on_input(Message::EventInput)
+                        .on_submit(|_| Message::AddEvent),
+                );
             }
         }
         widget::Column::new()
@@ -1249,6 +1366,22 @@ impl App {
                     .push(control(play, "PlayPause"))
                     .push(control("media-skip-forward-symbolic", "Next")),
             );
+            // Where in the track: dragged, it's sought on release.
+            if let Some(length) = media.length {
+                let at = self.seek_drag.unwrap_or(media.at().as_secs_f32());
+                column = column.push(
+                    widget::Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .push(text::caption(minutes_seconds(Duration::from_secs_f32(at))))
+                        .push(
+                            widget::slider(0.0..=length.as_secs_f32(), at, Message::SeekDrag)
+                                .step(1.0_f32)
+                                .on_release(Message::Seek),
+                        )
+                        .push(text::caption(minutes_seconds(length))),
+                );
+            }
         }
         if let Some(meeting) = self.meeting() {
             any = true;
@@ -1337,6 +1470,14 @@ impl App {
             Section::System => (self.system_view(), Look::Padded),
             Section::Tasks => (self.tasks_view(), Look::Padded),
             Section::Clocks => (self.clocks_view(), Look::Padded),
+            Section::Notes => (
+                iced::widget::text_editor(&self.note)
+                    .placeholder(T.note_placeholder)
+                    .height(Length::Fixed(120.0))
+                    .on_action(Message::Note)
+                    .into(),
+                Look::Padded,
+            ),
         })
     }
 
@@ -1373,6 +1514,27 @@ impl App {
         }
     }
 
+    /// The note kept, if it changed.
+    fn save_note(&mut self) {
+        if self.note_changed.take().is_some() && preview().is_none() {
+            crate::config::save_note(&self.note.text());
+        }
+    }
+
+    /// A monitor's waiting level set, unless a set for it runs already.
+    fn ddc_write(&mut self, display: u8) -> app::Task<Message> {
+        if self.ddc_writing.contains(&display) {
+            return Task::none();
+        }
+        let Some(i) = self.ddc_waiting.iter().position(|(d, _)| *d == display) else { return Task::none() };
+        let (_, level) = self.ddc_waiting.remove(i);
+        self.ddc_writing.push(display);
+        run(async move {
+            ddc::set(display, level).await;
+            Message::MonitorWritten(display)
+        })
+    }
+
     /// Changes a setting and keeps it.
     fn pref(&mut self, change: impl FnOnce(&mut Prefs)) {
         change(&mut self.prefs);
@@ -1383,14 +1545,35 @@ impl App {
     fn available(&self, tile: Tile) -> bool {
         match tile {
             Tile::GameMode => self.gamemode.is_some(),
+            // Shown with something plugged in.
+            Tile::Drives => !self.drives.is_empty(),
             Tile::Custom(id) => self.prefs.custom.iter().any(|c| c.id == id),
             _ => true,
         }
     }
 
-    /// Each second: the pomodoro's phase, and a new day.
+    /// Do not disturb on while a focus runs (if asked), and off again after,
+    /// unless the user had it on anyway.
+    fn focus_dnd(&mut self) {
+        let want = self.prefs.focus_dnd && self.pomodoro.running() && self.pomodoro.phase == pomodoro::Phase::Focus;
+        if want && !self.dnd {
+            DND.set(true);
+            self.dnd = true;
+            self.dnd_for_focus = true;
+        } else if !want && self.dnd_for_focus {
+            DND.set(false);
+            self.dnd = false;
+            self.dnd_for_focus = false;
+        }
+    }
+
+    /// Each second: the pomodoro's phase, keep awake's end, and a new day.
     fn tick(&mut self) -> app::Task<Message> {
+        if self.awake_until.as_ref().is_some_and(|(until, _)| self.now >= *until) {
+            return self.update(Message::KeepAwake(None));
+        }
         if let Some(phase) = self.pomodoro.tick(Instant::now()) {
+            self.focus_dnd();
             let (summary, body) = match phase {
                 pomodoro::Phase::Focus => (T.pomodoro_focus_again, T.focus),
                 _ => (T.pomodoro_break_time, self.phase_name()),
@@ -1639,7 +1822,9 @@ impl App {
                 if self.net.wifi_enabled {
                     for ap in &self.net.access_points {
                         let message = match (ap.active, &self.net.wifi_device) {
-                            (true, _) | (_, None) => None,
+                            // The one in use: its details.
+                            (true, _) => Some(Message::Page(Page::Network)),
+                            (_, None) => None,
                             (false, Some(_)) => Some(Message::Join(ap.clone())),
                         };
                         let subtitle = ap.active.then(|| T.connected.to_string());
@@ -1726,6 +1911,112 @@ impl App {
                             .push(button::destructive(T.run).on_press(Message::RunCustom(id))),
                     );
             }
+            Page::Displays => {
+                column = column.push(self.page_header(T.displays, None));
+                let enabled = self.displays.iter().filter(|d| d.enabled).count();
+                for d in &self.displays {
+                    let name = d.name.clone();
+                    // The last one on stays on.
+                    let can_switch = !d.enabled || enabled > 1;
+                    let mut block = widget::Column::new().spacing(6).padding([8, 10]).push(
+                        widget::Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(icon::from_name("video-display-symbolic").size(20))
+                            .push(
+                                widget::Column::new()
+                                    .push(text::body(if d.model.is_empty() { d.name.clone() } else { d.model.clone() }))
+                                    .push(text::caption(d.name.clone()))
+                                    .width(Length::Fill),
+                            )
+                            .push(widget::toggler(d.enabled).on_toggle_maybe(can_switch.then(|| {
+                                let name = name.clone();
+                                move |on| Message::DisplayOn(name.clone(), on)
+                            }))),
+                    );
+                    if d.enabled {
+                        let scales = [1.0f32, 1.25, 1.5, 2.0].into_iter().fold(widget::Row::new().spacing(2), |row, s| {
+                            row.push(choice(format!("{:.0}%", s * 100.0), (d.scale - s).abs() < 0.01, Message::DisplayScale(name.clone(), s)))
+                        });
+                        block = block.push(text::caption(T.scale)).push(scales);
+                        let others: Vec<&displays::Display> = self.displays.iter().filter(|o| o.enabled && o.name != d.name).collect();
+                        if !others.is_empty() {
+                            let mirror = others.into_iter().fold(widget::Row::new().spacing(2), |row, o| {
+                                row.push(button::text(o.name.clone()).on_press(Message::Mirror(name.clone(), o.name.clone())))
+                            });
+                            block = block.push(text::caption(T.mirror)).push(mirror);
+                        }
+                    }
+                    column = column.push(block);
+                }
+                column = column.push(self.more(&["displays"]));
+            }
+            Page::Drives => {
+                column = column.push(self.page_header(T.drives, None));
+                for drive in &self.drives {
+                    column = column.push(
+                        widget::Row::new()
+                            .spacing(8)
+                            .padding([4, 10])
+                            .align_y(Alignment::Center)
+                            .push(icon::from_name("drive-removable-media-symbolic").size(20))
+                            .push(
+                                button::custom(
+                                    widget::Column::new()
+                                        .push(text::body(drive.name.clone()))
+                                        .push(text::caption(format!("{} · {}", drive.size, drive.mount))),
+                                )
+                                .class(style::flat())
+                                .width(Length::Fill)
+                                .on_press(Message::OpenPath(drive.mount.clone())),
+                            )
+                            .push(widget::tooltip(
+                                button::icon(icon::from_name("media-eject-symbolic")).padding(6).on_press(Message::Eject(drive.clone())),
+                                text::caption(T.eject),
+                                widget::tooltip::Position::Left,
+                            )),
+                    );
+                }
+            }
+            Page::Network => {
+                let name = self.details.as_ref().map_or(String::new(), |d| d.name.clone());
+                column = column.push(self.page_header(&name, None));
+                if let Some(d) = &self.details {
+                    let rows = [("IPv4", d.ipv4.clone()), ("IPv6", d.ipv6.clone()), (T.gateway, d.gateway.clone())]
+                        .into_iter()
+                        .chain(std::iter::once(("DNS", (!d.dns.is_empty()).then(|| d.dns.join(", ")))));
+                    for (label, value) in rows {
+                        let Some(value) = value else { continue };
+                        column = column.push(
+                            widget::Row::new()
+                                .spacing(8)
+                                .padding([4, 10])
+                                .align_y(Alignment::Center)
+                                .push(widget::Column::new().push(text::caption(label)).push(text::body(value.clone())).width(Length::Fill))
+                                .push(widget::tooltip(
+                                    button::icon(icon::from_name("edit-copy-symbolic")).padding(6).on_press(Message::Copy(value)),
+                                    text::caption(T.copy),
+                                    widget::tooltip::Position::Left,
+                                )),
+                        );
+                    }
+                }
+                // The Wi-Fi in use, to join from a phone.
+                if let Some(ap) = self.net.access_points.iter().find(|ap| ap.active) {
+                    let password = if ap.secure { self.wifi_password.as_deref() } else { None };
+                    // Asked for: it holds the password, for anyone to read off the screen.
+                    if !ap.secure || password.is_some() {
+                        column = column.push(
+                            container(button::standard(T.share_wifi).leading_icon(icon::from_name("qr-code-symbolic")).on_press(Message::ShowQr(!self.show_qr)))
+                                .padding([8, 10]),
+                        );
+                        if let Some(qr) = self.show_qr.then(|| icons::qr(&sys::wifi_qr_text(&ap.ssid, password))).flatten() {
+                            column = column.push(qr_view(qr));
+                        }
+                    }
+                }
+                column = column.push(self.more(if self.net.primary.as_ref().is_some_and(|p| p.wired) { &["wired"] } else { &["wireless"] }));
+            }
             Page::Dns => {
                 column = column.push(self.page_header("DNS", None));
                 for choice in sys::Dns::ALL {
@@ -1787,6 +2078,25 @@ impl App {
                         .push(text::body(T.show_on_panel).width(Length::Fill))
                         .push(widget::toggler(self.prefs.pomodoro_panel).on_toggle(Message::PomodoroPanel)),
                 );
+                column = column.push(container(switch(T.focus_dnd, self.prefs.focus_dnd, Message::FocusDnd)).padding([8, 10]));
+            }
+            Page::KeepAwake => {
+                column = column.push(self.page_header(T.keep_awake, None));
+                let on = self.inhibit.is_some();
+                for (minutes, label) in [(30, "30 min"), (60, "1 h"), (120, "2 h"), (240, "4 h")] {
+                    let picked = on && self.awake_until.as_ref().is_some_and(|(_, m)| *m == minutes);
+                    column = column.push(self.item(icons::keep_awake(), label, None, picked, Some(Message::KeepAwake(Some(minutes)))));
+                }
+                column = column.push(self.item(
+                    icons::keep_awake(),
+                    T.until_off,
+                    None,
+                    on && self.awake_until.is_none(),
+                    Some(Message::KeepAwake(Some(0))),
+                ));
+                if on {
+                    column = column.push(self.item(icons::keep_awake(), T.off, None, false, Some(Message::KeepAwake(None))));
+                }
             }
             Page::Hotspot => {
                 let hotspot = self.net.hotspot.as_ref();
@@ -1803,6 +2113,9 @@ impl App {
                     column = column.push(line(T.network_name, h.ssid.clone()));
                     if let Some(password) = &self.hotspot_password {
                         column = column.push(line(T.password, password.clone()));
+                        if let Some(qr) = icons::qr(&sys::wifi_qr_text(&h.ssid, Some(password))) {
+                            column = column.push(qr_view(qr));
+                        }
                     }
                 } else {
                     column = column.push(container(text::caption(T.hotspot_hint)).padding([8, 10]));
@@ -1987,6 +2300,13 @@ impl App {
         );
         if tasks.is_empty() {
             column = column.push(text::caption(T.no_tasks));
+        }
+        if self.tasks.is_some() {
+            column = column.push(
+                widget::text_input(T.add_task, self.task_input.as_str())
+                    .on_input(Message::TaskInput)
+                    .on_submit(|_| Message::AddTask),
+            );
         }
         let today = self.now.date();
         for task in tasks.iter().take(8) {
@@ -2714,6 +3034,23 @@ fn volume_icon(muted: bool, level: f32) -> &'static str {
     }
 }
 
+/// A QR code to scan, with room around it, as scanners need.
+fn qr_view(qr: icon::Handle) -> Element<'static, Message> {
+    container(icon::icon(qr).size(180)).center_x(Length::Fill).padding([8, 0]).into()
+}
+
+/// "3:07", "1:02:45"
+fn minutes_seconds(d: Duration) -> String {
+    let s = d.as_secs();
+    if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) }
+}
+
+/// "3:20"
+fn hours_minutes(d: Duration) -> String {
+    let minutes = d.as_secs() / 60;
+    format!("{}:{:02}", minutes / 60, minutes % 60)
+}
+
 /// What's read when the popup opens, all at once.
 async fn extras() -> Message {
     let (dns, charge, light, gamemode) = tokio::join!(sys::dns(), sys::charge_limit(), sys::keyboard_light(), desktop::gamemode());
@@ -2838,6 +3175,7 @@ fn section_name(section: Section) -> &'static str {
         Section::System => T.section_system,
         Section::Tasks => T.section_tasks,
         Section::Clocks => T.section_clocks,
+        Section::Notes => T.section_notes,
     }
 }
 
@@ -2920,6 +3258,21 @@ impl cosmic::Application for App {
             reader: None,
             inhibit: None,
             inhibiting: false,
+            awake_until: None,
+            details: None,
+            wifi_password: None,
+            show_qr: false,
+            monitors: Vec::new(),
+            displays: Vec::new(),
+            user: None,
+            seek_drag: None,
+            note: iced::widget::text_editor::Content::with_text(&crate::config::load_note()),
+            note_changed: None,
+            drives: Vec::new(),
+            ddc_read: None,
+            ddc_writing: Vec::new(),
+            ddc_waiting: Vec::new(),
+            dnd_for_focus: false,
             workspaces: None,
             layouts: keyboard::layouts(),
             layout: 0,
@@ -2949,6 +3302,8 @@ impl cosmic::Application for App {
             sampling: false,
             tasks: None,
             completing: Vec::new(),
+            task_input: String::new(),
+            event_input: String::new(),
             timers: Vec::new(),
             clock_input: String::new(),
             clock_matches: Vec::new(),
@@ -2987,6 +3342,7 @@ impl cosmic::Application for App {
         .map(|s| app.refresh(s))
         .collect();
         tasks.push(run(async { Message::Audio(audio::read().await) }));
+        tasks.push(run(async { Message::User(sys::user().await) }));
         // Kept notifications: their icons are looked up in the apps' entries, off this thread.
         tasks.push(run(async {
             Message::NotificationsLoaded(tokio::task::spawn_blocking(notifications::load).await.unwrap_or_default())
@@ -3005,11 +3361,12 @@ impl cosmic::Application for App {
                     "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" => {
+                    "audio" | "system" | "tasks" | "clocks" | "notes" => {
                         let section = match option {
                             "audio" => Section::Audio,
                             "system" => Section::System,
                             "tasks" => Section::Tasks,
+                            "notes" => Section::Notes,
                             _ => Section::Clocks,
                         };
                         if !app.prefs.sections.contains(&section) {
@@ -3021,6 +3378,17 @@ impl cosmic::Application for App {
                     }
                     "calendar" => app.prefs.calendar_open = true,
                     "weather" => app.prefs.weather_open = true,
+                    "displays" | "network" | "keepawake" => {
+                        let page = match option {
+                            "displays" => Page::Displays,
+                            "network" => Page::Network,
+                            _ => Page::KeepAwake,
+                        };
+                        tasks.push(run(async move {
+                            tokio::time::sleep(Duration::from_secs(6)).await;
+                            Message::Page(page)
+                        }));
+                    }
                     "general" | "tiles" | "cards" => {
                         app.edit_tab = match option {
                             "general" => EditTab::General,
@@ -3078,6 +3446,7 @@ impl cosmic::Application for App {
             }
             Message::Page(page) => {
                 self.page = page;
+                self.show_qr = false;
                 self.drag = None;
                 self.drag_over = None;
                 if page == Page::Hotspot {
@@ -3090,7 +3459,89 @@ impl cosmic::Application for App {
                         return fire(async move { _ = sys::scan_wifi(device).await });
                     }
                 }
+                if page == Page::Network {
+                    let saved = self.net.access_points.iter().find(|ap| ap.active).and_then(|ap| ap.saved.clone());
+                    return run(async move {
+                        let password = match saved {
+                            Some(path) => sys::hotspot_password(path).await,
+                            None => None,
+                        };
+                        Message::Details(sys::details().await, password)
+                    });
+                }
             }
+            Message::ShowQr(on) => self.show_qr = on,
+            Message::Displays(displays) => self.displays = displays,
+            Message::DisplayOn(name, on) => {
+                return run(async move {
+                    displays::set_enabled(name, on).await;
+                    Message::Displays(displays::list().await)
+                });
+            }
+            Message::DisplayScale(name, scale) => {
+                if let Some(display) = self.displays.iter().find(|d| d.name == name).cloned() {
+                    return run(async move {
+                        displays::set_scale(display, scale).await;
+                        Message::Displays(displays::list().await)
+                    });
+                }
+            }
+            Message::Mirror(name, from) => {
+                return run(async move {
+                    displays::mirror(name, from).await;
+                    Message::Displays(displays::list().await)
+                });
+            }
+            Message::Drives(drives) => self.drives = drives,
+            Message::User(user) => self.user = user,
+            Message::SeekDrag(at) => self.seek_drag = Some(at),
+            Message::Note(action) => {
+                if action.is_edit() {
+                    self.note_changed = Some(Instant::now());
+                }
+                self.note.perform(action);
+            }
+            Message::Seek => {
+                if let (Some(at), Some(media)) = (self.seek_drag.take(), self.media.as_mut()) {
+                    let to = Duration::from_secs_f32(at);
+                    media.position = to;
+                    media.read_at = Instant::now();
+                    let media = media.clone();
+                    return fire(media::seek(media, to));
+                }
+            }
+            Message::Eject(drive) => {
+                return run(async move {
+                    log("eject", sys::eject(drive).await);
+                    Message::Drives(sys::drives().await.unwrap_or_default())
+                });
+            }
+            Message::OpenPath(path) => {
+                crate::host::spawn("xdg-open", &[path.as_str()]);
+                return self.close();
+            }
+            Message::Monitors(monitors) => {
+                if !self.adjusting() {
+                    self.monitors = monitors;
+                }
+            }
+            Message::MonitorLevel(display, level) => {
+                let Some(m) = self.monitors.iter_mut().find(|m| m.display == display) else { return Task::none() };
+                m.level = (level * m.max as f32).round() as u16;
+                self.adjusting = Some(Instant::now());
+                self.ddc_waiting.retain(|(d, _)| *d != display);
+                self.ddc_waiting.push((display, m.level));
+                return self.ddc_write(display);
+            }
+            Message::MonitorWritten(display) => {
+                self.ddc_writing.retain(|d| *d != display);
+                return self.ddc_write(display);
+            }
+            Message::Details(details, password) => {
+                self.details = details;
+                self.wifi_password = password;
+            }
+            Message::Copy(text) => return cosmic::iced::clipboard::write(text),
             Message::Screen(name, size) => {
                 if let Some(size) = size {
                     if name == self.core.applet.output_name || self.core.applet.output_name.is_empty() {
@@ -3105,6 +3556,9 @@ impl cosmic::Application for App {
                     tasks.push(fire(desktop::notify(T.timer_done.to_string(), pomodoro::clock(*length))));
                 }
                 self.timers.retain(|(ends, _)| *ends > now);
+                if self.note_changed.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
+                    self.save_note();
+                }
                 if let (Some(at), Some(lasts)) = (self.wifi_lost, self.prefs.wifi_badge.lasts()) {
                     if at.elapsed() >= lasts {
                         self.wifi_lost = None;
@@ -3451,6 +3905,32 @@ impl cosmic::Application for App {
                     Message::TaskDone(uid, tasks::open().await)
                 });
             }
+            Message::TaskInput(input) => self.task_input = input,
+            Message::AddTask => {
+                let summary = std::mem::take(&mut self.task_input);
+                if !summary.trim().is_empty() {
+                    return run(async move {
+                        log("new to-do", tasks::add(summary).await);
+                        Message::Tasks(tasks::open().await)
+                    });
+                }
+            }
+            Message::EventInput(input) => self.event_input = input,
+            Message::AddEvent => {
+                let input = std::mem::take(&mut self.event_input);
+                let day = self.selected;
+                if !input.trim().is_empty() {
+                    return run(async move {
+                        log("new event", calendar::add_event(day, input).await);
+                        Message::EventAdded
+                    });
+                }
+            }
+            Message::EventAdded => {
+                // Read the month again now, not when it's due.
+                self.events_read = None;
+                return self.load_events();
+            }
             Message::TaskDone(uid, tasks) => {
                 self.completing.retain(|u| *u != uid);
                 return self.update(Message::Tasks(tasks));
@@ -3624,9 +4104,20 @@ impl cosmic::Application for App {
             Message::PomodoroToggle => {
                 let now = Instant::now();
                 if self.pomodoro.running() { self.pomodoro.pause(now) } else { self.pomodoro.start(now) }
+                self.focus_dnd();
             }
-            Message::PomodoroSkip => self.pomodoro.skip(Instant::now()),
-            Message::PomodoroReset => self.pomodoro.reset(),
+            Message::PomodoroSkip => {
+                self.pomodoro.skip(Instant::now());
+                self.focus_dnd();
+            }
+            Message::PomodoroReset => {
+                self.pomodoro.reset();
+                self.focus_dnd();
+            }
+            Message::FocusDnd(on) => {
+                self.pref(|p| p.focus_dnd = on);
+                self.focus_dnd();
+            }
             Message::PomodoroPanel(on) => self.pref(|p| p.pomodoro_panel = on),
             // A drag only moves the slider; the level is set once, on release.
             Message::StreamVolume(index, level) => self.stream_drag = Some((index, level)),
@@ -3660,7 +4151,14 @@ impl cosmic::Application for App {
                     return fire(media::control(media.bus.clone(), method));
                 }
             }
-            Message::Day(date) => self.selected = date,
+            Message::Day(date) => {
+                self.selected = date;
+                // A day of the month before or after: that month.
+                if date.first_of_month() != self.visible {
+                    self.visible = date.first_of_month();
+                    return self.load_events();
+                }
+            }
             Message::PrevMonth | Message::NextMonth => {
                 let step = jiff::Span::new().months(if matches!(message, Message::PrevMonth) { -1 } else { 1 });
                 self.visible = self.visible.saturating_add(step);
@@ -3768,6 +4266,19 @@ impl cosmic::Application for App {
             Message::Inhibited(cookie) => {
                 self.inhibiting = false;
                 self.inhibit = cookie;
+            }
+            // Some(minutes, 0: until turned off); None: off.
+            Message::KeepAwake(minutes) => {
+                self.awake_until =
+                    minutes.filter(|m| *m > 0).map(|m| (self.now.saturating_add(jiff::Span::new().minutes(m as i64)), m));
+                return match (minutes, self.inhibit) {
+                    (None, Some(_)) => fire(desktop::allow_idle(self.inhibit.take().expect("on"))),
+                    (Some(_), None) if !self.inhibiting => {
+                        self.inhibiting = true;
+                        run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) })
+                    }
+                    _ => Task::none(),
+                };
             }
             Message::ShowTile(tile, on) => {
                 self.prefs.tiles.retain(|t| *t != tile);

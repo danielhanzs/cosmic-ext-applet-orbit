@@ -58,6 +58,15 @@ pub fn run() {
             "Screen brightness",
             shown(sys::brightness().await, |b| b.map_or("none".into(), |b| format!("{:.0}%", b * 100.0))),
         );
+        let monitors = crate::ddc::monitors().await;
+        line(
+            "Monitors (ddcutil)",
+            if monitors.is_empty() {
+                Err("none answer: is ddcutil installed, with access to /dev/i2c-*?".into())
+            } else {
+                Ok(monitors.iter().map(|m| format!("{} {}/{}", m.name, m.level, m.max)).collect::<Vec<_>>().join(", "))
+            },
+        );
         line(
             "Keyboard backlight",
             match sys::keyboard_light().await {

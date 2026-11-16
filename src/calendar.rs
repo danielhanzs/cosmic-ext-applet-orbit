@@ -100,11 +100,69 @@ pub(crate) async fn open_all(
             continue;
         }
         match open(conn, &uid, method).await {
-            Ok(source) => opened.push(source),
+            // The user's accounts before the computer's own lists.
+            Ok(source) => opened.push((uid.starts_with("system-"), source)),
             Err(err) => tracing::warn!("{kind} {uid}: {err}"),
         }
     }
-    Ok(opened)
+    opened.sort_by_key(|(local, _)| *local);
+    Ok(opened.into_iter().map(|(_, source)| source).collect())
+}
+
+/// Adds an iCalendar object to the first shown source of `kind` that takes
+/// it (read-only ones, birthdays, don't).
+pub(crate) async fn add(kind: &str, method: &str, ics: String) -> zbus::Result<()> {
+    let conn = crate::bus::session().await?;
+    let mut result = Err(zbus::Error::Failure(format!("no {kind} to add to")));
+    for (bus, path) in open_all(&conn, kind, method).await? {
+        result = conn
+            .call_method(Some(bus.as_str()), &path, Some("org.gnome.evolution.dataserver.Calendar"), "CreateObjects", &(vec![ics.clone()], 0u32))
+            .await
+            .map(drop);
+        if result.is_ok() {
+            break;
+        }
+    }
+    result
+}
+
+/// A new object's id: random, as long as a UUID.
+pub(crate) fn new_uid() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; 16];
+    _ = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes));
+    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>() + "@orbit"
+}
+
+/// Text as an iCalendar value: its backslashes, commas, semicolons and
+/// line breaks escaped.
+pub(crate) fn escape(text: &str) -> String {
+    text.replace('\\', "\\\\").replace(';', "\\;").replace(',', "\\,").replace('\n', "\\n")
+}
+
+/// A quick event on `day`: "14:30 Dentist" an hour from then, otherwise
+/// all day.
+pub async fn add_event(day: civil::Date, input: String) -> zbus::Result<()> {
+    let input = input.trim();
+    let now = jiff::Timestamp::now().strftime("%Y%m%dT%H%M%SZ").to_string();
+    let (when, title) = match input.split_once(' ').and_then(|(t, rest)| Some((civil::Time::strptime("%H:%M", t).ok()?, rest))) {
+        Some((time, title)) => {
+            let start = day.to_datetime(time).to_zoned(TimeZone::system()).map_err(|e| zbus::Error::Failure(e.to_string()))?;
+            let end = start.saturating_add(jiff::Span::new().hours(1));
+            let utc = |z: &Zoned| z.timestamp().strftime("%Y%m%dT%H%M%SZ").to_string();
+            (format!("DTSTART:{}\r\nDTEND:{}", utc(&start), utc(&end)), title)
+        }
+        None => {
+            let next = day.saturating_add(jiff::Span::new().days(1));
+            (format!("DTSTART;VALUE=DATE:{}\r\nDTEND;VALUE=DATE:{}", day.strftime("%Y%m%d"), next.strftime("%Y%m%d")), input)
+        }
+    };
+    let ics = format!(
+        "BEGIN:VEVENT\r\nUID:{}\r\nDTSTAMP:{now}\r\n{when}\r\nSUMMARY:{}\r\nEND:VEVENT",
+        new_uid(),
+        escape(title.trim())
+    );
+    add("Calendar", "OpenCalendar", ics).await
 }
 
 async fn read(first: civil::Date) -> zbus::Result<HashMap<civil::Date, Vec<Event>>> {
@@ -386,6 +444,12 @@ mod tests {
     fn utc_to_local() {
         let tz = TimeZone::fixed(jiff::tz::offset(1));
         assert_eq!(time("20261029T130000Z", "", &tz), Some(civil::time(14, 0, 0, 0)));
+    }
+
+    #[test]
+    fn escapes_text() {
+        assert_eq!(escape("a,b;c\\d\ne"), "a\\,b\\;c\\\\d\\ne");
+        assert_eq!(new_uid().len(), 32 + "@orbit".len());
     }
 
     #[test]

@@ -372,6 +372,8 @@ fn password() -> Option<String> {
 }
 
 /// The hotspot's password, to show for joining it.
+/// A saved Wi-Fi network's password (the hotspot's, or one joined), to
+/// show or share.
 pub async fn hotspot_password(saved: OwnedObjectPath) -> Option<String> {
     let conn = crate::bus::system().await.ok()?;
     let secrets = proxy::<NmConnectionProxy>(&conn, Some(saved)).await.ok()?.get_secrets("802-11-wireless-security").await.ok()?;
@@ -494,6 +496,10 @@ trait Battery {
     fn state(&self) -> zbus::Result<u32>;
     #[zbus(property)]
     fn is_present(&self) -> zbus::Result<bool>;
+    #[zbus(property)]
+    fn time_to_empty(&self) -> zbus::Result<i64>;
+    #[zbus(property)]
+    fn time_to_full(&self) -> zbus::Result<i64>;
 }
 
 #[derive(Debug, Clone)]
@@ -501,6 +507,8 @@ pub struct BatteryState {
     pub percent: f64,
     /// Plugged in: charging, or full.
     pub charging: bool,
+    /// Until empty, or (charging) full; None while UPower can't tell.
+    pub left: Option<std::time::Duration>,
 }
 
 pub async fn battery() -> zbus::Result<Option<BatteryState>> {
@@ -509,10 +517,17 @@ pub async fn battery() -> zbus::Result<Option<BatteryState>> {
     if !battery.is_present().await? {
         return Ok(None);
     }
+    // 1: charging, 4: fully charged.
+    let state = battery.state().await?;
+    let left = match state {
+        1 => battery.time_to_full().await.unwrap_or(0),
+        2 => battery.time_to_empty().await.unwrap_or(0),
+        _ => 0,
+    };
     Ok(Some(BatteryState {
         percent: battery.percentage().await?,
-        // 1: charging, 4: fully charged.
-        charging: matches!(battery.state().await?, 1 | 4),
+        charging: matches!(state, 1 | 4),
+        left: (left > 0).then(|| std::time::Duration::from_secs(left as u64)),
     }))
 }
 
@@ -871,6 +886,226 @@ pub async fn set_dns(choice: Dns) -> zbus::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------- user
+
+/// Who's logged in, as AccountsService knows them: their name and picture.
+#[derive(Debug, Clone)]
+pub struct User {
+    pub name: String,
+    pub picture: Option<cosmic::iced::widget::image::Handle>,
+}
+
+pub async fn user() -> Option<User> {
+    let conn = crate::bus::system().await.ok()?;
+    let login = std::env::var("USER").ok()?;
+    let accounts = "org.freedesktop.Accounts";
+    let reply = conn
+        .call_method(Some(accounts), "/org/freedesktop/Accounts", Some(accounts), "FindUserByName", &(login.as_str(),))
+        .await
+        .ok()?;
+    let path: OwnedObjectPath = reply.body().deserialize().ok()?;
+    let get = |name: &'static str| {
+        let (conn, path) = (&conn, &path);
+        async move {
+            let reply = conn
+                .call_method(Some(accounts), path, Some("org.freedesktop.DBus.Properties"), "Get", &("org.freedesktop.Accounts.User", name))
+                .await
+                .ok()?;
+            String::try_from(reply.body().deserialize::<OwnedValue>().ok()?).ok().filter(|s| !s.is_empty())
+        }
+    };
+    let name = get("RealName").await.unwrap_or(login);
+    // The picture, read on the host (it's under /var/lib), a few MB at most.
+    let picture = match get("IconFile").await {
+        Some(file) => {
+            let script = "test -f \"$1\" && head -c 4000000 \"$1\"";
+            let out = crate::host::command("sh").args(["-c", script, "sh", &file]).output().await.ok();
+            out.filter(|o| o.status.success() && !o.stdout.is_empty())
+                .map(|o| cosmic::iced::widget::image::Handle::from_bytes(o.stdout))
+        }
+        None => None,
+    };
+    Some(User { name, picture })
+}
+
+// ---------------------------------------------------------------- drives
+
+const UDISKS: &str = "org.freedesktop.UDisks2";
+
+/// A removable drive's mounted file system.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Drive {
+    /// Its label, or the drive's model.
+    pub name: String,
+    /// "16 GB"
+    pub size: String,
+    pub mount: String,
+    block: OwnedObjectPath,
+    drive: OwnedObjectPath,
+}
+
+pub async fn drives() -> zbus::Result<Vec<Drive>> {
+    let conn = crate::bus::system().await?;
+    let objects: Objects = zbus::fdo::ObjectManagerProxy::builder(&conn)
+        .destination(UDISKS)?
+        .path("/org/freedesktop/UDisks2")?
+        .build()
+        .await?
+        .get_managed_objects()
+        .await?
+        .into_iter()
+        .map(|(path, ifaces)| (path, ifaces.into_iter().map(|(i, props)| (i.to_string(), props)).collect()))
+        .collect();
+    let prop = |path: &OwnedObjectPath, iface: &str, key: &str| objects.get(path)?.get(iface)?.get(key)?.try_clone().ok();
+    let mut found = Vec::new();
+    for (path, ifaces) in &objects {
+        let Some(fs) = ifaces.get("org.freedesktop.UDisks2.Filesystem") else { continue };
+        // The first mount point, as NUL-ended bytes.
+        let mount = fs
+            .get("MountPoints")
+            .and_then(|v| Vec::<Vec<u8>>::try_from(v.try_clone().ok()?).ok())
+            .and_then(|points| points.into_iter().next())
+            .map(|bytes| String::from_utf8_lossy(bytes.split(|b| *b == 0).next().unwrap_or_default()).into_owned());
+        let Some(mount) = mount.filter(|m| !m.is_empty()) else { continue };
+        let block = "org.freedesktop.UDisks2.Block";
+        if prop(path, block, "HintIgnore").and_then(|v| bool::try_from(v).ok()) == Some(true) {
+            continue;
+        }
+        let Some(drive) = prop(path, block, "Drive").and_then(|v| OwnedObjectPath::try_from(v).ok()) else { continue };
+        let flag = |key| prop(&drive, "org.freedesktop.UDisks2.Drive", key).and_then(|v| bool::try_from(v).ok()) == Some(true);
+        // A stick or card, not the computer's own disks.
+        if !(flag("Removable") || flag("Ejectable") || flag("MediaRemovable")) {
+            continue;
+        }
+        let text = |p: &OwnedObjectPath, iface: &str, key: &str| {
+            prop(p, iface, key).and_then(|v| String::try_from(v).ok()).filter(|s| !s.trim().is_empty())
+        };
+        let name = text(path, block, "IdLabel")
+            .or_else(|| text(&drive, "org.freedesktop.UDisks2.Drive", "Model"))
+            .unwrap_or_else(|| mount.rsplit('/').next().unwrap_or_default().to_string());
+        let bytes = prop(path, block, "Size").and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
+        found.push(Drive { name, size: size(bytes), mount, block: path.clone(), drive });
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(found)
+}
+
+/// "16 GB", "512 MB": as drives are sold, in powers of ten.
+fn size(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1_000_000_000 => format!("{:.0} GB", b as f64 / 1e9),
+        b => format!("{:.0} MB", b as f64 / 1e6),
+    }
+}
+
+/// Unmounted, then powered off (or ejected) so it can be pulled out.
+pub async fn eject(drive: Drive) -> zbus::Result<()> {
+    let conn = crate::bus::system().await?;
+    let none: HashMap<&str, Value<'_>> = HashMap::new();
+    conn.call_method(Some(UDISKS), &drive.block, Some("org.freedesktop.UDisks2.Filesystem"), "Unmount", &(&none,)).await?;
+    let iface = Some("org.freedesktop.UDisks2.Drive");
+    if conn.call_method(Some(UDISKS), &drive.drive, iface, "PowerOff", &(&none,)).await.is_err() {
+        conn.call_method(Some(UDISKS), &drive.drive, iface, "Eject", &(&none,)).await?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- details
+
+/// The connection in use, as numbers: to read out or copy.
+#[derive(Debug, Clone, Default)]
+pub struct Details {
+    pub name: String,
+    /// "192.168.1.20/24"
+    pub ipv4: Option<String>,
+    pub ipv6: Option<String>,
+    pub gateway: Option<String>,
+    pub dns: Vec<String>,
+}
+
+pub async fn details() -> Option<Details> {
+    let conn = crate::bus::system().await.ok()?;
+    let nm: NmProxy = proxy(&conn, None).await.ok()?;
+    let active_path = nm.primary_connection().await.ok()?;
+    if active_path.as_str() == "/" {
+        return None;
+    }
+    let active: NmActiveProxy = proxy(&conn, Some(active_path.clone())).await.ok()?;
+    let get = |path: OwnedObjectPath, interface: &'static str, name: &'static str| {
+        let conn = conn.clone();
+        async move {
+            let reply = conn
+                .call_method(
+                    Some("org.freedesktop.NetworkManager"),
+                    &path,
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &(interface, name),
+                )
+                .await
+                .ok()?;
+            reply.body().deserialize::<OwnedValue>().ok()
+        }
+    };
+    // Lists of {address, prefix} dictionaries.
+    let addresses = |value: Option<OwnedValue>| -> Vec<(String, Option<u32>)> {
+        value
+            .and_then(|v| Vec::<HashMap<String, OwnedValue>>::try_from(v).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|entry| {
+                let address = String::try_from(entry.get("address")?.try_clone().ok()?).ok()?;
+                let prefix = entry.get("prefix").and_then(|p| u32::try_from(p).ok());
+                Some((address, prefix))
+            })
+            .collect()
+    };
+    let config = |name: &'static str| {
+        let get = &get;
+        let active_path = active_path.clone();
+        async move {
+            get(active_path, "org.freedesktop.NetworkManager.Connection.Active", name)
+                .await
+                .and_then(|v| OwnedObjectPath::try_from(v).ok())
+                .filter(|p| p.as_str() != "/")
+        }
+    };
+    let mut details = Details { name: active.id().await.unwrap_or_default(), ..Default::default() };
+    if let Some(ip4) = config("Ip4Config").await {
+        let first = addresses(get(ip4.clone(), "org.freedesktop.NetworkManager.IP4Config", "AddressData").await).into_iter().next();
+        details.ipv4 = first.map(|(a, p)| p.map_or(a.clone(), |p| format!("{a}/{p}")));
+        details.gateway = get(ip4.clone(), "org.freedesktop.NetworkManager.IP4Config", "Gateway")
+            .await
+            .and_then(|v| String::try_from(v).ok())
+            .filter(|g| !g.is_empty());
+        details.dns =
+            addresses(get(ip4, "org.freedesktop.NetworkManager.IP4Config", "NameserverData").await).into_iter().map(|(a, _)| a).collect();
+    }
+    if let Some(ip6) = config("Ip6Config").await {
+        // The global one, not the link-local.
+        details.ipv6 = addresses(get(ip6, "org.freedesktop.NetworkManager.IP6Config", "AddressData").await)
+            .into_iter()
+            .find(|(a, _)| !a.starts_with("fe80"))
+            .map(|(a, p)| p.map_or(a.clone(), |p| format!("{a}/{p}")));
+    }
+    Some(details)
+}
+
+/// "WIFI:T:WPA;S:name;P:password;;", which phones join by scanning.
+pub fn wifi_qr_text(ssid: &str, password: Option<&str>) -> String {
+    let escape = |s: &str| s.chars().fold(String::new(), |mut out, c| {
+        if matches!(c, '\\' | ';' | ',' | ':' | '"') {
+            out.push('\\');
+        }
+        out.push(c);
+        out
+    });
+    match password {
+        Some(p) => format!("WIFI:T:WPA;S:{};P:{};;", escape(ssid), escape(p)),
+        None => format!("WIFI:T:nopass;S:{};;", escape(ssid)),
+    }
+}
+
 // ---------------------------------------------------------------- charge limit
 
 /// The laptop's battery, if UPower can stop its charging short of full to
@@ -937,6 +1172,9 @@ mod dns_tests {
         assert_eq!(Dns::of(&[[9, 9, 9, 9], [149, 112, 112, 112]], false), Some(Dns::Quad9));
         assert_eq!(Dns::of(&[], true), Some(Dns::Automatic));
         assert_eq!(Dns::of(&[[10, 0, 0, 1]], false), None);
+        assert_eq!(wifi_qr_text("Home;Net", Some("pa:ss")), "WIFI:T:WPA;S:Home\\;Net;P:pa\\:ss;;");
+        assert_eq!(wifi_qr_text("Cafe", None), "WIFI:T:nopass;S:Cafe;;");
+        assert_eq!((size(16_008_609_792), size(512_000_000)), ("16 GB".to_string(), "512 MB".to_string()));
         // Every provider has both families, two servers each.
         for d in Dns::ALL.into_iter().filter(|d| *d != Dns::Automatic) {
             assert_eq!((d.servers().len(), d.servers6().len()), (2, 2));

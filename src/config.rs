@@ -112,10 +112,12 @@ pub enum Section {
     Tasks,
     /// Other places' time, and timers.
     Clocks,
+    /// A note that stays.
+    Notes,
 }
 
 impl Section {
-    pub const ALL: [Section; 10] = [
+    pub const ALL: [Section; 11] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -126,6 +128,7 @@ impl Section {
         Section::System,
         Section::Tasks,
         Section::Clocks,
+        Section::Notes,
     ];
 }
 
@@ -158,6 +161,8 @@ pub struct Prefs {
     #[serde(skip)]
     pub custom: Vec<Custom>,
     pub tile_style: TileStyle,
+    /// Do not disturb while a pomodoro focus runs.
+    pub focus_dnd: bool,
     /// Shown parts of the popup, in order; the rest are hidden.
     pub sections: Vec<Section>,
     /// The weather's place; none: the time zone's city.
@@ -199,10 +204,11 @@ impl Default for Prefs {
             wifi_badge: WifiBadge::Off,
             custom: Vec::new(),
             tile_style: TileStyle::High,
+            focus_dnd: false,
             // The cards added later start off, there to turn on.
             sections: Section::ALL
                 .into_iter()
-                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks))
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes))
                 .collect(),
             weather_place: None,
             weather_panel: false,
@@ -286,7 +292,7 @@ impl Prefs {
     pub fn column(&self, section: Section) -> usize {
         let own = match section {
             Section::Status | Section::Controls => 0,
-            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks => 1,
+            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes => 1,
             Section::Notifications | Section::Island | Section::Audio | Section::System => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
@@ -308,10 +314,41 @@ impl Prefs {
 /// Where the user's own tiles are kept: Orbit's own config folder, which in
 /// the Flatpak is private to it (~/.var/app/<id>/config), unlike COSMIC's.
 fn custom_path() -> Option<std::path::PathBuf> {
+    private("custom-tiles.json")
+}
+
+/// A file in Orbit's own config folder (private to it in the Flatpak).
+fn private(name: &str) -> Option<std::path::PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".config")))?;
-    Some(base.join(crate::APP_ID).join("custom-tiles.json"))
+    Some(base.join(crate::APP_ID).join(name))
+}
+
+/// The note card's text, kept privately.
+pub fn load_note() -> String {
+    private("note.txt").and_then(|path| std::fs::read_to_string(path).ok()).unwrap_or_default()
+}
+
+pub fn save_note(text: &str) {
+    if let Some(path) = private("note.txt") {
+        if let Err(err) = write_private(&path, text.as_bytes()) {
+            tracing::warn!("cannot save the note: {err}");
+        }
+    }
+}
+
+/// Written whole and then moved into place, readable by the user alone.
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let dir = path.parent().ok_or(std::io::ErrorKind::NotFound)?;
+    std::fs::create_dir_all(dir)?;
+    let mut part = path.as_os_str().to_owned();
+    part.push(".part");
+    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&part)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    std::fs::rename(part, path)
 }
 
 /// The user's tiles. A file that doesn't read (a hand edit gone wrong) is
@@ -338,18 +375,8 @@ impl Prefs {
 
 /// Written whole and then moved into place, readable by the user alone.
 fn save_custom(custom: &[Custom]) {
-    use std::{io::Write, os::unix::fs::OpenOptionsExt};
     let Some(path) = custom_path() else { return };
-    let Some(dir) = path.parent() else { return };
-    let write = || -> std::io::Result<()> {
-        std::fs::create_dir_all(dir)?;
-        let part = path.with_extension("json.part");
-        let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&part)?;
-        file.write_all(&serde_json::to_vec_pretty(custom).unwrap_or_default())?;
-        file.sync_all()?;
-        std::fs::rename(part, &path)
-    };
-    if let Err(err) = write() {
+    if let Err(err) = write_private(&path, &serde_json::to_vec_pretty(custom).unwrap_or_default()) {
         tracing::warn!("cannot save your tiles: {err}");
     }
 }
