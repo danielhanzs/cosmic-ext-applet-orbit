@@ -139,9 +139,15 @@ Off until you turn them on:
   Nextcloud…), soonest due first; tick one off, or type a new one.
 - **Note**: a note that stays.
 - **Docker**: the Compose stacks (running ones first, with how many of
-  their containers run), each opening to its services and their state; a
-  service's **log** (followed) or a **shell** in it opens in COSMIC's
-  terminal. Containers outside Compose are listed together.
+  their containers run), each opening to its services and their state.
+  - a stack: **start, stop, restart** (by its labels: no compose file
+    needed), and a **terminal in its folder** for the rest (`up --build`…);
+  - a service: **start, stop, restart**, its **log** (followed) or a
+    **shell** in it in COSMIC's terminal, and its published web port
+    **in the browser** (databases' and queues' ports left out).
+
+  Containers outside Compose are listed together. Nothing that removes
+  anything (`down`, `prune`) is offered.
 - **Clocks**: other cities' time, and timers of 5, 10, 15 or 30 minutes or
   any length, which notify when they end.
 

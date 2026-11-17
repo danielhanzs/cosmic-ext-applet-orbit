@@ -241,6 +241,11 @@ strings!(
     no_containers,
     other_containers,
     logs,
+    start,
+    stop,
+    restart,
+    open_port,
+    project_terminal,
     no_more_events,
 );
 

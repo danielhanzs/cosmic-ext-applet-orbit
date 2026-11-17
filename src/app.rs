@@ -242,6 +242,8 @@ pub struct App {
     /// Docker's stacks (None: no Docker to ask), and the ones opened.
     docker: Option<Vec<docker::Stack>>,
     docker_open: Vec<String>,
+    /// Containers (by id) and stacks ("stack:name") a command runs for.
+    docker_busy: Vec<String>,
     /// The track's position being dragged to, in seconds.
     seek_drag: Option<f32>,
     /// Removable drives, mounted.
@@ -374,6 +376,13 @@ pub enum Message {
     /// A container's log, or a shell in it, by id.
     DockerLogs(String),
     DockerShell(String),
+    /// "start", "stop" or "restart": a container by id, a stack by name.
+    DockerContainer(&'static str, String),
+    DockerStackAction(&'static str, String),
+    /// One is done (its key), and the stacks as they are now.
+    DockerDone(String, Option<Vec<docker::Stack>>),
+    /// A terminal in a stack's folder.
+    DockerFolder(String),
     Note(iced::widget::text_editor::Action),
     Seek,
     Eject(sys::Drive),
@@ -2391,10 +2400,21 @@ impl App {
                 }))
                 .into()
         };
+        // An icon button with its name on hover; none while that's busy.
+        let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| -> Element<'_, Message> {
+            widget::tooltip(
+                button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
+                text::caption(tip),
+                widget::tooltip::Position::Left,
+            )
+            .into()
+        };
         for stack in stacks {
             let open = self.docker_open.contains(&stack.name);
             let name = if stack.name.is_empty() { T.other_containers.to_string() } else { stack.name.clone() };
-            column = column.push(
+            let key = format!("stack:{}", stack.name);
+            let busy = self.docker_busy.contains(&key);
+            let mut row = widget::Row::new().spacing(2).align_y(Alignment::Center).push(
                 button::custom(
                     widget::Row::new()
                         .spacing(8)
@@ -2409,6 +2429,23 @@ impl App {
                 .width(Length::Fill)
                 .on_press(Message::DockerStack(stack.name.clone())),
             );
+            // A Compose stack as a whole: its folder, and start, stop, restart.
+            if !stack.name.is_empty() {
+                if let Some(folder) = &stack.folder {
+                    row = row.push(act("folder-open-symbolic", T.project_terminal, Some(Message::DockerFolder(folder.clone()))));
+                }
+                let (icon_name, tip, action) = if stack.running() > 0 {
+                    ("media-playback-stop-symbolic", T.stop, "stop")
+                } else {
+                    ("media-playback-start-symbolic", T.start, "start")
+                };
+                row = row.push(act(icon_name, tip, (!busy).then(|| Message::DockerStackAction(action, stack.name.clone()))));
+                // Restarting is for what runs.
+                if stack.running() > 0 {
+                    row = row.push(act("system-reboot-symbolic", T.restart, (!busy).then(|| Message::DockerStackAction("restart", stack.name.clone()))));
+                }
+            }
+            column = column.push(row);
             if !open {
                 continue;
             }
@@ -2425,18 +2462,21 @@ impl App {
                                 .push(text::caption(c.status.as_str()).wrapping(iced::widget::text::Wrapping::None))
                                 .width(Length::Fill),
                         )
-                        .push(widget::tooltip(
-                            button::icon(icon::from_name("text-x-generic-symbolic")).padding(4).on_press(Message::DockerLogs(c.id.clone())),
-                            text::caption(T.logs),
-                            widget::tooltip::Position::Left,
-                        ))
-                        .push(widget::tooltip(
-                            button::icon(icon::from_name("utilities-terminal-symbolic"))
-                                .padding(4)
-                                .on_press_maybe(c.running.then(|| Message::DockerShell(c.id.clone()))),
-                            text::caption(T.terminal),
-                            widget::tooltip::Position::Left,
-                        )),
+                        .push_maybe(c.web.as_ref().filter(|_| c.running).map(|url| act("web-browser-symbolic", T.open_port, Some(Message::OpenUrl(url.clone())))))
+                        .push(act("text-x-generic-symbolic", T.logs, Some(Message::DockerLogs(c.id.clone()))))
+                        .push(act("utilities-terminal-symbolic", T.terminal, c.running.then(|| Message::DockerShell(c.id.clone()))))
+                        .push({
+                            let busy = self.docker_busy.contains(&c.id);
+                            let (icon_name, tip, action) = if c.running {
+                                ("media-playback-stop-symbolic", T.stop, "stop")
+                            } else {
+                                ("media-playback-start-symbolic", T.start, "start")
+                            };
+                            act(icon_name, tip, (!busy).then(|| Message::DockerContainer(action, c.id.clone())))
+                        })
+                        .push_maybe(c.running.then(|| {
+                            act("system-reboot-symbolic", T.restart, (!self.docker_busy.contains(&c.id)).then(|| Message::DockerContainer("restart", c.id.clone())))
+                        })),
                 );
             }
         }
@@ -3383,6 +3423,7 @@ impl cosmic::Application for App {
             seek_drag: None,
             docker: None,
             docker_open: Vec::new(),
+            docker_busy: Vec::new(),
             note: iced::widget::text_editor::Content::with_text(&crate::config::load_note()),
             note_changed: None,
             drives: Vec::new(),
@@ -3636,6 +3677,29 @@ impl cosmic::Application for App {
             }
             Message::DockerLogs(id) => {
                 docker::logs(&id);
+                return self.close();
+            }
+            Message::DockerContainer(action, id) => {
+                self.docker_busy.push(id.clone());
+                return run(async move {
+                    docker::container(action, id.clone()).await;
+                    Message::DockerDone(id, docker::stacks().await)
+                });
+            }
+            Message::DockerStackAction(action, name) => {
+                let key = format!("stack:{name}");
+                self.docker_busy.push(key.clone());
+                return run(async move {
+                    docker::stack(action, name).await;
+                    Message::DockerDone(key, docker::stacks().await)
+                });
+            }
+            Message::DockerDone(key, stacks) => {
+                self.docker_busy.retain(|k| *k != key);
+                self.docker = stacks;
+            }
+            Message::DockerFolder(folder) => {
+                docker::terminal_in(&folder);
                 return self.close();
             }
             Message::DockerShell(id) => {
