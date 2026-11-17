@@ -41,19 +41,19 @@
   <screenshots>
     <screenshot type="default">
       <caption>Quick tiles, sliders, the calendar and the weather hour by hour, in one popup</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.9.0/data/screenshots/dropdown.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v1.0.0/data/screenshots/dropdown.png</image>
     </screenshot>
     <screenshot>
       <caption>In three columns: the calendar, weather, tasks, clocks, a note and the system load</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.9.0/data/screenshots/columns.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v1.0.0/data/screenshots/columns.png</image>
     </screenshot>
     <screenshot>
       <caption>As separate islands, with medium-contrast tiles</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.9.0/data/screenshots/islands.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v1.0.0/data/screenshots/islands.png</image>
     </screenshot>
     <screenshot>
       <caption>Settings, each with a line on what it does</caption>
-      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v0.9.0/data/screenshots/settings.png</image>
+      <image>https://raw.githubusercontent.com/danielhanzs/cosmic-ext-applet-orbit/v1.0.0/data/screenshots/settings.png</image>
     </screenshot>
   </screenshots>
   <launchable type="desktop-id">io.github.danielhanzs.CosmicExtAppletOrbit.desktop</launchable>
@@ -97,6 +97,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.0" date="2026-11-17">
+      <description>
+        <p>First stable release: SSH quick connect, open ports, virtual machines and the busiest processes join the Docker and services cards.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-11-17">
       <description>
         <p>Docker card (stacks, services, logs, shells, start/stop/restart) and a systemd services card.</p>
