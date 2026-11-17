@@ -9,6 +9,7 @@ mod check;
 mod config;
 mod ddc;
 mod desktop;
+mod dev;
 mod displays;
 mod docker;
 mod host;

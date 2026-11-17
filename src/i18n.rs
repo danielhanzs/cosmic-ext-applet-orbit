@@ -252,6 +252,17 @@ strings!(
     services_hint,
     pin,
     unpin,
+    ssh_hint,
+    section_ports,
+    no_ports,
+    search_ports,
+    end_process,
+    end_confirm,
+    processes,
+    section_vms,
+    no_vms,
+    console,
+    shut_down,
     no_more_events,
 );
 

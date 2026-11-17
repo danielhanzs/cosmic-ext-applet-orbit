@@ -82,13 +82,17 @@ fn parse(text: &str) -> Vec<Stack> {
 
 /// The first published port a browser can use, from "0.0.0.0:8080->80/tcp,
 /// [::]:8080->80/tcp, 0.0.0.0:1433->1433/tcp": databases and queues left out.
+/// Ports of what doesn't speak HTTP: SSH, mail, DNS, databases, queues.
+pub fn not_web(port: u16) -> bool {
+    [22, 25, 53, 1433, 1521, 3306, 5432, 5672, 6379, 9042, 11211, 27017, 9092, 2181].contains(&port)
+}
+
 fn web(ports: &str) -> Option<String> {
-    const NOT_WEB: [u16; 14] = [22, 25, 53, 1433, 1521, 3306, 5432, 5672, 6379, 9042, 11211, 27017, 9092, 2181];
     ports.split(", ").find_map(|mapping| {
         let (host, inside) = mapping.split_once("->")?;
         let (inside, protocol) = inside.split_once('/')?;
         let (host, inside) = (host.rsplit(':').next()?.parse::<u16>().ok()?, inside.parse::<u16>().ok()?);
-        if protocol != "tcp" || NOT_WEB.contains(&inside) {
+        if protocol != "tcp" || not_web(inside) {
             return None;
         }
         let scheme = if matches!(inside, 443 | 8443) { "https" } else { "http" };

@@ -32,6 +32,7 @@
       <li>Displays (on, off, scale, mirror), removable drives, network details with Wi-Fi sharing by QR code, and external monitors' brightness over DDC/CI</li>
       <li>Docker's Compose stacks and services: start, stop, restart, their logs and a shell in them</li>
       <li>systemd services, searched: their state, journal, and starting, stopping, restarting</li>
+      <li>SSH quick connect, open ports and the busiest processes to end, and libvirt virtual machines</li>
       <li>Quick to-dos and events, a note card, seeking in the playing track, keep awake for a while, and Do not disturb while a pomodoro focus runs</li>
       <li>Opens as a dropdown, side panel or fullscreen, in one to three columns; one surface or separate islands, each card shown or hidden and in any order</li>
       <li>In 76 languages, with dates in the region's format</li>

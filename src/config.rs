@@ -118,10 +118,16 @@ pub enum Section {
     Docker,
     /// systemd's services.
     Services,
+    /// SSH hosts to connect to.
+    Ssh,
+    /// The ports something listens on.
+    Ports,
+    /// libvirt's virtual machines.
+    Vms,
 }
 
 impl Section {
-    pub const ALL: [Section; 13] = [
+    pub const ALL: [Section; 16] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -135,6 +141,9 @@ impl Section {
         Section::Notes,
         Section::Docker,
         Section::Services,
+        Section::Ssh,
+        Section::Ports,
+        Section::Vms,
     ];
 }
 
@@ -170,6 +179,8 @@ pub struct Prefs {
     /// Services kept in view on the card: "system:nginx.service",
     /// "user:syncthing.service".
     pub pinned_services: Vec<String>,
+    /// Places connected to with SSH lately, the latest first.
+    pub recent_ssh: Vec<String>,
     /// Do not disturb while a pomodoro focus runs.
     pub focus_dnd: bool,
     /// Shown parts of the popup, in order; the rest are hidden.
@@ -215,10 +226,11 @@ impl Default for Prefs {
             tile_style: TileStyle::High,
             focus_dnd: false,
             pinned_services: Vec::new(),
+            recent_ssh: Vec::new(),
             // The cards added later start off, there to turn on.
             sections: Section::ALL
                 .into_iter()
-                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker | Section::Services))
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker | Section::Services | Section::Ssh | Section::Ports | Section::Vms))
                 .collect(),
             weather_place: None,
             weather_panel: false,
@@ -302,8 +314,8 @@ impl Prefs {
     pub fn column(&self, section: Section) -> usize {
         let own = match section {
             Section::Status | Section::Controls => 0,
-            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes | Section::Services => 1,
-            Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker => 2,
+            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes | Section::Services | Section::Ssh => 1,
+            Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker | Section::Ports | Section::Vms => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
         put.unwrap_or(own).min(self.columns() - 1)

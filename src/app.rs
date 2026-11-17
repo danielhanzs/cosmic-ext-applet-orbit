@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    ddc, displays, docker, keyboard, services, swipe::swipe, system, tasks, workspaces,
+    ddc, dev, displays, docker, keyboard, services, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -242,6 +242,20 @@ pub struct App {
     /// Docker's stacks (None: no Docker to ask), and the ones opened.
     docker: Option<Vec<docker::Stack>>,
     docker_open: Vec<String>,
+    /// SSH: the config's hosts, and a destination being typed.
+    ssh_hosts: Vec<dev::SshHost>,
+    ssh_input: String,
+    /// Listening ports; the busiest processes (by memory, or processor),
+    /// when last read; a process about to be ended, asked first.
+    ports: Vec<dev::Port>,
+    ports_query: String,
+    processes: Vec<dev::Process>,
+    processes_by_memory: bool,
+    processes_at: Option<Instant>,
+    ending: Option<u32>,
+    /// libvirt's machines (None: no libvirt), and those being acted on.
+    vms: Option<Vec<dev::Vm>>,
+    vms_busy: Vec<String>,
     /// systemd's services: the user's (or the system's), searched, being
     /// acted on, and what last went wrong.
     services_user: bool,
@@ -390,6 +404,24 @@ pub enum Message {
     DockerDone(String, Option<Vec<docker::Stack>>),
     /// A terminal in a stack's folder.
     DockerFolder(String),
+    SshHosts(Vec<dev::SshHost>),
+    SshInput(String),
+    /// Connect: to a config host, or a destination typed.
+    Ssh(String),
+    Ports(Vec<dev::Port>),
+    PortsRefresh,
+    PortsQuery(String),
+    Processes(Vec<dev::Process>),
+    ProcessesBy(bool),
+    /// Ask before ending a process (None: not after all), then end it.
+    AskEnd(Option<u32>),
+    End(u32),
+    Vms(Option<Vec<dev::Vm>>),
+    /// "start" or "shutdown", by name.
+    VmAction(&'static str, String),
+    VmDone(String),
+    Ended(Vec<dev::Port>, Vec<dev::Process>),
+    Console(String),
     /// The services of the system (false) or the user.
     Services(bool, Option<Vec<services::Unit>>),
     ServicesScope(bool),
@@ -982,6 +1014,15 @@ impl App {
             self.ddc_read = Some(Instant::now());
             tasks.push(run(async { Message::Monitors(ddc::monitors().await) }));
         }
+        if self.prefs.sections.contains(&Section::Ssh) {
+            tasks.push(run(async { Message::SshHosts(dev::ssh_hosts().await) }));
+        }
+        if self.prefs.sections.contains(&Section::Ports) {
+            tasks.push(run(async { Message::Ports(dev::ports().await) }));
+        }
+        if self.prefs.sections.contains(&Section::Vms) {
+            tasks.push(run(async { Message::Vms(dev::vms().await) }));
+        }
         if self.prefs.sections.contains(&Section::Services) {
             let user = self.services_user;
             tasks.push(run(async move { Message::Services(user, services::list(user).await) }));
@@ -1528,6 +1569,9 @@ impl App {
             Section::Clocks => (self.clocks_view(), Look::Padded),
             Section::Docker => (self.docker_view(), Look::Padded),
             Section::Services => (self.services_view(), Look::Padded),
+            Section::Ssh => (self.ssh_view(), Look::Padded),
+            Section::Ports => (self.ports_view(), Look::Padded),
+            Section::Vms => (self.vms_view(), Look::Padded),
             Section::Notes => (
                 iced::widget::text_editor(&self.note)
                     .placeholder(T.note_placeholder)
@@ -2342,7 +2386,183 @@ impl App {
                     .push(icon::from_name("go-up-symbolic").size(16))
                     .push(text::caption(system::rate(self.load.up))),
             )
+            .push(widget::divider::horizontal::light())
+            .push(
+                widget::Row::new()
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .push(text::heading(T.processes).width(Length::Fill))
+                    .push(choice("CPU", !self.processes_by_memory, Message::ProcessesBy(false)))
+                    .push(choice("RAM", self.processes_by_memory, Message::ProcessesBy(true))),
+            )
+            .push(self.processes.iter().fold(widget::Column::new().spacing(2), |column, p| {
+                let usage = if self.processes_by_memory {
+                    format!("{:.0} MB", p.memory as f64 / 1024.0)
+                } else {
+                    format!("{:.0}%", p.cpu)
+                };
+                column.push(
+                    widget::Row::new()
+                        .spacing(6)
+                        .align_y(Alignment::Center)
+                        .push(text::body(p.name.clone()).wrapping(iced::widget::text::Wrapping::None).width(Length::Fill))
+                        .push(text::caption(usage))
+                        .push(self.end_button(p.own.then_some(p.pid))),
+                )
+            }))
             .into()
+    }
+
+    /// Ending a process: asked first; nothing for one that isn't the user's.
+    fn end_button(&self, pid: Option<u32>) -> Element<'_, Message> {
+        let Some(pid) = pid else {
+            return widget::space().width(Length::Fixed(28.0)).into();
+        };
+        if self.ending == Some(pid) {
+            return widget::Row::new()
+                .spacing(2)
+                .push(button::destructive(T.end_confirm).on_press(Message::End(pid)))
+                .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::AskEnd(None)))
+                .into();
+        }
+        widget::tooltip(
+            button::icon(icon::from_name("process-stop-symbolic")).padding(4).on_press(Message::AskEnd(Some(pid))),
+            text::caption(T.end_process),
+            widget::tooltip::Position::Left,
+        )
+        .into()
+    }
+
+    /// SSH: a destination typed, the ones used lately, the config's hosts.
+    fn ssh_view(&self) -> Element<'_, Message> {
+        let input = self.ssh_input.trim().to_lowercase();
+        let mut column = widget::Column::new()
+            .spacing(4)
+            .push(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("network-server-symbolic").size(18))
+                    .push(text::heading("SSH")),
+            )
+            .push(
+                widget::text_input("user@host", self.ssh_input.as_str())
+                    .on_input(Message::SshInput)
+                    .on_submit(|text| Message::Ssh(text)),
+            );
+        let row = |name: String, target: String| {
+            button::custom(
+                widget::Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("utilities-terminal-symbolic").size(16))
+                    .push(widget::Column::new().push(text::body(name.clone())).push(text::caption(target)).width(Length::Fill)),
+            )
+            .class(style::flat())
+            .padding([4, 8])
+            .width(Length::Fill)
+            .on_press(Message::Ssh(name))
+        };
+        let mut any = false;
+        for recent in self.prefs.recent_ssh.iter().filter(|r| r.to_lowercase().contains(&input)) {
+            let target = self.ssh_hosts.iter().find(|h| h.name == *recent).map_or(String::new(), |h| h.target.clone());
+            column = column.push(row(recent.clone(), target));
+            any = true;
+        }
+        for host in self.ssh_hosts.iter().filter(|h| {
+            !self.prefs.recent_ssh.contains(&h.name) && (h.name.to_lowercase().contains(&input) || h.target.to_lowercase().contains(&input))
+        }) {
+            column = column.push(row(host.name.clone(), host.target.clone()));
+            any = true;
+        }
+        if !any {
+            column = column.push(text::caption(T.ssh_hint));
+        }
+        column.into()
+    }
+
+    /// The ports something listens on: who, to open, to end.
+    fn ports_view(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(4).push(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(icon::from_name("network-transmit-receive-symbolic").size(18))
+                .push(text::heading(T.section_ports).width(Length::Fill))
+                .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(4).on_press(Message::PortsRefresh)),
+        );
+        column = column.push(widget::text_input(T.search_ports, self.ports_query.as_str()).on_input(Message::PortsQuery));
+        let shown = dev::find_ports(&self.ports, &self.ports_query);
+        if shown.is_empty() {
+            column = column.push(text::caption(T.no_ports));
+        }
+        for p in shown {
+            // What a well-known one is for, and who listens where it's the user's.
+            let what = dev::KNOWN.iter().find(|(n, _)| *n == p.port).map_or(String::new(), |(_, w)| format!("{w} · "));
+            let who = p.process.as_ref().map_or(String::new(), |(name, pid)| format!("{name} ({pid}) · "));
+            let who = format!("{what}{who}");
+            column = column.push(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(text::body(p.port.to_string()).font(cosmic::font::bold()).width(Length::Fixed(56.0)))
+                    .push(text::caption(format!("{who}{}", p.address)).wrapping(iced::widget::text::Wrapping::None).width(Length::Fill))
+                    // Where it may be a web server.
+                    .push(if docker::not_web(p.port) {
+                        Element::from(widget::space().width(Length::Fixed(28.0)))
+                    } else {
+                        widget::tooltip(
+                            button::icon(icon::from_name("web-browser-symbolic"))
+                                .padding(4)
+                                .on_press(Message::OpenUrl(format!("http://localhost:{}", p.port))),
+                            text::caption(T.open_port),
+                            widget::tooltip::Position::Left,
+                        )
+                        .into()
+                    })
+                    .push(self.end_button(p.process.as_ref().map(|(_, pid)| *pid))),
+            );
+        }
+        column.into()
+    }
+
+    /// libvirt's machines: their state, started, shut down, their screen.
+    fn vms_view(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(4).push(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(icon::from_name("computer-symbolic").size(18))
+                .push(text::heading(T.section_vms)),
+        );
+        let vms = self.vms.as_deref().unwrap_or_default();
+        if vms.is_empty() {
+            column = column.push(text::caption(T.no_vms));
+        }
+        for vm in vms {
+            let busy = self.vms_busy.contains(&vm.name);
+            let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| {
+                widget::tooltip(
+                    button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
+                    text::caption(tip),
+                    widget::tooltip::Position::Left,
+                )
+            };
+            let running = vm.running();
+            column = column.push(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(widget::Column::new().push(text::body(vm.name.clone())).push(text::caption(vm.state.clone())).width(Length::Fill))
+                    .push_maybe(running.then(|| act("video-display-symbolic", T.console, Some(Message::Console(vm.name.clone())))))
+                    .push(if running {
+                        act("system-shutdown-symbolic", T.shut_down, (!busy).then(|| Message::VmAction("shutdown", vm.name.clone())))
+                    } else {
+                        act("media-playback-start-symbolic", T.start, (!busy).then(|| Message::VmAction("start", vm.name.clone())))
+                    }),
+            );
+        }
+        column.into()
     }
 
     /// The open to-dos, soonest first: ticked off with a click.
@@ -3448,6 +3668,9 @@ fn section_name(section: Section) -> &'static str {
         Section::Notes => T.section_notes,
         Section::Docker => "Docker",
         Section::Services => T.section_services,
+        Section::Ssh => "SSH",
+        Section::Ports => T.section_ports,
+        Section::Vms => T.section_vms,
     }
 }
 
@@ -3541,6 +3764,16 @@ impl cosmic::Application for App {
             docker: None,
             docker_open: Vec::new(),
             docker_busy: Vec::new(),
+            ssh_hosts: Vec::new(),
+            ssh_input: String::new(),
+            ports: Vec::new(),
+            ports_query: String::new(),
+            processes: Vec::new(),
+            processes_by_memory: false,
+            processes_at: None,
+            ending: None,
+            vms: None,
+            vms_busy: Vec::new(),
             services_user: false,
             services: None,
             services_query: String::new(),
@@ -3646,8 +3879,11 @@ impl cosmic::Application for App {
                     _ if option.starts_with("find:") => app.services_query = option["find:".len()..].to_string(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" => {
+                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" | "ssh" | "ports" | "vms" => {
                         let section = match option {
+                            "ssh" => Section::Ssh,
+                            "ports" => Section::Ports,
+                            "vms" => Section::Vms,
                             "docker" => Section::Docker,
                             "services" => Section::Services,
                             "audio" => Section::Audio,
@@ -3823,6 +4059,61 @@ impl cosmic::Application for App {
                 self.docker_busy.retain(|k| *k != key);
                 self.docker = stacks;
             }
+            Message::SshHosts(hosts) => self.ssh_hosts = hosts,
+            Message::SshInput(input) => self.ssh_input = input,
+            Message::Ssh(destination) => {
+                let destination = destination.trim().to_string();
+                if !dev::safe_word(&destination) {
+                    return Task::none();
+                }
+                dev::ssh(&destination);
+                self.ssh_input.clear();
+                self.pref(|p| {
+                    p.recent_ssh.retain(|d| *d != destination);
+                    p.recent_ssh.insert(0, destination);
+                    p.recent_ssh.truncate(6);
+                });
+                return self.close();
+            }
+            Message::Ports(ports) => self.ports = ports,
+            Message::PortsRefresh => return run(async { Message::Ports(dev::ports().await) }),
+            Message::PortsQuery(query) => self.ports_query = query.chars().filter(|c| !c.is_control()).take(32).collect(),
+            Message::Processes(processes) => self.processes = processes,
+            Message::ProcessesBy(memory) => {
+                self.processes_by_memory = memory;
+                return run(async move { Message::Processes(dev::processes(memory).await) });
+            }
+            Message::AskEnd(pid) => self.ending = pid,
+            Message::End(pid) => {
+                self.ending = None;
+                let memory = self.processes_by_memory;
+                return run(async move {
+                    dev::end(pid).await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    let (ports, processes) = tokio::join!(dev::ports(), dev::processes(memory));
+                    Message::Ended(ports, processes)
+                });
+            }
+            Message::Ended(ports, processes) => {
+                self.ports = ports;
+                self.processes = processes;
+            }
+            Message::Vms(vms) => self.vms = vms,
+            Message::VmAction(action, name) => {
+                self.vms_busy.push(name.clone());
+                return run(async move {
+                    dev::vm(action, name.clone()).await;
+                    Message::VmDone(name)
+                });
+            }
+            Message::VmDone(name) => {
+                self.vms_busy.retain(|n| *n != name);
+                return run(async { Message::Vms(dev::vms().await) });
+            }
+            Message::Console(name) => {
+                dev::console(&name);
+                return self.close();
+            }
             Message::Services(user, units) => {
                 if user == self.services_user {
                     self.services = units;
@@ -3983,6 +4274,12 @@ impl cosmic::Application for App {
                 {
                     self.sampling = true;
                     tasks.push(run(async { Message::System(system::sample().await) }));
+                    // The busiest processes, every four seconds.
+                    if self.processes_at.is_none_or(|at| at.elapsed() >= Duration::from_secs(4)) {
+                        self.processes_at = Some(Instant::now());
+                        let memory = self.processes_by_memory;
+                        tasks.push(run(async move { Message::Processes(dev::processes(memory).await) }));
+                    }
                 }
                 tasks.push(self.tick());
                 return Task::batch(tasks);

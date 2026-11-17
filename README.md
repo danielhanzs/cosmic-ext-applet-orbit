@@ -133,8 +133,9 @@ Off until you turn them on:
 - **Sound**: output and microphone levels, each with its device (a click
   lists the others), and every playing app's volume. It takes the volume
   slider over from the tiles.
-- **System**: processor use with its last minute as bars, memory, and the
-  network's speed down and up.
+- **System**: processor use with its last minute as bars, memory, the
+  network's speed down and up, and the five busiest processes by processor
+  or memory, your own ones to end (asked first).
 - **Tasks**: the open to-dos of your synced task lists (Google Tasks,
   Nextcloud…), soonest due first; tick one off, or type a new one.
 - **Note**: a note that stays.
@@ -148,6 +149,15 @@ Off until you turn them on:
 
   Containers outside Compose are listed together. Nothing that removes
   anything (`down`, `prune`) is offered.
+- **SSH**: the hosts of `~/.ssh/config` (and what it includes) and the
+  places you connected to lately, searchable; or type `user@host`. A click
+  opens `ssh` in COSMIC's terminal.
+- **Open ports**: search by port number or program; without a search, the
+  well-known ones that listen (FTP, SSH, HTTP, HTTPS, common development
+  ports), five at most. Each with what it's for and the process where it's
+  yours; open a web one in the browser, or end its process (asked first).
+- **Virtual machines**: libvirt's (`qemu:///system`), with their state;
+  start one, ask it to shut down, or open its screen in `virt-viewer`.
 - **Services**: systemd's services, the system's or yours. Search by name
   or description (installed but unloaded ones too); without a search, the
   ones you pinned and any that failed. Each shows its state, and can be
@@ -223,6 +233,8 @@ speakers are very welcome (see [Translations](#translations)).
     `gamemode`
   - the Docker card: `docker` (Compose v2), usable without `sudo` (the
     `docker` group), and `cosmic-term`
+  - virtual machines: libvirt (`virsh`, the `libvirt` group) and
+    `virt-viewer`
 
 ## Building
 
@@ -357,6 +369,7 @@ cargo test
 | `src/system.rs` | processor, memory and network use |
 | `src/ddc.rs` | external monitors' brightness over DDC/CI |
 | `src/displays.rs` | displays through cosmic-randr |
+| `src/dev.rs` | SSH hosts, listening ports, the busiest processes, libvirt's machines |
 | `src/services.rs` | systemd's services through systemctl, and their journal |
 | `src/docker.rs` | Docker's Compose stacks and containers, their logs and shells |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
@@ -388,7 +401,8 @@ Options:
 - layout: `dropdown`, `side`, `fullscreen`; `islands`, `single`; `1`, `2`,
   `3` (columns); `medium`, `low` (tile styles)
 - cards open or added: `calendar`, `weather`, `audio`, `system`, `tasks`,
-  `clocks`, `notes`, `docker` (its first stack open), `services`;
+  `clocks`, `notes`, `docker` (its first stack open), `services`, `ssh`,
+  `ports`, `vms`;
   `find:<text>` searches the services card for that
 - a page: `displays`, `network`, `keepawake`; the editor on a tab:
   `general`, `tiles`, `cards`
