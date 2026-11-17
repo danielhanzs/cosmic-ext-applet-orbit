@@ -209,3 +209,4 @@ no-vms = ቨርቹዋል ማሽን የለን፡ ወይ libvirt ኣይብጻሕ�
 console = ኮንሶል
 shut-down = ኣጥፍእ
 search-ports = ፖርት ወይ ፕሮግራም ድለ
+sure = ርግጸኛ ዲኻ?

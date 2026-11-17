@@ -209,3 +209,4 @@ no-vms = Inga virtuella maskiner, eller så går libvirt inte att nå
 console = Konsol
 shut-down = Stäng av
 search-ports = Sök efter en port eller ett program
+sure = Säker?

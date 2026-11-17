@@ -209,3 +209,4 @@ no-vms = Virtual mashinalar yoʻq yoki libvirt bilan bogʻlanib boʻlmadi
 console = Konsol
 shut-down = Oʻchirish
 search-ports = Port yoki dasturni qidirish
+sure = Ishonchingiz komilmi?

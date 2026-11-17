@@ -4,7 +4,6 @@
 //! (it needs the i2c devices: the `i2c` group, or ddcutil's udev rule).
 //! Monitors without a backlight COSMIC can set, on a desktop, mostly.
 
-use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Monitor {
@@ -17,9 +16,7 @@ pub struct Monitor {
 
 async fn ddcutil(args: &[&str]) -> Option<String> {
     // Asking a monitor over i2c takes a while; one that hangs, longer.
-    let run = crate::host::command("ddcutil").args(args).kill_on_drop(true).output();
-    let out = tokio::time::timeout(Duration::from_secs(10), run).await.ok()?.ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    crate::host::output("ddcutil", args, 10).await.ok()
 }
 
 /// The monitors that answer, with their brightness; none without ddcutil.

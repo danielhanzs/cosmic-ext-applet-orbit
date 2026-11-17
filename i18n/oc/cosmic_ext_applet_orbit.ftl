@@ -209,3 +209,4 @@ no-vms = Cap de maquina virtuala, o libvirt es pas accessible
 console = Consòla
 shut-down = Atudar
 search-ports = Cercar un pòrt o un programa
+sure = Segur ?

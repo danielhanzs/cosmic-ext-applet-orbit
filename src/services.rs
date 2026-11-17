@@ -32,19 +32,21 @@ impl Unit {
     }
 }
 
-async fn systemctl(user: bool, args: &[&str]) -> Result<String, String> {
-    let mut command = crate::host::command("systemctl");
+/// `systemctl [--user] --no-pager <args>`: the options before the
+/// arguments, which may end with `--` and a unit.
+fn argv<'a>(user: bool, args: &[&'a str]) -> Vec<&'a str> {
+    let mut argv = Vec::with_capacity(args.len() + 2);
     if user {
-        command.arg("--user");
+        argv.push("--user");
     }
-    let out = command.args(args).arg("--no-pager").kill_on_drop(true).output();
+    argv.push("--no-pager");
+    argv.extend_from_slice(args);
+    argv
+}
+
+async fn systemctl(user: bool, args: &[&str]) -> Result<String, String> {
     // Starting one may wait on a password, and on the service.
-    match tokio::time::timeout(std::time::Duration::from_secs(120), out).await {
-        Ok(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
-        Ok(Ok(out)) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
-        Ok(Err(err)) => Err(err.to_string()),
-        Err(_) => Err("no answer".into()),
-    }
+    crate::host::output("systemctl", &argv(user, args), 120).await
 }
 
 /// The services: the ones loaded, with their state, and the installed ones
@@ -130,5 +132,7 @@ mod tests {
         let found: Vec<&str> = search(&units, "SERV").iter().map(|u| u.short()).collect();
         assert_eq!(found, ["backup", "nginx", "redis"]);
         assert_eq!(search(&units, "web").len(), 1);
+        // Nothing after the unit: after `--`, systemctl takes all as units.
+        assert_eq!(argv(true, &["stop", "--", "a.service"]), ["--user", "--no-pager", "stop", "--", "a.service"]);
     }
 }

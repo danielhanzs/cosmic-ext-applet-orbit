@@ -23,12 +23,7 @@ impl Display {
 }
 
 async fn randr(args: &[&str]) -> Option<String> {
-    let out = crate::host::command("cosmic-randr").args(args).kill_on_drop(true).output().await.ok()?;
-    if !out.status.success() {
-        tracing::warn!("cosmic-randr {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    crate::host::output("cosmic-randr", args, 15).await.ok()
 }
 
 pub async fn list() -> Vec<Display> {

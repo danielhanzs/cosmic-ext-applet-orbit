@@ -263,6 +263,7 @@ strings!(
     no_vms,
     console,
     shut_down,
+    sure,
     no_more_events,
 );
 

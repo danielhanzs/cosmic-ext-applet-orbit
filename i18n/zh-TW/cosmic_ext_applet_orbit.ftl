@@ -209,3 +209,4 @@ no-vms = 沒有虛擬機器，或無法連線至 libvirt
 console = 主控台
 shut-down = 關機
 search-ports = 搜尋連接埠或程式
+sure = 確定嗎？

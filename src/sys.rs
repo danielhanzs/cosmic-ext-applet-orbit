@@ -364,17 +364,13 @@ pub async fn start_hotspot(device: OwnedObjectPath, saved: Option<OwnedObjectPat
 /// Twelve letters and digits, from the kernel's random source; none
 /// without one (a guessable password would be worse than no hotspot).
 fn password() -> Option<String> {
-    use std::io::Read;
     const CHARS: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    let mut bytes = [0u8; 12];
-    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).ok()?;
-    Some(bytes.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect())
+    Some(crate::host::random::<12>()?.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect())
 }
 
-/// The hotspot's password, to show for joining it.
 /// A saved Wi-Fi network's password (the hotspot's, or one joined), to
 /// show or share.
-pub async fn hotspot_password(saved: OwnedObjectPath) -> Option<String> {
+pub async fn wifi_password(saved: OwnedObjectPath) -> Option<String> {
     let conn = crate::bus::system().await.ok()?;
     let secrets = proxy::<NmConnectionProxy>(&conn, Some(saved)).await.ok()?.get_secrets("802-11-wireless-security").await.ok()?;
     text(&secrets, "802-11-wireless-security", "psk")
@@ -919,7 +915,8 @@ pub async fn user() -> Option<User> {
     let picture = match get("IconFile").await {
         Some(file) => {
             let script = "test -f \"$1\" && head -c 4000000 \"$1\"";
-            let out = crate::host::command("sh").args(["-c", script, "sh", &file]).output().await.ok();
+            let read = crate::host::command("sh").args(["-c", script, "sh", &file]).kill_on_drop(true).output();
+            let out = tokio::time::timeout(std::time::Duration::from_secs(5), read).await.ok().and_then(Result::ok);
             out.filter(|o| o.status.success() && !o.stdout.is_empty())
                 .map(|o| cosmic::iced::widget::image::Handle::from_bytes(o.stdout))
         }

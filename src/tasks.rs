@@ -67,7 +67,7 @@ pub async fn add(summary: String) -> zbus::Result<()> {
     let now = jiff::Timestamp::now().strftime("%Y%m%dT%H%M%SZ").to_string();
     let ics = format!(
         "BEGIN:VTODO\r\nUID:{}\r\nDTSTAMP:{now}\r\nCREATED:{now}\r\nSUMMARY:{}\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO",
-        crate::calendar::new_uid(),
+        crate::calendar::new_uid()?,
         crate::calendar::escape(summary.trim())
     );
     crate::calendar::add("Task List", "OpenTaskList", ics).await

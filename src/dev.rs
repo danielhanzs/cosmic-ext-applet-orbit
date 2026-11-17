@@ -4,16 +4,9 @@
 //! on, the busiest processes, and libvirt's virtual machines. All through
 //! the host's own tools (ssh, ss, ps, kill, virsh), from a Flatpak too.
 
-use std::time::Duration;
 
 async fn host(program: &str, args: &[&str]) -> Option<String> {
-    let out = crate::host::command(program).args(args).kill_on_drop(true).output();
-    let out = tokio::time::timeout(Duration::from_secs(20), out).await.ok()?.ok()?;
-    if !out.status.success() {
-        tracing::warn!("{program} {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
-        return None;
-    }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    crate::host::output(program, args, 20).await.ok()
 }
 
 /// Something a terminal may be asked to run with: not an option, no spaces.
@@ -37,6 +30,7 @@ pub async fn ssh_hosts() -> Vec<SshHost> {
     let script = r#"cd "$HOME/.ssh" 2>/dev/null || exit 0
 cat config 2>/dev/null
 for pattern in $(sed -n 's/^[[:space:]]*[Ii]nclude[[:space:]]\+//p' config 2>/dev/null); do
+  case $pattern in "~/"*) pattern="$HOME/${pattern#\~/}";; esac
   for file in $pattern; do [ -f "$file" ] && cat "$file"; done
 done"#;
     host("sh", &["-c", script]).await.map(|text| parse_ssh(&text)).unwrap_or_default()
@@ -113,7 +107,7 @@ fn parse_ss(text: &str) -> Vec<Port> {
             Some((name.to_string(), pid))
         });
         // The same port on IPv4 and IPv6 is one.
-        if let Some(seen) = ports.iter_mut().find(|p| p.port == port && (p.process == process || process.is_none())) {
+        if let Some(seen) = ports.iter_mut().find(|p| p.port == port && (p.process.is_none() || process.is_none() || p.process == process)) {
             if seen.process.is_none() {
                 seen.process = process;
             }

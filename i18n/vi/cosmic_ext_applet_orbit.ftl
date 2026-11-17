@@ -209,3 +209,4 @@ no-vms = Không có máy ảo, hoặc không kết nối được libvirt
 console = Console
 shut-down = Tắt máy
 search-ports = Tìm cổng hoặc chương trình
+sure = Chắc chắn?

@@ -101,12 +101,14 @@ pub(crate) async fn open_all(
         }
         match open(conn, &uid, method).await {
             // The user's accounts before the computer's own lists.
-            Ok(source) => opened.push((uid.starts_with("system-"), source)),
+            Ok(source) => opened.push((uid.starts_with("system-"), uid, source)),
             Err(err) => tracing::warn!("{kind} {uid}: {err}"),
         }
     }
-    opened.sort_by_key(|(local, _)| *local);
-    Ok(opened.into_iter().map(|(_, source)| source).collect())
+    // A fixed order (where new events go shouldn't change from run to run):
+    // the user's accounts before the computer's own lists.
+    opened.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    Ok(opened.into_iter().map(|(_, _, source)| source).collect())
 }
 
 /// Adds an iCalendar object to the first shown source of `kind` that takes
@@ -126,18 +128,24 @@ pub(crate) async fn add(kind: &str, method: &str, ics: String) -> zbus::Result<(
     result
 }
 
-/// A new object's id: random, as long as a UUID.
-pub(crate) fn new_uid() -> String {
-    use std::io::Read;
-    let mut bytes = [0u8; 16];
-    _ = std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes));
-    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>() + "@orbit"
+/// A new object's id: random, as long as a UUID; none without a random
+/// source (a fixed one would clash).
+pub(crate) fn new_uid() -> zbus::Result<String> {
+    let bytes = crate::host::random::<16>().ok_or_else(|| zbus::Error::Failure("no random source".into()))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect::<String>() + "@orbit")
 }
 
-/// Text as an iCalendar value: its backslashes, commas, semicolons and
-/// line breaks escaped.
+/// Text as an iCalendar value: line breaks as "\n", other control
+/// characters (which could start lines of their own) left out, and
+/// backslashes, commas and semicolons escaped.
 pub(crate) fn escape(text: &str) -> String {
-    text.replace('\\', "\\\\").replace(';', "\\;").replace(',', "\\,").replace('\n', "\\n")
+    text.chars()
+        .filter(|c| *c == '\n' || !c.is_control())
+        .collect::<String>()
+        .replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
 }
 
 /// A quick event on `day`: "14:30 Dentist" an hour from then, otherwise
@@ -159,7 +167,7 @@ pub async fn add_event(day: civil::Date, input: String) -> zbus::Result<()> {
     };
     let ics = format!(
         "BEGIN:VEVENT\r\nUID:{}\r\nDTSTAMP:{now}\r\n{when}\r\nSUMMARY:{}\r\nEND:VEVENT",
-        new_uid(),
+        new_uid()?,
         escape(title.trim())
     );
     add("Calendar", "OpenCalendar", ics).await
@@ -449,7 +457,8 @@ mod tests {
     #[test]
     fn escapes_text() {
         assert_eq!(escape("a,b;c\\d\ne"), "a\\,b\\;c\\\\d\\ne");
-        assert_eq!(new_uid().len(), 32 + "@orbit".len());
+        assert_eq!(new_uid().unwrap().len(), 32 + "@orbit".len());
+        assert_eq!(escape("a\r\nDTSTART:x"), "a\\nDTSTART:x");
     }
 
     #[test]

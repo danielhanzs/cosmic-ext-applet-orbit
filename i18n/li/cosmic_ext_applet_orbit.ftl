@@ -209,3 +209,4 @@ no-vms = Gein virtuele machines, of libvirt is neet bereikbaar
 console = Console
 shut-down = Oetzètte
 search-ports = Zeuk ’ne poort of programma
+sure = Zeker?

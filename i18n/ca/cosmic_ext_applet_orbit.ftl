@@ -209,3 +209,4 @@ no-vms = No hi ha màquines virtuals o no es pot accedir a libvirt
 console = Consola
 shut-down = Apaga
 search-ports = Cerca un port o un programa
+sure = Segur?

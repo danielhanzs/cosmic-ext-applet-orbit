@@ -209,3 +209,4 @@ no-vms = Nicio mașină virtuală sau libvirt nu este accesibil
 console = Consolă
 shut-down = Închide
 search-ports = Caută un port sau un program
+sure = Sigur?

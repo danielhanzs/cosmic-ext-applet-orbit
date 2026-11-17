@@ -209,3 +209,4 @@ no-vms = Tidak ada mesin virtual, atau libvirt tidak dapat dijangkau
 console = Konsol
 shut-down = Matikan
 search-ports = Cari port atau program
+sure = Yakin?

@@ -209,3 +209,4 @@ no-vms = Nincs virtuális gép, vagy a libvirt nem érhető el
 console = Konzol
 shut-down = Leállítás
 search-ports = Port vagy program keresése
+sure = Biztos?

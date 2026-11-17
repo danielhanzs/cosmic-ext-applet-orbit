@@ -209,3 +209,4 @@ no-vms = Walang virtual machine, o hindi maabot ang libvirt
 console = Console
 shut-down = I-shut down
 search-ports = Maghanap ng port o program
+sure = Sigurado?

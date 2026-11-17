@@ -253,6 +253,8 @@ pub struct App {
     processes_by_memory: bool,
     processes_at: Option<Instant>,
     ending: Option<u32>,
+    /// An action asked about before it happens: "stop:system:x.service"…
+    confirming: Option<String>,
     /// libvirt's machines (None: no libvirt), and those being acted on.
     vms: Option<Vec<dev::Vm>>,
     vms_busy: Vec<String>,
@@ -275,6 +277,8 @@ pub struct App {
     ddc_read: Option<Instant>,
     ddc_writing: Vec<u8>,
     ddc_waiting: Vec<(u8, u16)>,
+    /// Keep awake turned off while being asked for.
+    awake_cancelled: bool,
     /// Keep awake ends then, after the minutes chosen; None: when turned off.
     awake_until: Option<(Zoned, u32)>,
     /// Do not disturb turned on for a pomodoro focus, to turn off after.
@@ -326,6 +330,10 @@ pub struct App {
     /// A to-do, and an event for the picked day, being typed.
     task_input: String,
     event_input: String,
+    /// Why the last to-do, event or eject didn't go through.
+    task_error: Option<String>,
+    event_error: Option<String>,
+    eject_error: Option<String>,
     /// Running timers: when each ends, and how long it was.
     timers: Vec<(Instant, Duration)>,
     /// The editor's clock search, and the time zones it matches.
@@ -378,7 +386,8 @@ pub enum Message {
     Screen(String, Option<(u32, u32)>),
     Tick,
     KeepAwake(Option<u32>),
-    Details(Option<sys::Details>, Option<String>),
+    Details(Option<sys::Details>),
+    WifiPassword(Option<String>),
     Copy(String),
     ShowQr(bool),
     Monitors(Vec<ddc::Monitor>),
@@ -411,7 +420,8 @@ pub enum Message {
     Ports(Vec<dev::Port>),
     PortsRefresh,
     PortsQuery(String),
-    Processes(Vec<dev::Process>),
+    /// Read by memory (or processor).
+    Processes(bool, Vec<dev::Process>),
     ProcessesBy(bool),
     /// Ask before ending a process (None: not after all), then end it.
     AskEnd(Option<u32>),
@@ -419,8 +429,10 @@ pub enum Message {
     Vms(Option<Vec<dev::Vm>>),
     /// "start" or "shutdown", by name.
     VmAction(&'static str, String),
+    /// An action about to happen, asked first (by its key); None: not after all.
+    Confirm(Option<String>),
     VmDone(String),
-    Ended(Vec<dev::Port>, Vec<dev::Process>),
+    Ended(Vec<dev::Port>, bool, Vec<dev::Process>),
     Console(String),
     /// The services of the system (false) or the user.
     Services(bool, Option<Vec<services::Unit>>),
@@ -434,6 +446,7 @@ pub enum Message {
     Note(iced::widget::text_editor::Action),
     Seek,
     Eject(sys::Drive),
+    Ejected(Result<(), String>, Vec<sys::Drive>),
     OpenPath(String),
     /// A monitor's brightness, 0..1.
     MonitorLevel(u8, f32),
@@ -538,7 +551,9 @@ pub enum Message {
     AddTask,
     EventInput(String),
     AddEvent,
-    EventAdded,
+    /// What was typed, and whether it was added.
+    EventAdded(String, Result<(), String>),
+    TaskAdded(String, Result<(), String>, Option<Vec<tasks::Task>>),
     /// A timer of this many minutes.
     StartTimer(u64),
     /// By when it ends: others may have ended meanwhile.
@@ -1423,6 +1438,9 @@ impl App {
                         .on_input(Message::EventInput)
                         .on_submit(|_| Message::AddEvent),
                 );
+                if let Some(err) = &self.event_error {
+                    column = column.push(error_text(err));
+                }
             }
         }
         widget::Column::new()
@@ -1619,7 +1637,9 @@ impl App {
     /// The note kept, if it changed.
     fn save_note(&mut self) {
         if self.note_changed.take().is_some() && preview().is_none() {
-            crate::config::save_note(&self.note.text());
+            // Written and synced to disk: not on the thread that draws.
+            let text = self.note.text();
+            std::thread::spawn(move || crate::config::save_note(&text));
         }
     }
 
@@ -2055,6 +2075,9 @@ impl App {
             }
             Page::Drives => {
                 column = column.push(self.page_header(T.drives, None));
+                if let Some(err) = &self.eject_error {
+                    column = column.push(container(error_text(err)).padding([4, 10]));
+                }
                 for drive in &self.drives {
                     column = column.push(
                         widget::Row::new()
@@ -2413,6 +2436,24 @@ impl App {
             .into()
     }
 
+    /// An action that asks first: its button, then "Sure?" and a way back.
+    fn guarded(&self, key: String, icon_name: &'static str, tip: &'static str, message: Option<Message>) -> Element<'_, Message> {
+        match message {
+            Some(message) if self.confirming.as_deref() == Some(key.as_str()) => widget::Row::new()
+                .spacing(2)
+                .align_y(Alignment::Center)
+                .push(button::destructive(T.sure).on_press(message))
+                .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::Confirm(None)))
+                .into(),
+            message => widget::tooltip(
+                button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message.map(|_| Message::Confirm(Some(key)))),
+                text::caption(tip),
+                widget::tooltip::Position::Left,
+            )
+            .into(),
+        }
+    }
+
     /// Ending a process: asked first; nothing for one that isn't the user's.
     fn end_button(&self, pid: Option<u32>) -> Element<'_, Message> {
         let Some(pid) = pid else {
@@ -2556,9 +2597,14 @@ impl App {
                     .push(widget::Column::new().push(text::body(vm.name.clone())).push(text::caption(vm.state.clone())).width(Length::Fill))
                     .push_maybe(running.then(|| act("video-display-symbolic", T.console, Some(Message::Console(vm.name.clone())))))
                     .push(if running {
-                        act("system-shutdown-symbolic", T.shut_down, (!busy).then(|| Message::VmAction("shutdown", vm.name.clone())))
+                        self.guarded(
+                            format!("shutdown:{}", vm.name),
+                            "system-shutdown-symbolic",
+                            T.shut_down,
+                            (!busy).then(|| Message::VmAction("shutdown", vm.name.clone())),
+                        )
                     } else {
-                        act("media-playback-start-symbolic", T.start, (!busy).then(|| Message::VmAction("start", vm.name.clone())))
+                        act("media-playback-start-symbolic", T.start, (!busy).then(|| Message::VmAction("start", vm.name.clone()))).into()
                     }),
             );
         }
@@ -2585,6 +2631,9 @@ impl App {
                     .on_input(Message::TaskInput)
                     .on_submit(|_| Message::AddTask),
             );
+            if let Some(err) = &self.task_error {
+                column = column.push(error_text(err));
+            }
         }
         let today = self.now.date();
         for task in tasks.iter().take(8) {
@@ -2644,7 +2693,7 @@ impl App {
             })));
         }
         for u in shown {
-            let busy = self.services_busy.contains(&u.name);
+            let busy = self.services_busy.contains(&key(u));
             let pinned = self.prefs.pinned_services.contains(&key(u));
             let (running, failed) = (u.running(), u.failed());
             let dot = container(widget::space())
@@ -2693,9 +2742,20 @@ impl App {
                         Some(Message::PinService(key(u))),
                     ))
                     .push(act("text-x-generic-symbolic", T.logs, Some(Message::ServiceLogs(u.name.clone()))))
-                    .push(act(icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone()))))
+                    // The system's: stopping or restarting one asks first
+                    // (the session may hang on it).
+                    .push(if running && !self.services_user {
+                        self.guarded(format!("stop:{}", key(u)), icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone())))
+                    } else {
+                        act(icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone()))).into()
+                    })
                     .push_maybe(running.then(|| {
-                        act("system-reboot-symbolic", T.restart, (!busy).then(|| Message::ServiceAction("restart", u.name.clone())))
+                        let restart = (!busy).then(|| Message::ServiceAction("restart", u.name.clone()));
+                        if self.services_user {
+                            act("system-reboot-symbolic", T.restart, restart).into()
+                        } else {
+                            self.guarded(format!("restart:{}", key(u)), "system-reboot-symbolic", T.restart, restart)
+                        }
                     })),
             );
         }
@@ -2775,10 +2835,21 @@ impl App {
                 } else {
                     ("media-playback-start-symbolic", T.start, "start")
                 };
-                row = row.push(act(icon_name, tip, (!busy).then(|| Message::DockerStackAction(action, stack.name.clone()))));
+                let message = (!busy).then(|| Message::DockerStackAction(action, stack.name.clone()));
+                // Stopping a whole stack asks first.
+                row = row.push(if action == "stop" {
+                    self.guarded(format!("stop:{key}"), icon_name, tip, message)
+                } else {
+                    act(icon_name, tip, message)
+                });
                 // Restarting is for what runs.
                 if stack.running() > 0 {
-                    row = row.push(act("system-reboot-symbolic", T.restart, (!busy).then(|| Message::DockerStackAction("restart", stack.name.clone()))));
+                    row = row.push(self.guarded(
+                        format!("restart:{key}"),
+                        "system-reboot-symbolic",
+                        T.restart,
+                        (!busy).then(|| Message::DockerStackAction("restart", stack.name.clone())),
+                    ));
                 }
             }
             column = column.push(row);
@@ -3524,6 +3595,16 @@ fn volume_icon(muted: bool, level: f32) -> &'static str {
     }
 }
 
+/// What went wrong, in the theme's warning red.
+fn error_text(err: &str) -> Element<'static, Message> {
+    text::caption(err.lines().next().unwrap_or_default().to_string())
+        .class(theme::Text::Custom(|theme| iced::widget::text::Style {
+            color: Some(theme.cosmic().destructive_color().into()),
+            ..Default::default()
+        }))
+        .into()
+}
+
 /// A QR code to scan, with room around it, as scanners need.
 fn qr_view(qr: icon::Handle) -> Element<'static, Message> {
     container(icon::icon(qr).size(180)).center_x(Length::Fill).padding([8, 0]).into()
@@ -3575,7 +3656,7 @@ impl Suggestion {
         let mut found = Vec::new();
         for s in Self::all() {
             let script = format!("command -v {}", s.command);
-            if crate::host::command("sh").args(["-c", &script]).output().await.is_ok_and(|o| o.status.success()) {
+            if crate::host::output("sh", &["-c", &script], 5).await.is_ok() {
                 found.push(s);
             }
         }
@@ -3754,6 +3835,7 @@ impl cosmic::Application for App {
             inhibit: None,
             inhibiting: false,
             awake_until: None,
+            awake_cancelled: false,
             details: None,
             wifi_password: None,
             show_qr: false,
@@ -3772,6 +3854,7 @@ impl cosmic::Application for App {
             processes_by_memory: false,
             processes_at: None,
             ending: None,
+            confirming: None,
             vms: None,
             vms_busy: Vec::new(),
             services_user: false,
@@ -3817,6 +3900,9 @@ impl cosmic::Application for App {
             completing: Vec::new(),
             task_input: String::new(),
             event_input: String::new(),
+            task_error: None,
+            event_error: None,
+            eject_error: None,
             timers: Vec::new(),
             clock_input: String::new(),
             clock_matches: Vec::new(),
@@ -3977,7 +4063,7 @@ impl cosmic::Application for App {
                 self.drag_over = None;
                 if page == Page::Hotspot {
                     if let Some(path) = self.net.hotspot.as_ref().map(|h| h.path.clone()) {
-                        return run(async move { Message::HotspotPassword(sys::hotspot_password(path).await) });
+                        return run(async move { Message::HotspotPassword(sys::wifi_password(path).await) });
                     }
                 }
                 if page == Page::Wifi {
@@ -3985,18 +4071,21 @@ impl cosmic::Application for App {
                         return fire(async move { _ = sys::scan_wifi(device).await });
                     }
                 }
+                // The password only on the page, and only once asked for.
+                self.wifi_password = None;
                 if page == Page::Network {
-                    let saved = self.net.access_points.iter().find(|ap| ap.active).and_then(|ap| ap.saved.clone());
-                    return run(async move {
-                        let password = match saved {
-                            Some(path) => sys::hotspot_password(path).await,
-                            None => None,
-                        };
-                        Message::Details(sys::details().await, password)
-                    });
+                    self.details = None;
+                    return run(async { Message::Details(sys::details().await) });
                 }
             }
-            Message::ShowQr(on) => self.show_qr = on,
+            Message::ShowQr(on) => {
+                self.show_qr = on;
+                let saved = self.net.access_points.iter().find(|ap| ap.active).and_then(|ap| ap.saved.clone());
+                if let (true, None, Some(path)) = (on, &self.wifi_password, saved) {
+                    return run(async move { Message::WifiPassword(sys::wifi_password(path).await) });
+                }
+            }
+            Message::WifiPassword(password) => self.wifi_password = password,
             Message::Displays(displays) => self.displays = displays,
             Message::DisplayOn(name, on) => {
                 return run(async move {
@@ -4047,7 +4136,9 @@ impl cosmic::Application for App {
                     Message::DockerDone(id, docker::stacks().await)
                 });
             }
+            Message::Confirm(key) => self.confirming = key,
             Message::DockerStackAction(action, name) => {
+                self.confirming = None;
                 let key = format!("stack:{name}");
                 self.docker_busy.push(key.clone());
                 return run(async move {
@@ -4068,20 +4159,25 @@ impl cosmic::Application for App {
                 }
                 dev::ssh(&destination);
                 self.ssh_input.clear();
-                self.pref(|p| {
-                    p.recent_ssh.retain(|d| *d != destination);
-                    p.recent_ssh.insert(0, destination);
-                    p.recent_ssh.truncate(6);
-                });
+                let recent = &mut self.prefs.recent_ssh;
+                recent.retain(|d| *d != destination);
+                recent.insert(0, destination);
+                recent.truncate(6);
+                crate::config::save_recent_ssh(recent);
                 return self.close();
             }
             Message::Ports(ports) => self.ports = ports,
             Message::PortsRefresh => return run(async { Message::Ports(dev::ports().await) }),
             Message::PortsQuery(query) => self.ports_query = query.chars().filter(|c| !c.is_control()).take(32).collect(),
-            Message::Processes(processes) => self.processes = processes,
+            // Only a list read the way it's now asked for.
+            Message::Processes(memory, processes) => {
+                if memory == self.processes_by_memory {
+                    self.processes = processes;
+                }
+            }
             Message::ProcessesBy(memory) => {
                 self.processes_by_memory = memory;
-                return run(async move { Message::Processes(dev::processes(memory).await) });
+                return run(async move { Message::Processes(memory, dev::processes(memory).await) });
             }
             Message::AskEnd(pid) => self.ending = pid,
             Message::End(pid) => {
@@ -4091,15 +4187,16 @@ impl cosmic::Application for App {
                     dev::end(pid).await;
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     let (ports, processes) = tokio::join!(dev::ports(), dev::processes(memory));
-                    Message::Ended(ports, processes)
+                    Message::Ended(ports, memory, processes)
                 });
             }
-            Message::Ended(ports, processes) => {
+            Message::Ended(ports, memory, processes) => {
                 self.ports = ports;
-                self.processes = processes;
+                return self.update(Message::Processes(memory, processes));
             }
             Message::Vms(vms) => self.vms = vms,
             Message::VmAction(action, name) => {
+                self.confirming = None;
                 self.vms_busy.push(name.clone());
                 return run(async move {
                     dev::vm(action, name.clone()).await;
@@ -4128,11 +4225,13 @@ impl cosmic::Application for App {
             Message::ServicesQuery(query) => self.services_query = query,
             Message::ServiceAction(action, unit) => {
                 let user = self.services_user;
-                self.services_busy.push(unit.clone());
+                self.confirming = None;
+                let busy = format!("{}:{unit}", if user { "user" } else { "system" });
+                self.services_busy.push(busy.clone());
                 self.services_error = None;
                 return run(async move {
-                    let result = services::act(user, action, unit.clone()).await;
-                    Message::ServiceDone(unit, result)
+                    let result = services::act(user, action, unit).await;
+                    Message::ServiceDone(busy, result)
                 });
             }
             Message::ServiceDone(unit, result) => {
@@ -4183,10 +4282,16 @@ impl cosmic::Application for App {
                 }
             }
             Message::Eject(drive) => {
+                self.eject_error = None;
                 return run(async move {
-                    log("eject", sys::eject(drive).await);
-                    Message::Drives(sys::drives().await.unwrap_or_default())
+                    let ejected = sys::eject(drive).await.map_err(|e| e.to_string());
+                    Message::Ejected(ejected, sys::drives().await.unwrap_or_default())
                 });
+            }
+            Message::Ejected(ejected, drives) => {
+                // "Target is busy": something still has a file open on it.
+                self.eject_error = ejected.err();
+                self.drives = drives;
             }
             Message::OpenPath(path) => {
                 crate::host::spawn("xdg-open", &[path.as_str()]);
@@ -4209,10 +4314,7 @@ impl cosmic::Application for App {
                 self.ddc_writing.retain(|d| *d != display);
                 return self.ddc_write(display);
             }
-            Message::Details(details, password) => {
-                self.details = details;
-                self.wifi_password = password;
-            }
+            Message::Details(details) => self.details = details,
             Message::Copy(text) => return cosmic::iced::clipboard::write(text),
             Message::Screen(name, size) => {
                 if let Some(size) = size {
@@ -4278,7 +4380,7 @@ impl cosmic::Application for App {
                     if self.processes_at.is_none_or(|at| at.elapsed() >= Duration::from_secs(4)) {
                         self.processes_at = Some(Instant::now());
                         let memory = self.processes_by_memory;
-                        tasks.push(run(async move { Message::Processes(dev::processes(memory).await) }));
+                        tasks.push(run(async move { Message::Processes(memory, dev::processes(memory).await) }));
                     }
                 }
                 tasks.push(self.tick());
@@ -4322,7 +4424,7 @@ impl cosmic::Application for App {
                     if let Some(path) = self.net.hotspot.as_ref().map(|h| h.path.clone()) {
                         return Task::batch([
                             self.settled(Source::Network),
-                            run(async move { Message::HotspotPassword(sys::hotspot_password(path).await) }),
+                            run(async move { Message::HotspotPassword(sys::wifi_password(path).await) }),
                         ]);
                     }
                 }
@@ -4586,10 +4688,11 @@ impl cosmic::Application for App {
             Message::TaskInput(input) => self.task_input = input,
             Message::AddTask => {
                 let summary = std::mem::take(&mut self.task_input);
+                self.task_error = None;
                 if !summary.trim().is_empty() {
                     return run(async move {
-                        log("new to-do", tasks::add(summary).await);
-                        Message::Tasks(tasks::open().await)
+                        let added = tasks::add(summary.clone()).await.map_err(|e| e.to_string());
+                        Message::TaskAdded(summary, added, tasks::open().await)
                     });
                 }
             }
@@ -4597,17 +4700,35 @@ impl cosmic::Application for App {
             Message::AddEvent => {
                 let input = std::mem::take(&mut self.event_input);
                 let day = self.selected;
+                self.event_error = None;
                 if !input.trim().is_empty() {
                     return run(async move {
-                        log("new event", calendar::add_event(day, input).await);
-                        Message::EventAdded
+                        let added = calendar::add_event(day, input.clone()).await.map_err(|e| e.to_string());
+                        Message::EventAdded(input, added)
                     });
                 }
             }
-            Message::EventAdded => {
+            Message::EventAdded(input, added) => {
+                if let Err(err) = added {
+                    // What was typed comes back, to try again.
+                    if self.event_input.is_empty() {
+                        self.event_input = input;
+                    }
+                    self.event_error = Some(err);
+                    return Task::none();
+                }
                 // Read the month again now, not when it's due.
                 self.events_read = None;
                 return self.load_events();
+            }
+            Message::TaskAdded(summary, added, tasks) => {
+                if let Err(err) = added {
+                    if self.task_input.is_empty() {
+                        self.task_input = summary;
+                    }
+                    self.task_error = Some(err);
+                }
+                return self.update(Message::Tasks(tasks));
             }
             Message::TaskDone(uid, tasks) => {
                 self.completing.retain(|u| *u != uid);
@@ -4944,14 +5065,25 @@ impl cosmic::Application for App {
             }
             Message::Inhibited(cookie) => {
                 self.inhibiting = false;
+                // Turned off while it was being asked for: let go at once.
+                if std::mem::take(&mut self.awake_cancelled) {
+                    if let Some(cookie) = cookie {
+                        return fire(desktop::allow_idle(cookie));
+                    }
+                    return Task::none();
+                }
                 self.inhibit = cookie;
             }
             // Some(minutes, 0: until turned off); None: off.
             Message::KeepAwake(minutes) => {
                 self.awake_until =
                     minutes.filter(|m| *m > 0).map(|m| (self.now.saturating_add(jiff::Span::new().minutes(m as i64)), m));
+                self.awake_cancelled = minutes.is_none() && self.inhibiting;
                 return match (minutes, self.inhibit) {
-                    (None, Some(_)) => fire(desktop::allow_idle(self.inhibit.take().expect("on"))),
+                    (None, Some(cookie)) => {
+                        self.inhibit = None;
+                        fire(desktop::allow_idle(cookie))
+                    }
                     (Some(_), None) if !self.inhibiting => {
                         self.inhibiting = true;
                         run(async { Message::Inhibited(desktop::inhibit_idle(T.keep_awake).await) })

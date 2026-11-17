@@ -209,3 +209,4 @@ no-vms = Gan meaisíní fíorúla, nó níl libvirt inrochtana
 console = Consól
 shut-down = Múch
 search-ports = Cuardaigh port nó ríomhchlár
+sure = Cinnte?

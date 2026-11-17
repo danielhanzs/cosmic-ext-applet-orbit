@@ -209,3 +209,4 @@ no-vms = कोई वर्चुअल मशीन नहीं, या libvi
 console = कंसोल
 shut-down = शट डाउन करें
 search-ports = पोर्ट या प्रोग्राम खोजें
+sure = पक्का?

@@ -209,3 +209,4 @@ no-vms = Ulac timacinin tuhlisin, neɣ libvirt ur yettwaweḍ ara
 console = Akunsul
 shut-down = Sexsi
 search-ports = Nadi tawwurt neɣ ahil
+sure = Tetḥeqqeḍ?

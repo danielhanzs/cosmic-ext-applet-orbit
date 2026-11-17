@@ -209,3 +209,4 @@ no-vms = Нема виртуелних машина или libvirt није до
 console = Конзола
 shut-down = Угаси
 search-ports = Тражи порт или програм
+sure = Сигурно?

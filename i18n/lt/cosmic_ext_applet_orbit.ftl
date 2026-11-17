@@ -209,3 +209,4 @@ no-vms = Nėra virtualiųjų mašinų arba libvirt nepasiekiama
 console = Konsolė
 shut-down = Išjungti
 search-ports = Ieškoti prievado ar programos
+sure = Tikrai?

@@ -209,3 +209,4 @@ no-vms = Gjin firtuele masines, of libvirt is net berikber
 console = Konsole
 shut-down = Útsette
 search-ports = Siik in poarte of programma
+sure = Wis?

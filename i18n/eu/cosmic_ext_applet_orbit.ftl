@@ -209,3 +209,4 @@ no-vms = Ez dago makina birtualik, edo libvirt ez dago eskuragarri
 console = Kontsola
 shut-down = Itzali
 search-ports = Bilatu ataka edo programa
+sure = Ziur?

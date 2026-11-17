@@ -209,3 +209,4 @@ no-vms = 仮想マシンがないか、libvirt に接続できません
 console = コンソール
 shut-down = シャットダウン
 search-ports = ポートまたはプログラムを検索
+sure = よろしいですか？

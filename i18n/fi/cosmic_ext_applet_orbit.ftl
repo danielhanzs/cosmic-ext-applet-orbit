@@ -209,3 +209,4 @@ no-vms = Ei virtuaalikoneita, tai libvirtiin ei saada yhteyttä
 console = Konsoli
 shut-down = Sammuta
 search-ports = Hae porttia tai ohjelmaa
+sure = Varmasti?

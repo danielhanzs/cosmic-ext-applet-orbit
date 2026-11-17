@@ -209,3 +209,4 @@ no-vms = ਕੋਈ ਵਰਚੁਅਲ ਮਸ਼ੀਨ ਨਹੀਂ, ਜਾਂ li
 console = ਕੰਸੋਲ
 shut-down = ਬੰਦ ਕਰੋ
 search-ports = ਪੋਰਟ ਜਾਂ ਪ੍ਰੋਗਰਾਮ ਖੋਜੋ
+sure = ਪੱਕਾ?

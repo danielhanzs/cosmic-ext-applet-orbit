@@ -209,3 +209,4 @@ no-vms = Sanal makine yok veya libvirt erişilebilir değil
 console = Konsol
 shut-down = Kapat
 search-ports = Bağlantı noktası veya program ara
+sure = Emin misiniz?

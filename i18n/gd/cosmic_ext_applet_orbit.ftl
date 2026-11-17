@@ -209,3 +209,4 @@ no-vms = Chan eil inneal biortail ann no cha ghabh libvirt ruigsinn
 console = Consoil
 shut-down = Dùin sìos
 search-ports = Lorg port no prògram
+sure = A bheil thu cinnteach?

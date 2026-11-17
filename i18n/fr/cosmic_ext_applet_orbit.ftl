@@ -209,3 +209,4 @@ no-vms = Aucune machine virtuelle, ou libvirt est injoignable
 console = Console
 shut-down = Éteindre
 search-ports = Rechercher un port ou un programme
+sure = Sûr ?

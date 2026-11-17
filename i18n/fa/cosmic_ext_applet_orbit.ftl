@@ -209,3 +209,4 @@ no-vms = ماشین مجازی‌ای نیست، یا libvirt در دسترس ن
 console = کنسول
 shut-down = خاموش کردن
 search-ports = جستجوی درگاه یا برنامه
+sure = مطمئنید؟

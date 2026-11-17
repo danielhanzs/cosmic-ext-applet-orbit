@@ -209,3 +209,4 @@ no-vms = Engar sýndarvélar, eða ekki næst í libvirt
 console = Skjár
 shut-down = Slökkva
 search-ports = Leita að gátt eða forriti
+sure = Viss?

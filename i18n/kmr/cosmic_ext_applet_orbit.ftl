@@ -209,3 +209,4 @@ no-vms = Makîneyên virtual tune, an jî libvirt nayê gihîştin
 console = Konsol
 shut-down = Vemrîne
 search-ports = Li portek an bernameyek bigere
+sure = Bawer î?

@@ -209,3 +209,4 @@ no-vms = אין מכונות וירטואליות, או ש־libvirt אינו ז�
 console = קונסולה
 shut-down = כיבוי
 search-ports = חיפוש פורט או תוכנה
+sure = בטוח?

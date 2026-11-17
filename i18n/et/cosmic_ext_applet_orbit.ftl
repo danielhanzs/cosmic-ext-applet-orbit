@@ -209,3 +209,4 @@ no-vms = Virtuaalmasinaid pole või libvirt pole kättesaadav
 console = Konsool
 shut-down = Lülita välja
 search-ports = Otsi porti või programmi
+sure = Kindel?

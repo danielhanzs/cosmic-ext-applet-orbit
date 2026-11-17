@@ -209,3 +209,4 @@ no-vms = Žiadne virtuálne stroje alebo libvirt nie je dostupný
 console = Konzola
 shut-down = Vypnúť
 search-ports = Hľadať port alebo program
+sure = Naozaj?

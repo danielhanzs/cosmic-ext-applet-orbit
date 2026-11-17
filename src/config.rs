@@ -179,7 +179,9 @@ pub struct Prefs {
     /// Services kept in view on the card: "system:nginx.service",
     /// "user:syncthing.service".
     pub pinned_services: Vec<String>,
-    /// Places connected to with SSH lately, the latest first.
+    /// Places connected to with SSH lately, the latest first. Kept apart
+    /// (see `custom`): COSMIC's config folder is shared with other Flatpaks.
+    #[serde(skip)]
     pub recent_ssh: Vec<String>,
     /// Do not disturb while a pomodoro focus runs.
     pub focus_dnd: bool,
@@ -254,6 +256,10 @@ impl Prefs {
     pub fn load() -> Self {
         let mut prefs = Self::load_shared();
         prefs.custom = load_custom();
+        prefs.recent_ssh = private("recent-ssh.json")
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
         prefs
     }
 
@@ -348,6 +354,18 @@ fn private(name: &str) -> Option<std::path::PathBuf> {
 }
 
 /// The note card's text, kept privately.
+/// The SSH places used lately, saved privately.
+pub fn save_recent_ssh(recent: &[String]) {
+    if std::env::var_os("ORBIT_PREVIEW").is_some() {
+        return;
+    }
+    if let Some(path) = private("recent-ssh.json") {
+        if let Err(err) = write_private(&path, &serde_json::to_vec(recent).unwrap_or_default()) {
+            tracing::warn!("cannot save the SSH places: {err}");
+        }
+    }
+}
+
 pub fn load_note() -> String {
     private("note.txt").and_then(|path| std::fs::read_to_string(path).ok()).unwrap_or_default()
 }

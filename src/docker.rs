@@ -57,7 +57,8 @@ fn parse(text: &str) -> Vec<Stack> {
         };
         let project = label("com.docker.compose.project");
         let service = Some(label("com.docker.compose.service")).filter(|s| !s.is_empty()).unwrap_or_else(|| field("Names"));
-        let folder = Some(label("com.docker.compose.project.working_dir")).filter(|f| !f.is_empty());
+        // An image may set this label too: only a full path is taken.
+        let folder = Some(label("com.docker.compose.project.working_dir")).filter(|f| f.starts_with('/'));
         let entry = stacks.entry(project).or_default();
         entry.0 = entry.0.take().or(folder);
         entry.1.push(Container {
@@ -80,13 +81,13 @@ fn parse(text: &str) -> Vec<Stack> {
     stacks
 }
 
-/// The first published port a browser can use, from "0.0.0.0:8080->80/tcp,
-/// [::]:8080->80/tcp, 0.0.0.0:1433->1433/tcp": databases and queues left out.
 /// Ports of what doesn't speak HTTP: SSH, mail, DNS, databases, queues.
 pub fn not_web(port: u16) -> bool {
     [22, 25, 53, 1433, 1521, 3306, 5432, 5672, 6379, 9042, 11211, 27017, 9092, 2181].contains(&port)
 }
 
+/// The first published port a browser can use, from "0.0.0.0:8080->80/tcp,
+/// [::]:8080->80/tcp, 0.0.0.0:1433->1433/tcp": databases and queues left out.
 fn web(ports: &str) -> Option<String> {
     ports.split(", ").find_map(|mapping| {
         let (host, inside) = mapping.split_once("->")?;
@@ -112,12 +113,8 @@ pub async fn stack(action: &'static str, name: String) {
 }
 
 async fn run(args: &[&str]) {
-    let out = crate::host::command("docker").args(args).kill_on_drop(true).output();
-    match tokio::time::timeout(std::time::Duration::from_secs(120), out).await {
-        Ok(Ok(out)) if out.status.success() => {}
-        Ok(Ok(out)) => tracing::warn!("docker {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()),
-        _ => tracing::warn!("docker {}: no answer", args.join(" ")),
-    }
+    // Stopping a stack waits on its containers' own grace periods.
+    _ = crate::host::output("docker", args, 120).await;
 }
 
 /// A terminal in the stack's folder, for what the card doesn't do.
