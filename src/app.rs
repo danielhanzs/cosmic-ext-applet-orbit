@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    ddc, displays, docker, keyboard, swipe::swipe, system, tasks, workspaces,
+    ddc, displays, docker, keyboard, services, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -242,6 +242,13 @@ pub struct App {
     /// Docker's stacks (None: no Docker to ask), and the ones opened.
     docker: Option<Vec<docker::Stack>>,
     docker_open: Vec<String>,
+    /// systemd's services: the user's (or the system's), searched, being
+    /// acted on, and what last went wrong.
+    services_user: bool,
+    services: Option<Vec<services::Unit>>,
+    services_query: String,
+    services_busy: Vec<String>,
+    services_error: Option<String>,
     /// Containers (by id) and stacks ("stack:name") a command runs for.
     docker_busy: Vec<String>,
     /// The track's position being dragged to, in seconds.
@@ -383,6 +390,15 @@ pub enum Message {
     DockerDone(String, Option<Vec<docker::Stack>>),
     /// A terminal in a stack's folder.
     DockerFolder(String),
+    /// The services of the system (false) or the user.
+    Services(bool, Option<Vec<services::Unit>>),
+    ServicesScope(bool),
+    ServicesQuery(String),
+    /// "start", "stop" or "restart", by the unit's name.
+    ServiceAction(&'static str, String),
+    ServiceDone(String, Result<(), String>),
+    ServiceLogs(String),
+    PinService(String),
     Note(iced::widget::text_editor::Action),
     Seek,
     Eject(sys::Drive),
@@ -966,6 +982,10 @@ impl App {
             self.ddc_read = Some(Instant::now());
             tasks.push(run(async { Message::Monitors(ddc::monitors().await) }));
         }
+        if self.prefs.sections.contains(&Section::Services) {
+            let user = self.services_user;
+            tasks.push(run(async move { Message::Services(user, services::list(user).await) }));
+        }
         if self.prefs.sections.contains(&Section::Docker) {
             tasks.push(run(async { Message::Docker(docker::stacks().await) }));
         }
@@ -1507,6 +1527,7 @@ impl App {
             Section::Tasks => (self.tasks_view(), Look::Padded),
             Section::Clocks => (self.clocks_view(), Look::Padded),
             Section::Docker => (self.docker_view(), Look::Padded),
+            Section::Services => (self.services_view(), Look::Padded),
             Section::Notes => (
                 iced::widget::text_editor(&self.note)
                     .placeholder(T.note_placeholder)
@@ -2361,6 +2382,101 @@ impl App {
                         move |_| Message::CompleteTask(uid.clone())
                     }))
                     .push(label.width(Length::Fill)),
+            );
+        }
+        column.into()
+    }
+
+    /// systemd's services: searched, or the pinned and failed ones; each
+    /// with its state, its journal, and starting, stopping, restarting.
+    fn services_view(&self) -> Element<'_, Message> {
+        let scope = if self.services_user { "user" } else { "system" };
+        let mut column = widget::Column::new()
+            .spacing(6)
+            .push(
+                widget::Row::new()
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .push(icon::from_name("system-run-symbolic").size(18))
+                    .push(container(text::heading(T.section_services)).padding([0, 4]).width(Length::Fill))
+                    .push(choice(T.section_system, !self.services_user, Message::ServicesScope(false)))
+                    .push(choice(T.user, self.services_user, Message::ServicesScope(true)))
+                    .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(4).on_press(Message::ServicesScope(self.services_user))),
+            )
+            .push(widget::text_input(T.search_services, self.services_query.as_str()).on_input(Message::ServicesQuery));
+        let Some(units) = &self.services else {
+            return column.into();
+        };
+        let key = |u: &services::Unit| format!("{scope}:{}", u.name);
+        let shown: Vec<&services::Unit> = if self.services_query.trim().is_empty() {
+            // Pinned ones, and any that failed.
+            units.iter().filter(|u| u.failed() || self.prefs.pinned_services.contains(&key(u))).collect()
+        } else {
+            services::search(units, &self.services_query).into_iter().take(15).collect()
+        };
+        if shown.is_empty() && self.services_query.trim().is_empty() {
+            column = column.push(text::caption(T.services_hint));
+        }
+        if let Some(err) = &self.services_error {
+            column = column.push(text::caption(err.clone()).class(theme::Text::Custom(|theme| iced::widget::text::Style {
+                color: Some(theme.cosmic().destructive_color().into()),
+                ..Default::default()
+            })));
+        }
+        for u in shown {
+            let busy = self.services_busy.contains(&u.name);
+            let pinned = self.prefs.pinned_services.contains(&key(u));
+            let (running, failed) = (u.running(), u.failed());
+            let dot = container(widget::space())
+                .width(Length::Fixed(8.0))
+                .height(Length::Fixed(8.0))
+                .class(theme::Container::custom(move |theme| {
+                    let cosmic = theme.cosmic();
+                    let color: Color = if failed {
+                        cosmic.destructive_color().into()
+                    } else if running {
+                        cosmic.success_color().into()
+                    } else {
+                        Color::from(cosmic.button.on).scale_alpha(0.3)
+                    };
+                    container::Style {
+                        background: Some(color.into()),
+                        border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                        ..Default::default()
+                    }
+                }));
+            let about = if u.description.is_empty() { u.sub.clone() } else { format!("{} · {}", u.sub, u.description) };
+            let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| {
+                widget::tooltip(
+                    button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
+                    text::caption(tip),
+                    widget::tooltip::Position::Left,
+                )
+            };
+            let (icon_name, tip, action) =
+                if running { ("media-playback-stop-symbolic", T.stop, "stop") } else { ("media-playback-start-symbolic", T.start, "start") };
+            column = column.push(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(dot)
+                    .push(
+                        widget::Column::new()
+                            .push(text::body(u.short().to_string()).wrapping(iced::widget::text::Wrapping::None))
+                            .push(text::caption(about).wrapping(iced::widget::text::Wrapping::None))
+                            .width(Length::Fill)
+                            .clip(true),
+                    )
+                    .push(act(
+                        if pinned { "starred-symbolic" } else { "non-starred-symbolic" },
+                        if pinned { T.unpin } else { T.pin },
+                        Some(Message::PinService(key(u))),
+                    ))
+                    .push(act("text-x-generic-symbolic", T.logs, Some(Message::ServiceLogs(u.name.clone()))))
+                    .push(act(icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone()))))
+                    .push_maybe(running.then(|| {
+                        act("system-reboot-symbolic", T.restart, (!busy).then(|| Message::ServiceAction("restart", u.name.clone())))
+                    })),
             );
         }
         column.into()
@@ -3331,6 +3447,7 @@ fn section_name(section: Section) -> &'static str {
         Section::Clocks => T.section_clocks,
         Section::Notes => T.section_notes,
         Section::Docker => "Docker",
+        Section::Services => T.section_services,
     }
 }
 
@@ -3424,6 +3541,11 @@ impl cosmic::Application for App {
             docker: None,
             docker_open: Vec::new(),
             docker_busy: Vec::new(),
+            services_user: false,
+            services: None,
+            services_query: String::new(),
+            services_busy: Vec::new(),
+            services_error: None,
             note: iced::widget::text_editor::Content::with_text(&crate::config::load_note()),
             note_changed: None,
             drives: Vec::new(),
@@ -3520,11 +3642,14 @@ impl cosmic::Application for App {
                     "islands" => app.prefs.islands = true,
                     "single" => app.prefs.islands = false,
                     "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
+                    // "find:docker": the services card searched for that.
+                    _ if option.starts_with("find:") => app.services_query = option["find:".len()..].to_string(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" => {
+                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" => {
                         let section = match option {
                             "docker" => Section::Docker,
+                            "services" => Section::Services,
                             "audio" => Section::Audio,
                             "system" => Section::System,
                             "tasks" => Section::Tasks,
@@ -3697,6 +3822,51 @@ impl cosmic::Application for App {
             Message::DockerDone(key, stacks) => {
                 self.docker_busy.retain(|k| *k != key);
                 self.docker = stacks;
+            }
+            Message::Services(user, units) => {
+                if user == self.services_user {
+                    self.services = units;
+                }
+            }
+            Message::ServicesScope(user) => {
+                self.services_user = user;
+                self.services = None;
+                self.services_error = None;
+                return run(async move { Message::Services(user, services::list(user).await) });
+            }
+            Message::ServicesQuery(query) => self.services_query = query,
+            Message::ServiceAction(action, unit) => {
+                let user = self.services_user;
+                self.services_busy.push(unit.clone());
+                self.services_error = None;
+                return run(async move {
+                    let result = services::act(user, action, unit.clone()).await;
+                    Message::ServiceDone(unit, result)
+                });
+            }
+            Message::ServiceDone(unit, result) => {
+                self.services_busy.retain(|u| *u != unit);
+                if let Err(err) = result {
+                    // A password asked for and not given is the user's choice, not news.
+                    if !err.contains("Interactive authentication required") && !err.contains("dismissed") {
+                        self.services_error = Some(err.lines().next().unwrap_or_default().to_string());
+                    }
+                }
+                let user = self.services_user;
+                return run(async move { Message::Services(user, services::list(user).await) });
+            }
+            Message::ServiceLogs(unit) => {
+                services::logs(self.services_user, &unit);
+                return self.close();
+            }
+            Message::PinService(key) => {
+                self.pref(|p| {
+                    if p.pinned_services.contains(&key) {
+                        p.pinned_services.retain(|k| *k != key);
+                    } else {
+                        p.pinned_services.push(key);
+                    }
+                });
             }
             Message::DockerFolder(folder) => {
                 docker::terminal_in(&folder);

@@ -18,6 +18,7 @@ mod keyboard;
 mod media;
 mod notifications;
 mod pomodoro;
+mod services;
 mod style;
 mod swipe;
 mod sys;

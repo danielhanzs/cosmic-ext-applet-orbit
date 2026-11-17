@@ -148,6 +148,12 @@ Off until you turn them on:
 
   Containers outside Compose are listed together. Nothing that removes
   anything (`down`, `prune`) is offered.
+- **Services**: systemd's services, the system's or yours. Search by name
+  or description (installed but unloaded ones too); without a search, the
+  ones you pinned and any that failed. Each shows its state, and can be
+  **started, stopped or restarted** (the system's ask for your password,
+  through COSMIC's own dialog) or open its **journal**, followed, in COSMIC's
+  terminal.
 - **Clocks**: other cities' time, and timers of 5, 10, 15 or 30 minutes or
   any length, which notify when they end.
 
@@ -351,6 +357,7 @@ cargo test
 | `src/system.rs` | processor, memory and network use |
 | `src/ddc.rs` | external monitors' brightness over DDC/CI |
 | `src/displays.rs` | displays through cosmic-randr |
+| `src/services.rs` | systemd's services through systemctl, and their journal |
 | `src/docker.rs` | Docker's Compose stacks and containers, their logs and shells |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
 | `src/workspaces.rs` | tiling and the keyboard layout in use, from the compositor |
@@ -381,7 +388,8 @@ Options:
 - layout: `dropdown`, `side`, `fullscreen`; `islands`, `single`; `1`, `2`,
   `3` (columns); `medium`, `low` (tile styles)
 - cards open or added: `calendar`, `weather`, `audio`, `system`, `tasks`,
-  `clocks`, `notes`, `docker` (its first stack open)
+  `clocks`, `notes`, `docker` (its first stack open), `services`;
+  `find:<text>` searches the services card for that
 - a page: `displays`, `network`, `keepawake`; the editor on a tab:
   `general`, `tiles`, `cards`
 - `user`: your name and picture in the header

@@ -116,10 +116,12 @@ pub enum Section {
     Notes,
     /// Docker's Compose stacks and containers.
     Docker,
+    /// systemd's services.
+    Services,
 }
 
 impl Section {
-    pub const ALL: [Section; 12] = [
+    pub const ALL: [Section; 13] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -132,6 +134,7 @@ impl Section {
         Section::Clocks,
         Section::Notes,
         Section::Docker,
+        Section::Services,
     ];
 }
 
@@ -164,6 +167,9 @@ pub struct Prefs {
     #[serde(skip)]
     pub custom: Vec<Custom>,
     pub tile_style: TileStyle,
+    /// Services kept in view on the card: "system:nginx.service",
+    /// "user:syncthing.service".
+    pub pinned_services: Vec<String>,
     /// Do not disturb while a pomodoro focus runs.
     pub focus_dnd: bool,
     /// Shown parts of the popup, in order; the rest are hidden.
@@ -208,10 +214,11 @@ impl Default for Prefs {
             custom: Vec::new(),
             tile_style: TileStyle::High,
             focus_dnd: false,
+            pinned_services: Vec::new(),
             // The cards added later start off, there to turn on.
             sections: Section::ALL
                 .into_iter()
-                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker))
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker | Section::Services))
                 .collect(),
             weather_place: None,
             weather_panel: false,
@@ -295,7 +302,7 @@ impl Prefs {
     pub fn column(&self, section: Section) -> usize {
         let own = match section {
             Section::Status | Section::Controls => 0,
-            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes => 1,
+            Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes | Section::Services => 1,
             Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);

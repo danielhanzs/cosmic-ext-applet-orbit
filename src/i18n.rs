@@ -246,6 +246,12 @@ strings!(
     restart,
     open_port,
     project_terminal,
+    section_services,
+    user,
+    search_services,
+    services_hint,
+    pin,
+    unpin,
     no_more_events,
 );
 
