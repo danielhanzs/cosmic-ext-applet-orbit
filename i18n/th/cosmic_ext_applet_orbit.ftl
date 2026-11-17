@@ -183,3 +183,7 @@ eject = นำออก
 section-notes = โน้ต
 note-placeholder = เขียนอะไรสักอย่าง…
 today = วันนี้
+docker-unavailable = Docker ไม่ได้ทำงาน หรือคุณไม่มีสิทธิ์ใช้งาน
+no-containers = ไม่มีคอนเทนเนอร์
+other-containers = คอนเทนเนอร์อื่น
+logs = บันทึก

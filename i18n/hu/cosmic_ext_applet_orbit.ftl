@@ -183,3 +183,7 @@ eject = Kiadás
 section-notes = Jegyzet
 note-placeholder = Írj valamit…
 today = Ma
+docker-unavailable = A Docker nem fut, vagy nincs jogod használni
+no-containers = Nincsenek konténerek
+other-containers = Egyéb konténerek
+logs = Naplók

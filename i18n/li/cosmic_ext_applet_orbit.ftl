@@ -183,3 +183,7 @@ eject = Oetwerpe
 section-notes = Notitie
 note-placeholder = Sjrief get…
 today = Vandaag
+docker-unavailable = Docker drejt neet, of geer maogt 't neet gebroeke
+no-containers = Gein containers
+other-containers = Anger containers
+logs = Logbeuk

@@ -183,3 +183,7 @@ eject = Poista asemasta
 section-notes = Muistiinpano
 note-placeholder = Kirjoita jotain…
 today = Tänään
+docker-unavailable = Docker ei ole käynnissä tai et saa käyttää sitä
+no-containers = Ei kontteja
+other-containers = Muut kontit
+logs = Lokit

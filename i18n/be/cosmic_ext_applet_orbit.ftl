@@ -183,3 +183,7 @@ eject = Выняць
 section-notes = Нататка
 note-placeholder = Напішыце што-небудзь…
 today = Сёння
+docker-unavailable = Docker не працуе або вам нельга ім карыстацца
+no-containers = Няма кантэйнераў
+other-containers = Іншыя кантэйнеры
+logs = Журналы

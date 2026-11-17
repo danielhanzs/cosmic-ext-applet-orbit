@@ -183,3 +183,7 @@ eject = Derxe
 section-notes = Not
 note-placeholder = Tiştekî binivîse…
 today = Îro
+docker-unavailable = Docker naxebite, an jî destûra te tune ku wê bikar bînî
+no-containers = Konteyner tune
+other-containers = Konteynerên din
+logs = Têketin

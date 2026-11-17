@@ -183,3 +183,7 @@ eject = I-eject
 section-notes = Tala
 note-placeholder = Magsulat ng kahit ano…
 today = Ngayon
+docker-unavailable = Hindi tumatakbo ang Docker, o hindi mo ito magagamit
+no-containers = Walang container
+other-containers = Iba pang container
+logs = Mga log

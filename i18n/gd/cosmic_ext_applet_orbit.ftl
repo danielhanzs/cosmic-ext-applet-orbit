@@ -183,3 +183,7 @@ eject = Gluais a-mach
 section-notes = Nòta
 note-placeholder = Sgrìobh rudeigin…
 today = An-diugh
+docker-unavailable = Chan eil Docker a’ ruith no chan fhaod thu a chleachdadh
+no-containers = Gun soithichean
+other-containers = Soithichean eile
+logs = Logaichean

@@ -114,10 +114,12 @@ pub enum Section {
     Clocks,
     /// A note that stays.
     Notes,
+    /// Docker's Compose stacks and containers.
+    Docker,
 }
 
 impl Section {
-    pub const ALL: [Section; 11] = [
+    pub const ALL: [Section; 12] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -129,6 +131,7 @@ impl Section {
         Section::Tasks,
         Section::Clocks,
         Section::Notes,
+        Section::Docker,
     ];
 }
 
@@ -208,7 +211,7 @@ impl Default for Prefs {
             // The cards added later start off, there to turn on.
             sections: Section::ALL
                 .into_iter()
-                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes))
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker))
                 .collect(),
             weather_place: None,
             weather_panel: false,
@@ -293,7 +296,7 @@ impl Prefs {
         let own = match section {
             Section::Status | Section::Controls => 0,
             Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes => 1,
-            Section::Notifications | Section::Island | Section::Audio | Section::System => 2,
+            Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
         put.unwrap_or(own).min(self.columns() - 1)

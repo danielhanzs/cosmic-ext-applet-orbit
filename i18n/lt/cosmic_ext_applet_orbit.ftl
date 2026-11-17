@@ -183,3 +183,7 @@ eject = Išstumti
 section-notes = Pastaba
 note-placeholder = Parašykite ką nors…
 today = Šiandien
+docker-unavailable = Docker neveikia arba jums neleidžiama juo naudotis
+no-containers = Konteinerių nėra
+other-containers = Kiti konteineriai
+logs = Žurnalai

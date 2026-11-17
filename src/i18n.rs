@@ -237,6 +237,10 @@ strings!(
     section_notes,
     note_placeholder,
     today,
+    docker_unavailable,
+    no_containers,
+    other_containers,
+    logs,
     no_more_events,
 );
 

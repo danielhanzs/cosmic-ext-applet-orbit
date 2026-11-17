@@ -183,3 +183,7 @@ eject = Ejecter
 section-notes = Nota
 note-placeholder = Scri alquo…
 today = Hodie
+docker-unavailable = Docker ne functiona, o vu ne posse usar it
+no-containers = Null contenitores
+other-containers = Altri contenitores
+logs = Registres

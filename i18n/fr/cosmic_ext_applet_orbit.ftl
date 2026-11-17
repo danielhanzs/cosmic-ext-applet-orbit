@@ -183,3 +183,7 @@ eject = Éjecter
 section-notes = Note
 note-placeholder = Écrivez quelque chose…
 today = Aujourd’hui
+docker-unavailable = Docker n’est pas lancé, ou vous n’avez pas le droit de l’utiliser
+no-containers = Aucun conteneur
+other-containers = Autres conteneurs
+logs = Journaux

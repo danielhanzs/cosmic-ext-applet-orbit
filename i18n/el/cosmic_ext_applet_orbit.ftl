@@ -183,3 +183,7 @@ eject = Εξαγωγή
 section-notes = Σημείωση
 note-placeholder = Γράψτε κάτι…
 today = Σήμερα
+docker-unavailable = Το Docker δεν εκτελείται ή δεν επιτρέπεται να το χρησιμοποιήσετε
+no-containers = Κανένα κοντέινερ
+other-containers = Άλλα κοντέινερ
+logs = Αρχεία καταγραφής

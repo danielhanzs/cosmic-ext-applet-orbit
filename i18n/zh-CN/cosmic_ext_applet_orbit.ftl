@@ -183,3 +183,7 @@ eject = 弹出
 section-notes = 笔记
 note-placeholder = 写点什么…
 today = 今天
+docker-unavailable = Docker 未运行，或您无权使用它
+no-containers = 没有容器
+other-containers = 其他容器
+logs = 日志

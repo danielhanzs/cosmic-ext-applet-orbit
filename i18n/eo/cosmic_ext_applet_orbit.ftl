@@ -183,3 +183,7 @@ eject = Elĵeti
 section-notes = Noto
 note-placeholder = Skribu ion…
 today = Hodiaŭ
+docker-unavailable = Docker ne funkcias, aŭ vi ne rajtas uzi ĝin
+no-containers = Neniuj ujoj
+other-containers = Aliaj ujoj
+logs = Protokoloj

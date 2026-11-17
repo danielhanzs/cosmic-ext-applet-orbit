@@ -183,3 +183,7 @@ eject = Chiqarish
 section-notes = Qayd
 note-placeholder = Biror narsa yozing…
 today = Bugun
+docker-unavailable = Docker ishlamayapti yoki undan foydalanishga ruxsatingiz yoʻq
+no-containers = Konteynerlar yoʻq
+other-containers = Boshqa konteynerlar
+logs = Jurnallar

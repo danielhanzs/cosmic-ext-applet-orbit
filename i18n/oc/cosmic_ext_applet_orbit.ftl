@@ -183,3 +183,7 @@ eject = Ejectar
 section-notes = Nòta
 note-placeholder = Escrivètz quicòm…
 today = Uèi
+docker-unavailable = Docker s’executa pas, o avètz pas lo drech de l’utilizar
+no-containers = Cap de contenidor
+other-containers = Autres contenidors
+logs = Jornals

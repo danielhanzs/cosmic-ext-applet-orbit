@@ -183,3 +183,7 @@ eject = ເອົາອອກ
 section-notes = ບັນທຶກຊ່ວຍຈຳ
 note-placeholder = ຂຽນບາງຢ່າງ…
 today = ມື້ນີ້
+docker-unavailable = Docker ບໍ່ໄດ້ເຮັດວຽກ, ຫຼື ທ່ານບໍ່ມີສິດໃຊ້ມັນ
+no-containers = ບໍ່ມີຄອນເທນເນີ
+other-containers = ຄອນເທນເນີອື່ນ
+logs = ບັນທຶກເຫດການ

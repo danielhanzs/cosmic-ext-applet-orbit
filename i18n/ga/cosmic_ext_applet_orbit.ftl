@@ -183,3 +183,7 @@ eject = Díchuir
 section-notes = Nóta
 note-placeholder = Scríobh rud éigin…
 today = Inniu
+docker-unavailable = Níl Docker ag rith, nó níl cead agat é a úsáid
+no-containers = Gan coimeádáin
+other-containers = Coimeádáin eile
+logs = Logaí

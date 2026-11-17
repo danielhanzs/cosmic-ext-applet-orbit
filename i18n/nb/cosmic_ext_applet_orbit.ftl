@@ -183,3 +183,7 @@ eject = Løs ut
 section-notes = Notat
 note-placeholder = Skriv noe…
 today = I dag
+docker-unavailable = Docker kjører ikke, eller du har ikke lov til å bruke det
+no-containers = Ingen beholdere
+other-containers = Andre beholdere
+logs = Logger

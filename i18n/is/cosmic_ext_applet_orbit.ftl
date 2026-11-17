@@ -183,3 +183,7 @@ eject = Spýta út
 section-notes = Minnispunktur
 note-placeholder = Skrifaðu eitthvað…
 today = Í dag
+docker-unavailable = Docker er ekki í gangi eða þú mátt ekki nota það
+no-containers = Engir gámar
+other-containers = Aðrir gámar
+logs = Atvikaskrár

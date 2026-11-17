@@ -183,3 +183,7 @@ eject = Skiet uit
 section-notes = Nota
 note-placeholder = Skryf iets…
 today = Vandag
+docker-unavailable = Docker loop nie, of jy mag dit nie gebruik nie
+no-containers = Geen houers nie
+other-containers = Ander houers
+logs = Logs

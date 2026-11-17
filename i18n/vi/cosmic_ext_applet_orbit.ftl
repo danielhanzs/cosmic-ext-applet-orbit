@@ -183,3 +183,7 @@ eject = Đẩy ra
 section-notes = Ghi chú
 note-placeholder = Viết gì đó…
 today = Hôm nay
+docker-unavailable = Docker không chạy, hoặc bạn không được phép dùng nó
+no-containers = Không có vùng chứa
+other-containers = Vùng chứa khác
+logs = Nhật ký

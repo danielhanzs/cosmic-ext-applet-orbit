@@ -183,3 +183,7 @@ eject = שליפה
 section-notes = פתק
 note-placeholder = לכתוב משהו…
 today = היום
+docker-unavailable = Docker אינו פועל, או שאין לך הרשאה להשתמש בו
+no-containers = אין מכולות
+other-containers = מכולות אחרות
+logs = יומנים

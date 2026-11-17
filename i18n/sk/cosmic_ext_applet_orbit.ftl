@@ -183,3 +183,7 @@ eject = Vysunúť
 section-notes = Poznámka
 note-placeholder = Napíšte niečo…
 today = Dnes
+docker-unavailable = Docker nebeží alebo ho nesmiete používať
+no-containers = Žiadne kontajnery
+other-containers = Ostatné kontajnery
+logs = Záznamy

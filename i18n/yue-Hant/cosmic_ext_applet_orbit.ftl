@@ -183,3 +183,7 @@ eject = 退出
 section-notes = 筆記
 note-placeholder = 寫低啲嘢…
 today = 今日
+docker-unavailable = Docker 冇運行緊，或者你冇權限用佢
+no-containers = 冇容器
+other-containers = 其他容器
+logs = 記錄

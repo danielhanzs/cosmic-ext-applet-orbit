@@ -183,3 +183,7 @@ eject = Scoate
 section-notes = Notă
 note-placeholder = Scrie ceva…
 today = Azi
+docker-unavailable = Docker nu rulează sau nu aveți voie să îl folosiți
+no-containers = Niciun container
+other-containers = Alte containere
+logs = Jurnale

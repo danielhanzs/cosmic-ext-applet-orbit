@@ -138,6 +138,10 @@ Off until you turn them on:
 - **Tasks**: the open to-dos of your synced task lists (Google Tasks,
   Nextcloud…), soonest due first; tick one off, or type a new one.
 - **Note**: a note that stays.
+- **Docker**: the Compose stacks (running ones first, with how many of
+  their containers run), each opening to its services and their state; a
+  service's **log** (followed) or a **shell** in it opens in COSMIC's
+  terminal. Containers outside Compose are listed together.
 - **Clocks**: other cities' time, and timers of 5, 10, 15 or 30 minutes or
   any length, which notify when they end.
 
@@ -205,6 +209,8 @@ speakers are very welcome (see [Translations](#translations)).
     (the `i2c` group)
   - drives: UDisks2; your picture and name: AccountsService; Game Mode:
     `gamemode`
+  - the Docker card: `docker` (Compose v2), usable without `sudo` (the
+    `docker` group), and `cosmic-term`
 
 ## Building
 
@@ -315,6 +321,8 @@ environment the panel starts with.
   join the `i2c` group (see [Optional extras](#optional-extras)).
 - **No Game Mode tile** — `gamemode` isn't installed.
 - **No Drives tile** — it shows only while a removable drive is mounted.
+- **Docker card says Docker isn't reachable** — check that `docker ps`
+  works without `sudo`.
 
 ## Development
 
@@ -337,6 +345,7 @@ cargo test
 | `src/system.rs` | processor, memory and network use |
 | `src/ddc.rs` | external monitors' brightness over DDC/CI |
 | `src/displays.rs` | displays through cosmic-randr |
+| `src/docker.rs` | Docker's Compose stacks and containers, their logs and shells |
 | `src/keyboard.rs` | the keyboard layouts set, and their names |
 | `src/workspaces.rs` | tiling and the keyboard layout in use, from the compositor |
 | `src/desktop.rs` | accessibility, touchpad, keep awake, tiling, Game Mode, notifications sent |
@@ -366,7 +375,7 @@ Options:
 - layout: `dropdown`, `side`, `fullscreen`; `islands`, `single`; `1`, `2`,
   `3` (columns); `medium`, `low` (tile styles)
 - cards open or added: `calendar`, `weather`, `audio`, `system`, `tasks`,
-  `clocks`, `notes`
+  `clocks`, `notes`, `docker` (its first stack open)
 - a page: `displays`, `network`, `keepawake`; the editor on a tab:
   `general`, `tiles`, `cards`
 - `user`: your name and picture in the header

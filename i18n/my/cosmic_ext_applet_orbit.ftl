@@ -183,3 +183,7 @@ eject = ထုတ်ရန်
 section-notes = မှတ်စု
 note-placeholder = တစ်ခုခု ရေးပါ…
 today = ယနေ့
+docker-unavailable = Docker မလည်ပတ်ပါ၊ သို့မဟုတ် သင်အသုံးပြုခွင့်မရှိပါ
+no-containers = ကွန်တိန်နာမရှိပါ
+other-containers = အခြားကွန်တိန်နာများ
+logs = မှတ်တမ်းများ

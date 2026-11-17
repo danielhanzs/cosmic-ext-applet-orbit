@@ -183,3 +183,7 @@ eject = Egotzi
 section-notes = Oharra
 note-placeholder = Idatzi zerbait…
 today = Gaur
+docker-unavailable = Docker ez dago martxan, edo ezin duzu erabili
+no-containers = Ez dago edukiontzirik
+other-containers = Beste edukiontziak
+logs = Erregistroak

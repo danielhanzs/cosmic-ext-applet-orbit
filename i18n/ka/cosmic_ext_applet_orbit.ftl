@@ -183,3 +183,7 @@ eject = ამოღება
 section-notes = შენიშვნა
 note-placeholder = დაწერეთ რამე…
 today = დღეს
+docker-unavailable = Docker არ მუშაობს, ან მისი გამოყენების უფლება არ გაქვთ
+no-containers = კონტეინერები არ არის
+other-containers = სხვა კონტეინერები
+logs = ჟურნალები

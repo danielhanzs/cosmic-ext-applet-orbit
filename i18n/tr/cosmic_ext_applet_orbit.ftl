@@ -183,3 +183,7 @@ eject = Çıkar
 section-notes = Not
 note-placeholder = Bir şeyler yazın…
 today = Bugün
+docker-unavailable = Docker çalışmıyor veya kullanma izniniz yok
+no-containers = Kapsayıcı yok
+other-containers = Diğer kapsayıcılar
+logs = Günlükler

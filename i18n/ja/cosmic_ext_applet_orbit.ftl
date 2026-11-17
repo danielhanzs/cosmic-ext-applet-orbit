@@ -183,3 +183,7 @@ eject = 取り出す
 section-notes = メモ
 note-placeholder = メモを入力…
 today = 今日
+docker-unavailable = Docker が動作していないか、使用が許可されていません
+no-containers = コンテナーはありません
+other-containers = その他のコンテナー
+logs = ログ

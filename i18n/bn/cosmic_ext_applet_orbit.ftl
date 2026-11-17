@@ -183,3 +183,7 @@ eject = বের করুন
 section-notes = নোট
 note-placeholder = কিছু লিখুন…
 today = আজ
+docker-unavailable = Docker চলছে না, অথবা আপনি এটি ব্যবহার করতে পারবেন না
+no-containers = কোনো কন্টেইনার নেই
+other-containers = অন্যান্য কন্টেইনার
+logs = লগ

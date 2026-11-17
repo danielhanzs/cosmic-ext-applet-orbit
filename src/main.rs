@@ -10,6 +10,7 @@ mod config;
 mod ddc;
 mod desktop;
 mod displays;
+mod docker;
 mod host;
 mod i18n;
 mod icons;

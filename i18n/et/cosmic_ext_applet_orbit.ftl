@@ -183,3 +183,7 @@ eject = Väljuta
 section-notes = Märkus
 note-placeholder = Kirjuta midagi…
 today = Täna
+docker-unavailable = Docker ei tööta või sul pole lubatud seda kasutada
+no-containers = Konteinereid pole
+other-containers = Muud konteinerid
+logs = Logid

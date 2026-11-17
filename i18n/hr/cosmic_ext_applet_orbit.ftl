@@ -183,3 +183,7 @@ eject = Izbaci
 section-notes = Bilješka
 note-placeholder = Napiši nešto…
 today = Danas
+docker-unavailable = Docker nije pokrenut ili ga ne smijete koristiti
+no-containers = Nema spremnika
+other-containers = Ostali spremnici
+logs = Zapisnici

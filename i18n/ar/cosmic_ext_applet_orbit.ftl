@@ -183,3 +183,7 @@ eject = إخراج
 section-notes = ملاحظة
 note-placeholder = اكتب شيئًا…
 today = اليوم
+docker-unavailable = Docker لا يعمل، أو لا يُسمح لك باستخدامه
+no-containers = لا توجد حاويات
+other-containers = حاويات أخرى
+logs = السجلات

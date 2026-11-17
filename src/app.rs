@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    ddc, displays, keyboard, swipe::swipe, system, tasks, workspaces,
+    ddc, displays, docker, keyboard, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -239,6 +239,9 @@ pub struct App {
     /// The note card's text; changed since it was saved.
     note: iced::widget::text_editor::Content,
     note_changed: Option<Instant>,
+    /// Docker's stacks (None: no Docker to ask), and the ones opened.
+    docker: Option<Vec<docker::Stack>>,
+    docker_open: Vec<String>,
     /// The track's position being dragged to, in seconds.
     seek_drag: Option<f32>,
     /// Removable drives, mounted.
@@ -364,6 +367,13 @@ pub enum Message {
     Drives(Vec<sys::Drive>),
     User(Option<sys::User>),
     SeekDrag(f32),
+    Docker(Option<Vec<docker::Stack>>),
+    DockerRefresh,
+    /// A stack opened or closed, by name.
+    DockerStack(String),
+    /// A container's log, or a shell in it, by id.
+    DockerLogs(String),
+    DockerShell(String),
     Note(iced::widget::text_editor::Action),
     Seek,
     Eject(sys::Drive),
@@ -947,6 +957,9 @@ impl App {
             self.ddc_read = Some(Instant::now());
             tasks.push(run(async { Message::Monitors(ddc::monitors().await) }));
         }
+        if self.prefs.sections.contains(&Section::Docker) {
+            tasks.push(run(async { Message::Docker(docker::stacks().await) }));
+        }
         if self.prefs.sections.contains(&Section::Tasks) {
             tasks.push(run(async { Message::Tasks(tasks::open().await) }));
         }
@@ -1484,6 +1497,7 @@ impl App {
             Section::System => (self.system_view(), Look::Padded),
             Section::Tasks => (self.tasks_view(), Look::Padded),
             Section::Clocks => (self.clocks_view(), Look::Padded),
+            Section::Docker => (self.docker_view(), Look::Padded),
             Section::Notes => (
                 iced::widget::text_editor(&self.note)
                     .placeholder(T.note_placeholder)
@@ -2343,6 +2357,92 @@ impl App {
         column.into()
     }
 
+    /// Docker's Compose stacks, each opening to its containers: their state,
+    /// their log, a shell in them.
+    fn docker_view(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(4).push(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(icon::from_name("application-x-executable-symbolic").size(18))
+                .push(text::heading("Docker").width(Length::Fill))
+                .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(4).on_press(Message::DockerRefresh)),
+        );
+        let Some(stacks) = &self.docker else {
+            return column.push(text::caption(T.docker_unavailable)).into();
+        };
+        if stacks.is_empty() {
+            column = column.push(text::caption(T.no_containers));
+        }
+        // Green running, faint stopped.
+        let state = |running: bool| -> Element<'_, Message> {
+            container(widget::space())
+                .width(Length::Fixed(8.0))
+                .height(Length::Fixed(8.0))
+                .class(theme::Container::custom(move |theme| {
+                    let cosmic = theme.cosmic();
+                    let color: Color =
+                        if running { cosmic.success_color().into() } else { Color::from(cosmic.button.on).scale_alpha(0.3) };
+                    container::Style {
+                        background: Some(color.into()),
+                        border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                        ..Default::default()
+                    }
+                }))
+                .into()
+        };
+        for stack in stacks {
+            let open = self.docker_open.contains(&stack.name);
+            let name = if stack.name.is_empty() { T.other_containers.to_string() } else { stack.name.clone() };
+            column = column.push(
+                button::custom(
+                    widget::Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .push(state(stack.running() > 0))
+                        .push(text::body(name).width(Length::Fill))
+                        .push(text::caption(format!("{}/{}", stack.running(), stack.containers.len())))
+                        .push(icon::from_name(if open { "go-up-symbolic" } else { "go-down-symbolic" }).size(16)),
+                )
+                .class(style::flat())
+                .padding([6, 8])
+                .width(Length::Fill)
+                .on_press(Message::DockerStack(stack.name.clone())),
+            );
+            if !open {
+                continue;
+            }
+            for c in &stack.containers {
+                column = column.push(
+                    widget::Row::new()
+                        .spacing(8)
+                        .padding([0, 8, 0, 24])
+                        .align_y(Alignment::Center)
+                        .push(state(c.running))
+                        .push(
+                            widget::Column::new()
+                                .push(text::body(c.service.as_str()))
+                                .push(text::caption(c.status.as_str()).wrapping(iced::widget::text::Wrapping::None))
+                                .width(Length::Fill),
+                        )
+                        .push(widget::tooltip(
+                            button::icon(icon::from_name("text-x-generic-symbolic")).padding(4).on_press(Message::DockerLogs(c.id.clone())),
+                            text::caption(T.logs),
+                            widget::tooltip::Position::Left,
+                        ))
+                        .push(widget::tooltip(
+                            button::icon(icon::from_name("utilities-terminal-symbolic"))
+                                .padding(4)
+                                .on_press_maybe(c.running.then(|| Message::DockerShell(c.id.clone()))),
+                            text::caption(T.terminal),
+                            widget::tooltip::Position::Left,
+                        )),
+                );
+            }
+        }
+        column.into()
+    }
+
     /// Other places' time, then timers: started with a click, counted down.
     fn clocks_view(&self) -> Element<'_, Message> {
         let mut column = widget::Column::new().spacing(8);
@@ -3190,6 +3290,7 @@ fn section_name(section: Section) -> &'static str {
         Section::Tasks => T.section_tasks,
         Section::Clocks => T.section_clocks,
         Section::Notes => T.section_notes,
+        Section::Docker => "Docker",
     }
 }
 
@@ -3280,6 +3381,8 @@ impl cosmic::Application for App {
             displays: Vec::new(),
             user: None,
             seek_drag: None,
+            docker: None,
+            docker_open: Vec::new(),
             note: iced::widget::text_editor::Content::with_text(&crate::config::load_note()),
             note_changed: None,
             drives: Vec::new(),
@@ -3378,8 +3481,9 @@ impl cosmic::Application for App {
                     "1" | "2" | "3" => app.prefs.columns = option.parse().ok(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" | "notes" => {
+                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" => {
                         let section = match option {
+                            "docker" => Section::Docker,
                             "audio" => Section::Audio,
                             "system" => Section::System,
                             "tasks" => Section::Tasks,
@@ -3515,6 +3619,29 @@ impl cosmic::Application for App {
             Message::Drives(drives) => self.drives = drives,
             Message::User(user) => self.user = user,
             Message::SeekDrag(at) => self.seek_drag = Some(at),
+            Message::Docker(stacks) => {
+                // A preview shows the first stack open.
+                if preview().is_some() && self.docker_open.is_empty() {
+                    self.docker_open.extend(stacks.iter().flatten().next().map(|s| s.name.clone()));
+                }
+                self.docker = stacks;
+            }
+            Message::DockerRefresh => return run(async { Message::Docker(docker::stacks().await) }),
+            Message::DockerStack(name) => {
+                if self.docker_open.contains(&name) {
+                    self.docker_open.retain(|n| *n != name);
+                } else {
+                    self.docker_open.push(name);
+                }
+            }
+            Message::DockerLogs(id) => {
+                docker::logs(&id);
+                return self.close();
+            }
+            Message::DockerShell(id) => {
+                docker::shell(&id);
+                return self.close();
+            }
             Message::Note(action) => {
                 if action.is_edit() {
                     self.note_changed = Some(Instant::now());

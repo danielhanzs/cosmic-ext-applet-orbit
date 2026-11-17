@@ -183,3 +183,7 @@ eject = Lenting
 section-notes = Nota
 note-placeholder = Tulis sesuatu…
 today = Hari ini
+docker-unavailable = Docker tidak berjalan, atau anda tidak dibenarkan menggunakannya
+no-containers = Tiada bekas
+other-containers = Bekas lain
+logs = Log

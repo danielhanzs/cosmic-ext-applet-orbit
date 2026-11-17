@@ -183,3 +183,7 @@ eject = Útsmite
 section-notes = Notysje
 note-placeholder = Skriuw wat…
 today = Hjoed
+docker-unavailable = Docker draait net, of jo meie it net brûke
+no-containers = Gjin konteners
+other-containers = Oare konteners
+logs = Lochboeken

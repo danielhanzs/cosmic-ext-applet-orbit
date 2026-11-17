@@ -183,3 +183,7 @@ eject = Ssufeɣ
 section-notes = Tazmilt
 note-placeholder = Aru kra…
 today = Ass-a
+docker-unavailable = Docker ur iteddu ara, neɣ ur tettusirgeḍ ara ad t-tesqedceḍ
+no-containers = Ulac imagbaren
+other-containers = Imagbaren nniḍen
+logs = Iɣmisen

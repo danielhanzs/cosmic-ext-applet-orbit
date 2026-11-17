@@ -183,3 +183,7 @@ eject = ኣውጽእ
 section-notes = መዘኻኸሪ
 note-placeholder = ገለ ጽሓፍ…
 today = ሎሚ
+docker-unavailable = Docker ኣይሰርሕን ዘሎ፡ ወይ ክትጥቀመሉ ኣይፍቀደልካን
+no-containers = ኮንቴይነር የለን
+other-containers = ካልኦት ኮንቴይነራት
+logs = መዝገባት

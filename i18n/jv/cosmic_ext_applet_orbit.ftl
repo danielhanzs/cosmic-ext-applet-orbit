@@ -183,3 +183,7 @@ eject = Wetokake
 section-notes = Cathetan
 note-placeholder = Tulis apa wae…
 today = Dina iki
+docker-unavailable = Docker ora mlaku, utawa sampeyan ora oleh nggunakake
+no-containers = Ora ana kontainer
+other-containers = Kontainer liyane
+logs = Log

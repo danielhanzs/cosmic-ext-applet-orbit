@@ -183,3 +183,7 @@ eject = ᱚᱰᱚᱠ ᱢᱮ
 section-notes = ᱱᱚᱴ
 note-placeholder = ᱪᱮᱫ ᱦᱚᱸ ᱚᱞ ᱢᱮ…
 today = ᱛᱮᱦᱮᱧ
+docker-unavailable = Docker ᱫᱚ ᱵᱟᱝ ᱪᱟᱞᱟᱜ ᱠᱟᱱᱟ, ᱟᱨᱵᱟᱝ ᱟᱢ ᱵᱮᱵᱷᱟᱨ ᱵᱟᱝ ᱫᱟᱲᱮᱭᱟᱜ ᱟ
+no-containers = ᱡᱟᱦᱟᱸ ᱠᱚᱱᱴᱮᱱᱟᱨ ᱵᱟᱹᱱᱩᱜᱼᱟ
+other-containers = ᱮᱴᱟᱜ ᱠᱚᱱᱴᱮᱱᱟᱨ
+logs = ᱞᱚᱜᱽ

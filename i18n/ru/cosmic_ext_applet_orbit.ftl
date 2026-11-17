@@ -183,3 +183,7 @@ eject = Извлечь
 section-notes = Заметка
 note-placeholder = Напишите что-нибудь…
 today = Сегодня
+docker-unavailable = Docker не запущен, или у вас нет прав на его использование
+no-containers = Нет контейнеров
+other-containers = Другие контейнеры
+logs = Журналы

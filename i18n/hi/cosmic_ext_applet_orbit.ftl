@@ -183,3 +183,7 @@ eject = निकालें
 section-notes = नोट
 note-placeholder = कुछ लिखें…
 today = आज
+docker-unavailable = Docker नहीं चल रहा है, या आपको इसे उपयोग करने की अनुमति नहीं है
+no-containers = कोई कंटेनर नहीं
+other-containers = अन्य कंटेनर
+logs = लॉग
