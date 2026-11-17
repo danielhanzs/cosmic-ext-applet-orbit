@@ -210,3 +210,4 @@ console = Konzol
 shut-down = Leállítás
 search-ports = Port vagy program keresése
 sure = Biztos?
+stop-mirroring = Tükrözés megszüntetése

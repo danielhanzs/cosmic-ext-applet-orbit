@@ -210,3 +210,4 @@ console = કન્સોલ
 shut-down = શટ ડાઉન કરો
 search-ports = પોર્ટ અથવા પ્રોગ્રામ શોધો
 sure = ખાતરી છે?
+stop-mirroring = મિરરિંગ બંધ કરો

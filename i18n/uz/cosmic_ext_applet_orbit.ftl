@@ -210,3 +210,4 @@ console = Konsol
 shut-down = Oʻchirish
 search-ports = Port yoki dasturni qidirish
 sure = Ishonchingiz komilmi?
+stop-mirroring = Aks ettirishni toʻxtatish

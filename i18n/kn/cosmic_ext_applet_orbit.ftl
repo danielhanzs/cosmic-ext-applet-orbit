@@ -210,3 +210,4 @@ console = ಕನ್ಸೋಲ್
 shut-down = ಶಟ್ ಡೌನ್ ಮಾಡಿ
 search-ports = ಪೋರ್ಟ್ ಅಥವಾ ಪ್ರೋಗ್ರಾಂ ಹುಡುಕಿ
 sure = ಖಚಿತವೇ?
+stop-mirroring = ಮಿರರಿಂಗ್ ನಿಲ್ಲಿಸಿ

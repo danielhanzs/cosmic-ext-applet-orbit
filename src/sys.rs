@@ -937,8 +937,11 @@ pub struct Drive {
     /// "16 GB"
     pub size: String,
     pub mount: String,
-    block: OwnedObjectPath,
     drive: OwnedObjectPath,
+    /// Every mounted file system on the same drive (other partitions too),
+    /// and the encrypted ones' locked side, to undo before it goes.
+    mounted: Vec<OwnedObjectPath>,
+    unlocked: Vec<OwnedObjectPath>,
 }
 
 pub async fn drives() -> zbus::Result<Vec<Drive>> {
@@ -968,7 +971,11 @@ pub async fn drives() -> zbus::Result<Vec<Drive>> {
         if prop(path, block, "HintIgnore").and_then(|v| bool::try_from(v).ok()) == Some(true) {
             continue;
         }
-        let Some(drive) = prop(path, block, "Drive").and_then(|v| OwnedObjectPath::try_from(v).ok()) else { continue };
+        let drive_of = |p: &OwnedObjectPath| prop(p, block, "Drive").and_then(|v| OwnedObjectPath::try_from(v).ok()).filter(|d| d.as_str() != "/");
+        // An unlocked encrypted (LUKS) one has no drive itself: its
+        // encrypted side, the partition, has.
+        let backing = prop(path, block, "CryptoBackingDevice").and_then(|v| OwnedObjectPath::try_from(v).ok()).filter(|d| d.as_str() != "/");
+        let Some(drive) = drive_of(path).or_else(|| backing.as_ref().and_then(drive_of)) else { continue };
         let flag = |key| prop(&drive, "org.freedesktop.UDisks2.Drive", key).and_then(|v| bool::try_from(v).ok()) == Some(true);
         // A stick or card, not the computer's own disks.
         if !(flag("Removable") || flag("Ejectable") || flag("MediaRemovable")) {
@@ -981,10 +988,25 @@ pub async fn drives() -> zbus::Result<Vec<Drive>> {
             .or_else(|| text(&drive, "org.freedesktop.UDisks2.Drive", "Model"))
             .unwrap_or_else(|| mount.rsplit('/').next().unwrap_or_default().to_string());
         let bytes = prop(path, block, "Size").and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
-        found.push(Drive { name, size: size(bytes), mount, block: path.clone(), drive });
+        found.push((Drive { name, size: size(bytes), mount, drive, mounted: Vec::new(), unlocked: Vec::new() }, path.clone(), backing));
     }
-    found.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(found)
+    // Each drive's file systems, to unmount (and lock) all before it goes.
+    let all: Vec<(OwnedObjectPath, OwnedObjectPath, Option<OwnedObjectPath>)> =
+        found.iter().map(|(d, path, backing)| (d.drive.clone(), path.clone(), backing.clone())).collect();
+    let mut drives: Vec<Drive> = found
+        .into_iter()
+        .map(|(mut d, _, _)| {
+            for (drive, path, backing) in &all {
+                if *drive == d.drive {
+                    d.mounted.push(path.clone());
+                    d.unlocked.extend(backing.clone());
+                }
+            }
+            d
+        })
+        .collect();
+    drives.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(drives)
 }
 
 /// "16 GB", "512 MB": as drives are sold, in powers of ten.
@@ -995,11 +1017,17 @@ fn size(bytes: u64) -> String {
     }
 }
 
-/// Unmounted, then powered off (or ejected) so it can be pulled out.
+/// Every file system on it unmounted, encrypted ones locked again, then
+/// powered off (or ejected) so it can be pulled out.
 pub async fn eject(drive: Drive) -> zbus::Result<()> {
     let conn = crate::bus::system().await?;
     let none: HashMap<&str, Value<'_>> = HashMap::new();
-    conn.call_method(Some(UDISKS), &drive.block, Some("org.freedesktop.UDisks2.Filesystem"), "Unmount", &(&none,)).await?;
+    for fs in &drive.mounted {
+        conn.call_method(Some(UDISKS), fs, Some("org.freedesktop.UDisks2.Filesystem"), "Unmount", &(&none,)).await?;
+    }
+    for encrypted in &drive.unlocked {
+        conn.call_method(Some(UDISKS), encrypted, Some("org.freedesktop.UDisks2.Encrypted"), "Lock", &(&none,)).await?;
+    }
     let iface = Some("org.freedesktop.UDisks2.Drive");
     if conn.call_method(Some(UDISKS), &drive.drive, iface, "PowerOff", &(&none,)).await.is_err() {
         conn.call_method(Some(UDISKS), &drive.drive, iface, "Eject", &(&none,)).await?;

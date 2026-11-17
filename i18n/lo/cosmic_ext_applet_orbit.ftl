@@ -210,3 +210,4 @@ console = ຄອນໂຊນ
 shut-down = ປິດເຄື່ອງ
 search-ports = ຊອກຫາພອດ ຫຼື ໂປຣແກຣມ
 sure = ແນ່ໃຈບໍ?
+stop-mirroring = ຢຸດການສະທ້ອນ

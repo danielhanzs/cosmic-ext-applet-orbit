@@ -13,6 +13,8 @@ pub struct Display {
     pub scale: f32,
     /// The current mode: width, height, refresh in mHz.
     pub mode: Option<(u32, u32, u32)>,
+    /// The display it shows the picture of, while it mirrors one.
+    pub mirroring: Option<String>,
 }
 
 impl Display {
@@ -30,6 +32,8 @@ pub async fn list() -> Vec<Display> {
     randr(&["list", "--kdl"]).await.map(|kdl| parse(&kdl)).unwrap_or_default()
 }
 
+/// On, or (false) off. Turning on one that mirrors makes it a display of
+/// its own again.
 pub async fn set_enabled(name: String, on: bool) {
     randr(&[if on { "enable" } else { "disable" }, &name]).await;
 }
@@ -64,13 +68,22 @@ fn parse(kdl: &str) -> Vec<Display> {
     for line in kdl.lines().map(str::trim) {
         if let Some(rest) = line.strip_prefix("output ") {
             let name = rest.split('"').nth(1).unwrap_or_default().to_string();
-            displays.push(Display { name, model: String::new(), enabled: rest.contains("enabled=#true"), scale: 1.0, mode: None });
+            displays.push(Display {
+                name,
+                model: String::new(),
+                enabled: rest.contains("enabled=#true"),
+                scale: 1.0,
+                mode: None,
+                mirroring: None,
+            });
             continue;
         }
         let Some(display) = displays.last_mut() else { continue };
         if line.starts_with("description ") {
             let parts: Vec<String> = ["make", "model"].iter().filter_map(|k| quoted(line, k)).filter(|s| !s.is_empty()).collect();
             display.model = parts.join(" ");
+        } else if let Some(from) = line.strip_prefix("mirroring ") {
+            display.mirroring = Some(from.trim().trim_matches('"').to_string()).filter(|f| !f.is_empty());
         } else if let Some(scale) = line.strip_prefix("scale ") {
             display.scale = scale.trim().parse().unwrap_or(1.0);
         } else if line.starts_with("mode ") && line.contains("current=#true") {
@@ -100,6 +113,7 @@ mod tests {
 output "DP-3" enabled=#false {
   description make="Dell Inc." model="DELL P2416D"
   scale 1.00
+  mirroring "eDP-1"
 }
 "#;
         let d = parse(kdl);
@@ -107,5 +121,6 @@ output "DP-3" enabled=#false {
         assert_eq!((d[0].name.as_str(), d[0].model.as_str(), d[0].enabled, d[0].scale), ("eDP-1", "", true, 1.25));
         assert_eq!(d[0].mode, Some((2560, 1600, 165001)));
         assert_eq!((d[1].model.as_str(), d[1].enabled, d[1].mode), ("Dell Inc. DELL P2416D", false, None));
+        assert_eq!((d[0].mirroring.as_deref(), d[1].mirroring.as_deref()), (None, Some("eDP-1")));
     }
 }

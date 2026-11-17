@@ -210,3 +210,4 @@ console = Konsoli
 shut-down = Sammuta
 search-ports = Hae porttia tai ohjelmaa
 sure = Varmasti?
+stop-mirroring = Lopeta peilaus

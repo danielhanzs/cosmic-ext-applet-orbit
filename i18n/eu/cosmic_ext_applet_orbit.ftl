@@ -210,3 +210,4 @@ console = Kontsola
 shut-down = Itzali
 search-ports = Bilatu ataka edo programa
 sure = Ziur?
+stop-mirroring = Utzi ispilatzeari

@@ -210,3 +210,4 @@ console = קונסולה
 shut-down = כיבוי
 search-ports = חיפוש פורט או תוכנה
 sure = בטוח?
+stop-mirroring = הפסקת שיקוף

@@ -210,3 +210,4 @@ console = Consoil
 shut-down = Dùin sìos
 search-ports = Lorg port no prògram
 sure = A bheil thu cinnteach?
+stop-mirroring = Sguir dhen sgàthanachadh

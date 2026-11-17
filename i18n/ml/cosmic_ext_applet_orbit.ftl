@@ -210,3 +210,4 @@ console = കൺസോൾ
 shut-down = ഷട്ട് ഡൗൺ ചെയ്യുക
 search-ports = പോർട്ടോ പ്രോഗ്രാമോ തിരയുക
 sure = ഉറപ്പാണോ?
+stop-mirroring = മിററിംഗ് നിർത്തുക

@@ -210,3 +210,4 @@ console = Конзола
 shut-down = Изключване
 search-ports = Търсене на порт или програма
 sure = Сигурни ли сте?
+stop-mirroring = Спиране на дублирането

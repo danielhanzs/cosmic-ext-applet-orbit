@@ -210,3 +210,4 @@ console = Konsole
 shut-down = Skakel af
 search-ports = Soek ’n poort of program
 sure = Seker?
+stop-mirroring = Hou op weerspieël

@@ -210,3 +210,4 @@ console = Konsolė
 shut-down = Išjungti
 search-ports = Ieškoti prievado ar programos
 sure = Tikrai?
+stop-mirroring = Nebedubliuoti

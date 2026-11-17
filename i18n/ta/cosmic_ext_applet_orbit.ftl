@@ -210,3 +210,4 @@ console = கன்சோல்
 shut-down = அணை
 search-ports = போர்ட் அல்லது நிரலைத் தேடு
 sure = உறுதியா?
+stop-mirroring = பிரதிபலிப்பை நிறுத்து

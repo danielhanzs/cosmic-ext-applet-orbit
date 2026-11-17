@@ -210,3 +210,4 @@ console = Konsole
 shut-down = Herunterfahren
 search-ports = Port oder Programm suchen
 sure = Sicher?
+stop-mirroring = Spiegeln beenden

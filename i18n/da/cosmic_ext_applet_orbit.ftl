@@ -210,3 +210,4 @@ console = Konsol
 shut-down = Luk ned
 search-ports = Søg efter en port eller et program
 sure = Sikker?
+stop-mirroring = Stop spejling

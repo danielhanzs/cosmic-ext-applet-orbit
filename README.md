@@ -85,10 +85,11 @@ and Workspaces — and **tiles of your own**.
   - **DNS**: the connection's own servers, or Cloudflare, Google, Quad9 or
     AdGuard, over IPv4 and IPv6, set through NetworkManager without a
     password.
-  - **Displays**: each one on or off, its scale, or mirroring another
-    (through `cosmic-randr`).
-  - **Drives**: removable drives that are mounted, to open or eject
-    (UDisks2; the tile shows only while one is plugged in).
+  - **Displays**: each one on or off, its scale, or mirroring another and
+    back (through `cosmic-randr`).
+  - **Drives**: removable drives that are mounted, encrypted ones too, to
+    open or eject (every partition unmounted and locked first; UDisks2;
+    the tile shows only while one is plugged in).
   - **Pomodoro**: the timer, whether it shows on the panel, and **Do not
     disturb while focusing**.
 - **Game Mode** holds Feral GameMode on (shown only where it's installed).
@@ -357,7 +358,10 @@ cargo test
 
 | File | What it does |
 |------|--------------|
-| `src/app.rs` | the applet: panel button, popup layouts, tiles, cards, pages, editor |
+| `src/app.rs` | the applet: its state and messages, the panel button, popup layouts, tiles |
+| `src/app/cards.rs` | the popup's cards |
+| `src/app/pages.rs` | the pages behind the tiles' arrows, the password prompt |
+| `src/app/editor.rs` | the editor: its tabs, tiles, cards and their settings |
 | `src/sys.rs` | NetworkManager (incl. DNS, details, hotspot), BlueZ, UPower, power profiles, brightness, drives, the user, change signals |
 | `src/agent.rs` | NetworkManager secret agent and keyring access |
 | `src/audio.rs` | volume, outputs, microphone and camera use |

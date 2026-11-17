@@ -210,3 +210,4 @@ console = Console
 shut-down = Desligar
 search-ports = Pesquisar uma porta ou programa
 sure = Tem certeza?
+stop-mirroring = Parar espelhamento

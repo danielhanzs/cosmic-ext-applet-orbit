@@ -210,3 +210,4 @@ console = 콘솔
 shut-down = 끄기
 search-ports = 포트 또는 프로그램 검색
 sure = 확실합니까?
+stop-mirroring = 미러링 중지

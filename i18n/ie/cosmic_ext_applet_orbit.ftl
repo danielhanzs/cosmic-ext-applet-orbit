@@ -210,3 +210,4 @@ console = Console
 shut-down = Extinter
 search-ports = Serchar un porte o programma
 sure = Cert?
+stop-mirroring = Cessar specular

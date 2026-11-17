@@ -210,3 +210,4 @@ console = وحدة التحكم
 shut-down = إيقاف التشغيل
 search-ports = ابحث عن منفذ أو برنامج
 sure = متأكد؟
+stop-mirroring = إيقاف النسخ المطابق

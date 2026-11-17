@@ -210,3 +210,4 @@ console = Konzolo
 shut-down = Malŝalti
 search-ports = Serĉi pordon aŭ programon
 sure = Ĉu certe?
+stop-mirroring = Ĉesi speguli

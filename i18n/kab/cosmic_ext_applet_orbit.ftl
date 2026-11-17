@@ -210,3 +210,4 @@ console = Akunsul
 shut-down = Sexsi
 search-ports = Nadi tawwurt neɣ ahil
 sure = Tetḥeqqeḍ?
+stop-mirroring = Seḥbes alemri

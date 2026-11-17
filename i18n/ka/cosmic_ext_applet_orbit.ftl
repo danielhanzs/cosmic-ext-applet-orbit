@@ -210,3 +210,4 @@ console = კონსოლი
 shut-down = გამორთვა
 search-ports = პორტის ან პროგრამის ძიება
 sure = დარწმუნებული ხართ?
+stop-mirroring = დუბლირების შეწყვეტა

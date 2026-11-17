@@ -210,3 +210,4 @@ console = Console
 shut-down = Shut down
 search-ports = Search a port or program
 sure = Sure?
+stop-mirroring = Stop mirroring

@@ -210,3 +210,4 @@ console = 主控台
 shut-down = 關機
 search-ports = 搜尋連接埠或程式
 sure = 確定嗎？
+stop-mirroring = 停止鏡像

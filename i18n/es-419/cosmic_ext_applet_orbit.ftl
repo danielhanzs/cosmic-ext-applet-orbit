@@ -210,3 +210,4 @@ console = Consola
 shut-down = Apagar
 search-ports = Buscar un puerto o programa
 sure = ¿Seguro?
+stop-mirroring = Dejar de duplicar

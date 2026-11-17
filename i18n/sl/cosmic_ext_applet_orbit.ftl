@@ -210,3 +210,4 @@ console = Konzola
 shut-down = Izklopi
 search-ports = Iskanje vrat ali programa
 sure = Ste prepričani?
+stop-mirroring = Ustavi zrcaljenje

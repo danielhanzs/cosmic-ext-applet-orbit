@@ -210,3 +210,4 @@ console = کنسول
 shut-down = خاموش کردن
 search-ports = جستجوی درگاه یا برنامه
 sure = مطمئنید؟
+stop-mirroring = توقف آینه‌سازی

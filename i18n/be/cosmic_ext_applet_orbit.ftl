@@ -210,3 +210,4 @@ console = Кансоль
 shut-down = Выключыць
 search-ports = Шукаць порт або праграму
 sure = Упэўнены?
+stop-mirroring = Спыніць дубляванне

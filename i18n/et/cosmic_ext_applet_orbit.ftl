@@ -210,3 +210,4 @@ console = Konsool
 shut-down = Lülita välja
 search-ports = Otsi porti või programmi
 sure = Kindel?
+stop-mirroring = Lõpeta peegeldamine

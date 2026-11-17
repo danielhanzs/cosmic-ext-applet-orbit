@@ -264,6 +264,7 @@ strings!(
     console,
     shut_down,
     sure,
+    stop_mirroring,
     no_more_events,
 );
 

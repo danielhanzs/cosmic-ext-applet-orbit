@@ -210,3 +210,4 @@ console = Konsol
 shut-down = Vemrîne
 search-ports = Li portek an bernameyek bigere
 sure = Bawer î?
+stop-mirroring = Neynikê rawestîne

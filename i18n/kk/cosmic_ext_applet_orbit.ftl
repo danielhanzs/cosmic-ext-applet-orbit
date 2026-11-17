@@ -210,3 +210,4 @@ console = Консоль
 shut-down = Сөндіру
 search-ports = Порт не бағдарламаны іздеу
 sure = Сенімдісіз бе?
+stop-mirroring = Қайталауды тоқтату

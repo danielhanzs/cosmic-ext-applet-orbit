@@ -210,3 +210,4 @@ console = Konzola
 shut-down = Isključi
 search-ports = Traži port ili program
 sure = Sigurno?
+stop-mirroring = Zaustavi preslikavanje

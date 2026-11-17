@@ -210,3 +210,4 @@ console = Консоль
 shut-down = Выключить
 search-ports = Найти порт или программу
 sure = Уверены?
+stop-mirroring = Остановить дублирование

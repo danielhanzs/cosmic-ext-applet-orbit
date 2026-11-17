@@ -210,3 +210,4 @@ console = คอนโซล
 shut-down = ปิดเครื่อง
 search-ports = ค้นหาพอร์ตหรือโปรแกรม
 sure = แน่ใจไหม?
+stop-mirroring = หยุดการสะท้อนจอ

@@ -210,3 +210,4 @@ console = ኮንሶል
 shut-down = ኣጥፍእ
 search-ports = ፖርት ወይ ፕሮግራም ድለ
 sure = ርግጸኛ ዲኻ?
+stop-mirroring = ምድግጋም ኣቋርጽ

@@ -210,3 +210,4 @@ console = Console
 shut-down = I-shut down
 search-ports = Maghanap ng port o program
 sure = Sigurado?
+stop-mirroring = Ihinto ang pag-mirror

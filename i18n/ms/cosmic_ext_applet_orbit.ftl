@@ -210,3 +210,4 @@ console = Konsol
 shut-down = Matikan
 search-ports = Cari port atau program
 sure = Pasti?
+stop-mirroring = Henti cerminan

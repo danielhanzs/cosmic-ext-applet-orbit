@@ -210,3 +210,4 @@ console = ᱠᱚᱱᱥᱚᱞ
 shut-down = ᱵᱚᱸᱫᱚᱭ ᱢᱮ
 search-ports = ᱯᱚᱨᱴ ᱥᱮ ᱯᱨᱚᱜᱽᱨᱟᱢ ᱯᱟᱱᱛᱮ
 sure = ᱥᱟᱹᱨᱤ ᱜᱮ?
+stop-mirroring = ᱟᱨᱥᱤ ᱛᱤᱝᱜᱩ

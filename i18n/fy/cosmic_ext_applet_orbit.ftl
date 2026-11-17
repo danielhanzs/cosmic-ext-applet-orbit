@@ -210,3 +210,4 @@ console = Konsole
 shut-down = Útsette
 search-ports = Siik in poarte of programma
 sure = Wis?
+stop-mirroring = Spegeljen stopje

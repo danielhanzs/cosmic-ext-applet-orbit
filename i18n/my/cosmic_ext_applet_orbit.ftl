@@ -210,3 +210,4 @@ console = ကွန်ဆိုး
 shut-down = ပိတ်ရန်
 search-ports = ပို့ သို့မဟုတ် ပရိုဂရမ် ရှာရန်
 sure = သေချာပါသလား?
+stop-mirroring = ပုံတူပြသခြင်း ရပ်ရန်

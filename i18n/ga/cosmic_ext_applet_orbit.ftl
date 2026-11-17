@@ -210,3 +210,4 @@ console = Consól
 shut-down = Múch
 search-ports = Cuardaigh port nó ríomhchlár
 sure = Cinnte?
+stop-mirroring = Stop scáthánú

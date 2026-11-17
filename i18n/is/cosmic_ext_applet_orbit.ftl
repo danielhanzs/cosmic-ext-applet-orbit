@@ -210,3 +210,4 @@ console = Skjár
 shut-down = Slökkva
 search-ports = Leita að gátt eða forriti
 sure = Viss?
+stop-mirroring = Hætta speglun

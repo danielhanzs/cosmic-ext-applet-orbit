@@ -210,3 +210,4 @@ console = Konzola
 shut-down = Vypnúť
 search-ports = Hľadať port alebo program
 sure = Naozaj?
+stop-mirroring = Zastaviť zrkadlenie

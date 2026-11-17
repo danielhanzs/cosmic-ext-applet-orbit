@@ -210,3 +210,4 @@ console = Console
 shut-down = Tắt máy
 search-ports = Tìm cổng hoặc chương trình
 sure = Chắc chắn?
+stop-mirroring = Dừng phản chiếu

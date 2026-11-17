@@ -210,3 +210,4 @@ console = Console
 shut-down = Oetzètte
 search-ports = Zeuk ’ne poort of programma
 sure = Zeker?
+stop-mirroring = Sjtop spegele

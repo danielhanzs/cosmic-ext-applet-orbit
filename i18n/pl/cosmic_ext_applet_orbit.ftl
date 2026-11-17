@@ -210,3 +210,4 @@ console = Konsola
 shut-down = Wyłącz
 search-ports = Szukaj portu lub programu
 sure = Na pewno?
+stop-mirroring = Zatrzymaj powielanie

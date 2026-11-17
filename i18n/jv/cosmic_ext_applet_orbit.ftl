@@ -210,3 +210,4 @@ console = Konsol
 shut-down = Pateni
 search-ports = Golek port utawa program
 sure = Yakin?
+stop-mirroring = Mandheg mirror

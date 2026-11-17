@@ -210,3 +210,4 @@ console = Consolă
 shut-down = Închide
 search-ports = Caută un port sau un program
 sure = Sigur?
+stop-mirroring = Oprește oglindirea
