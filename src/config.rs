@@ -262,10 +262,19 @@ impl Prefs {
     pub fn load() -> Self {
         let mut prefs = Self::load_shared();
         prefs.custom = load_custom();
-        prefs.recent_ssh = private("recent-ssh.json")
-            .and_then(|path| std::fs::read(path).ok())
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        prefs.recent_ssh = match private("recent-ssh.json").and_then(|path| std::fs::read(path).ok()) {
+            Some(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            None => {
+                // 1.0.0 kept them in the shared settings: moved here, and
+                // cleared there by saving those without them.
+                let old = old_recent_ssh();
+                if !old.is_empty() {
+                    save_recent_ssh(&old);
+                    prefs.save();
+                }
+                old
+            }
+        };
         prefs
     }
 
@@ -359,12 +368,8 @@ fn private(name: &str) -> Option<std::path::PathBuf> {
     Some(base.join(crate::APP_ID).join(name))
 }
 
-/// The note card's text, kept privately.
 /// The SSH places used lately, saved privately.
 pub fn save_recent_ssh(recent: &[String]) {
-    if std::env::var_os("ORBIT_PREVIEW").is_some() {
-        return;
-    }
     if let Some(path) = private("recent-ssh.json") {
         if let Err(err) = write_private(&path, &serde_json::to_vec(recent).unwrap_or_default()) {
             tracing::warn!("cannot save the SSH places: {err}");
@@ -372,11 +377,30 @@ pub fn save_recent_ssh(recent: &[String]) {
     }
 }
 
+/// The SSH places as 1.0.0 kept them, in the shared settings.
+fn old_recent_ssh() -> Vec<String> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default, rename = "Prefs")]
+    struct Old {
+        recent_ssh: Vec<String>,
+    }
+    config().and_then(|c| c.get::<Old>("prefs").ok()).map(|old| old.recent_ssh).unwrap_or_default()
+}
+
+/// The note card's text, kept privately.
 pub fn load_note() -> String {
     private("note.txt").and_then(|path| std::fs::read_to_string(path).ok()).unwrap_or_default()
 }
 
-pub fn save_note(text: &str) {
+/// Saves run on threads of their own: one at a time, and one started
+/// after (`at`) is never written over by an older one.
+pub fn save_note(text: &str, at: std::time::Instant) {
+    static WRITTEN: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
+    if written.is_some_and(|w| w >= at) {
+        return;
+    }
+    *written = Some(at);
     if let Some(path) = private("note.txt") {
         if let Err(err) = write_private(&path, text.as_bytes()) {
             tracing::warn!("cannot save the note: {err}");
@@ -385,7 +409,11 @@ pub fn save_note(text: &str) {
 }
 
 /// Written whole and then moved into place, readable by the user alone.
+/// Not in a preview: its changes are for that run only.
 fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if std::env::var_os("ORBIT_PREVIEW").is_some() {
+        return Ok(());
+    }
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
     let dir = path.parent().ok_or(std::io::ErrorKind::NotFound)?;
     std::fs::create_dir_all(dir)?;
@@ -413,9 +441,7 @@ fn load_custom() -> Vec<Custom> {
 impl Prefs {
     /// The user's tiles, saved on their own: only when they change.
     pub fn save_custom(&self) {
-        if std::env::var_os("ORBIT_PREVIEW").is_none() {
-            save_custom(&self.custom);
-        }
+        save_custom(&self.custom);
     }
 }
 

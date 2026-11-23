@@ -110,7 +110,7 @@ mod tests {
     mode 2560 1600 60000
   }
 }
-output "DP-3" enabled=#false {
+output "DP-3" enabled=#true {
   description make="Dell Inc." model="DELL P2416D"
   scale 1.00
   mirroring "eDP-1"
@@ -120,7 +120,7 @@ output "DP-3" enabled=#false {
         assert_eq!(d.len(), 2);
         assert_eq!((d[0].name.as_str(), d[0].model.as_str(), d[0].enabled, d[0].scale), ("eDP-1", "", true, 1.25));
         assert_eq!(d[0].mode, Some((2560, 1600, 165001)));
-        assert_eq!((d[1].model.as_str(), d[1].enabled, d[1].mode), ("Dell Inc. DELL P2416D", false, None));
+        assert_eq!((d[1].model.as_str(), d[1].enabled, d[1].mode), ("Dell Inc. DELL P2416D", true, None));
         assert_eq!((d[0].mirroring.as_deref(), d[1].mirroring.as_deref()), (None, Some("eDP-1")));
     }
 }

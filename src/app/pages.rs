@@ -219,7 +219,7 @@ impl App {
                                 .on_press(Message::OpenPath(drive.mount.clone())),
                             )
                             .push(widget::tooltip(
-                                button::icon(icon::from_name("media-eject-symbolic")).padding(6).on_press(Message::Eject(drive.clone())),
+                                button::icon(icon::from_name("media-eject-symbolic")).padding(6).on_press_maybe((!self.ejecting).then(|| Message::Eject(drive.clone()))),
                                 text::caption(T.eject),
                                 widget::tooltip::Position::Left,
                             )),
@@ -252,12 +252,18 @@ impl App {
                 // The Wi-Fi in use, to join from a phone.
                 // Only when asked for: it holds the password, for anyone to
                 // read off the screen.
-                if self.net.access_points.iter().any(|ap| ap.active) {
+                if let Some(ap) = self.net.access_points.iter().find(|ap| ap.active) {
+                    // Greyed out where the password can't be had.
+                    let sharable = !ap.secure || (ap.saved.is_some() && self.wifi_unshared.as_ref() != Some(&ap.ssid));
                     column = column.push(
-                        container(button::standard(T.share_wifi).leading_icon(icon::from_name("qr-code-symbolic")).on_press(Message::ShowQr(!self.show_qr)))
-                            .padding([8, 10]),
+                        container(
+                            button::standard(T.share_wifi)
+                                .leading_icon(icon::from_name("qr-code-symbolic"))
+                                .on_press_maybe(sharable.then_some(Message::ShowQr(!self.show_qr))),
+                        )
+                        .padding([8, 10]),
                     );
-                    if let Some(qr) = self.wifi_qr.clone().filter(|_| self.show_qr) {
+                    if let Some((_, qr)) = self.wifi_qr.clone().filter(|(ssid, _)| self.show_qr && *ssid == ap.ssid) {
                         column = column.push(qr_view(qr));
                     }
                 }
@@ -340,7 +346,8 @@ impl App {
                     on && self.awake_until.is_none(),
                     Some(Message::KeepAwake(Some(0))),
                 ));
-                if on {
+                // Also while it's being asked for: to call that off.
+                if on || self.inhibiting {
                     column = column.push(self.item(icons::keep_awake(), T.off, None, false, Some(Message::KeepAwake(None))));
                 }
             }

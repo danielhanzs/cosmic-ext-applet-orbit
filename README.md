@@ -150,15 +150,28 @@ Off until you turn them on:
 
   Containers outside Compose are listed together. Nothing that removes
   anything (`down`, `prune`) is offered.
-- **AI usage**: the usage limits of the AI coding assistants you're signed
-  in to, as [CodexBar](https://github.com/steipete/CodexBar) shows them:
-  Claude Code's session (5 h), weekly and per-model weekly windows, and
-  Codex's session and weekly ones, each with its share used, a bar and
-  when it starts over. Read from their own APIs with the sign-in each tool
-  already has (only the ones signed in show); the token goes to the tool's
-  maker over HTTPS, never on a command line, never logged, and an expired
-  one is left for the tool to renew. Also on the panel as a two-bar meter
-  (session above, week below) with the session's share, red near a limit.
+- **AI usage**: the usage limits of the AI coding assistants you use, as
+  [CodexBar](https://github.com/steipete/CodexBar) shows them: Claude
+  Code's session (5 h) and weekly windows, and Codex's session and weekly
+  ones, each with its share used, a bar and when it starts over. Only what
+  the tools themselves write on your computer is read: no sign-in of theirs,
+  nothing asked of their makers' servers. Codex writes its limits into its
+  session logs by itself. Claude Code hands them to its status line, so one
+  line in `~/.claude/settings.json` keeps a copy for Orbit:
+
+  ```json
+  "statusLine": {
+    "type": "command",
+    "command": "umask 077; tee ~/.claude/orbit-status.json >/dev/null"
+  }
+  ```
+
+  If you have a status line already, put the `tee` in front of it:
+  `umask 077; tee ~/.claude/orbit-status.json | your-status-line-command`.
+  The numbers are as of Claude Code's last answer; a window whose reset has
+  passed shows 0%. Also on the panel as a two-bar meter (session above,
+  week below) with the session's share, red near a limit, while the card is
+  on.
 - **SSH**: the hosts of `~/.ssh/config` (and what it includes) and the
   places you connected to lately, searchable; or type `user@host`. A click
   opens `ssh` in COSMIC's terminal.

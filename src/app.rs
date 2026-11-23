@@ -237,10 +237,12 @@ pub struct App {
     inhibiting: bool,
     /// The connection in use, and its Wi-Fi password, for its page.
     details: Option<sys::Details>,
-    wifi_password: Option<String>,
     show_qr: bool,
     /// The QR codes to join, made when their passwords come.
-    wifi_qr: Option<icon::Handle>,
+    /// The share code of the network named, while shown.
+    wifi_qr: Option<(String, icon::Handle)>,
+    /// A network whose password couldn't be read: not shared.
+    wifi_unshared: Option<String>,
     hotspot_qr: Option<icon::Handle>,
     displays: Vec<displays::Display>,
     user: Option<sys::User>,
@@ -265,7 +267,6 @@ pub struct App {
     processes: Vec<dev::Process>,
     processes_by_memory: bool,
     processes_at: Option<Instant>,
-    ending: Option<u32>,
     /// An action asked about before it happens: "stop:system:x.service"…
     confirming: Option<String>,
     /// libvirt's machines (None: no libvirt), and those being acted on.
@@ -347,6 +348,8 @@ pub struct App {
     task_error: Option<String>,
     event_error: Option<String>,
     eject_error: Option<String>,
+    /// An eject runs: no second one meanwhile.
+    ejecting: bool,
     /// Running timers: when each ends, and how long it was.
     timers: Vec<(Instant, Duration)>,
     /// The editor's clock search, and the time zones it matches.
@@ -400,7 +403,8 @@ pub enum Message {
     Tick,
     KeepAwake(Option<u32>),
     Details(Option<sys::Details>),
-    WifiPassword(Option<String>),
+    /// The network's name and its password, if it could be read.
+    WifiPassword(String, Option<String>),
     Copy(String),
     ShowQr(bool),
     Monitors(Vec<ddc::Monitor>),
@@ -441,8 +445,6 @@ pub enum Message {
     /// Read by memory (or processor).
     Processes(bool, Vec<dev::Process>),
     ProcessesBy(bool),
-    /// Ask before ending a process (None: not after all), then end it.
-    AskEnd(Option<u32>),
     End(u32),
     Vms(Option<Vec<dev::Vm>>),
     /// "start" or "shutdown", by name.
@@ -1029,6 +1031,8 @@ impl App {
         let id = window::Id::unique();
         self.popup = Some(id);
         self.opened = Instant::now();
+        // The icon's tooltip goes: libcosmic leaves it under the popup.
+        let untip = cosmic::task::message(cosmic::Action::Surface(surface::Action::DestroyTooltipPopup));
         if self.page != Page::Password {
             self.page = Page::Main;
         }
@@ -1038,7 +1042,7 @@ impl App {
             self.selected = today;
             self.visible = today.first_of_month();
         }
-        let mut tasks = vec![self.load_events(), self.refresh(Source::Media)];
+        let mut tasks = vec![untip, self.load_events(), self.refresh(Source::Media)];
         tasks.push(run(extras()));
         tasks.push(run(async { Message::Displays(displays::list().await) }));
         tasks.push(run(async { Message::Drives(sys::drives().await.unwrap_or_default()) }));
@@ -1120,6 +1124,11 @@ impl App {
             self.page = Page::Main;
         }
         self.save_note();
+        // Next time nothing armed, no error from before.
+        self.confirming = None;
+        self.eject_error = None;
+        self.task_error = None;
+        self.event_error = None;
         // Next time, the load from then: not averaged over the time closed.
         self.sample = None;
         self.cpu_history.clear();
@@ -1382,10 +1391,10 @@ impl App {
 
     /// The note kept, if it changed.
     fn save_note(&mut self) {
-        if self.note_changed.take().is_some() && preview().is_none() {
+        if self.note_changed.take().is_some() {
             // Written and synced to disk: not on the thread that draws.
-            let text = self.note.text();
-            std::thread::spawn(move || crate::config::save_note(&text));
+            let (text, at) = (self.note.text(), Instant::now());
+            std::thread::spawn(move || crate::config::save_note(&text, at));
         }
     }
 
@@ -1408,19 +1417,9 @@ impl App {
     fn usage_summary(&self) -> String {
         let mut lines = Vec::new();
         for p in &self.usage {
-            lines.push(if p.plan.is_empty() { p.name.to_string() } else { format!("{} · {}", p.name, p.plan) });
-            match &p.problem {
-                Some(usage::Problem::Expired) => lines.push(format!("  {}", T.usage_expired)),
-                Some(usage::Problem::Failed(err)) => lines.push(format!("  {}", err.lines().next().unwrap_or_default())),
-                None => {}
-            }
+            lines.push(p.name.to_string());
             for l in &p.limits {
-                let name = match &l.window {
-                    usage::Window::Session => T.session_window.to_string(),
-                    usage::Window::Weekly => T.weekly.to_string(),
-                    usage::Window::Model(model) => format!("{} · {model}", T.weekly),
-                };
-                lines.push(format!("  {name}: {:.0}%{}", l.percent, self.resets(l)));
+                lines.push(format!("  {}: {:.0}%{}", window_name(&l.window), l.percent, self.resets(l)));
             }
         }
         lines.join("\n")
@@ -1430,11 +1429,8 @@ impl App {
     fn resets(&self, limit: &usage::Limit) -> String {
         limit.resets.map_or(String::new(), |at| {
             let at = at.to_zoned(jiff::tz::TimeZone::system());
-            if at.date() == self.now.date() {
-                format!("  ↻ {}", i18n::clock(at.time()))
-            } else {
-                format!("  ↻ {} {}", i18n::weekday_short(at.date()), i18n::clock(at.time()))
-            }
+            let day = if at.date() == self.now.date() { String::new() } else { format!("{} ", i18n::weekday_short(at.date())) };
+            format!("  ↻ {day}{}", i18n::clock(at.time()))
         })
     }
 
@@ -1444,12 +1440,23 @@ impl App {
             return Task::none();
         }
         self.usage_reading = true;
+        if preview().is_some() {
+            // Its screenshots go public: made-up numbers.
+            let soon = |hours| jiff::Timestamp::now().checked_add(jiff::SignedDuration::from_hours(hours)).ok();
+            let limit = |window, percent, hours| usage::Limit { window, percent, resets: soon(hours), severe: percent >= 90.0 };
+            let claude = usage::Provider {
+                name: "Claude",
+                limits: vec![limit(usage::Window::Session, 31.0, 2), limit(usage::Window::Weekly, 70.0, 50), limit(usage::Window::Model("Opus".into()), 38.0, 50)],
+            };
+            return run(async { Message::Usage(vec![claude]) });
+        }
         run(async { Message::Usage(usage::read().await) })
     }
 
-    /// Whether the usage limits are shown anywhere: their card, the panel.
+    /// Whether the usage limits are shown: only with their card on (the
+    /// panel's meter goes with it).
     fn usage_wanted(&self) -> bool {
-        self.prefs.sections.contains(&Section::Usage) || self.prefs.usage_panel
+        self.prefs.sections.contains(&Section::Usage)
     }
 
     /// Changes a setting and keeps it.
@@ -1915,9 +1922,9 @@ impl cosmic::Application for App {
             awake_until: None,
             awake_cancelled: false,
             details: None,
-            wifi_password: None,
             show_qr: false,
             wifi_qr: None,
+            wifi_unshared: None,
             hotspot_qr: None,
             monitors: Vec::new(),
             displays: Vec::new(),
@@ -1936,7 +1943,6 @@ impl cosmic::Application for App {
             processes: Vec::new(),
             processes_by_memory: false,
             processes_at: None,
-            ending: None,
             confirming: None,
             vms: None,
             vms_busy: Vec::new(),
@@ -1986,6 +1992,7 @@ impl cosmic::Application for App {
             task_error: None,
             event_error: None,
             eject_error: None,
+            ejecting: false,
             timers: Vec::new(),
             clock_input: String::new(),
             clock_matches: Vec::new(),
@@ -2048,27 +2055,6 @@ impl cosmic::Application for App {
                     _ if option.starts_with("find:") => app.services_query = option["find:".len()..].to_string(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" | "ssh" | "ports" | "vms" | "usage" => {
-                        let section = match option {
-                            "usage" => Section::Usage,
-                            "ssh" => Section::Ssh,
-                            "ports" => Section::Ports,
-                            "vms" => Section::Vms,
-                            "docker" => Section::Docker,
-                            "services" => Section::Services,
-                            "audio" => Section::Audio,
-                            "system" => Section::System,
-                            "tasks" => Section::Tasks,
-                            "notes" => Section::Notes,
-                            _ => Section::Clocks,
-                        };
-                        if !app.prefs.sections.contains(&section) {
-                            app.prefs.sections.push(section);
-                        }
-                        if section == Section::Clocks && app.prefs.clocks.is_empty() {
-                            app.prefs.clocks = vec!["America/New_York".into(), "Asia/Tokyo".into()];
-                        }
-                    }
                     "calendar" => app.prefs.calendar_open = true,
                     "weather" => {
                         app.prefs.weather_open = true;
@@ -2085,7 +2071,7 @@ impl cosmic::Application for App {
                             Message::Page(page)
                         }));
                     }
-                    "general" | "appearance" | "panel" | "tiles" | "cards" => {
+                    "appearance" | "panel" | "tiles" | "cards" => {
                         app.edit_tab = match option {
                             "panel" => EditTab::Panel,
                             "tiles" => EditTab::Tiles,
@@ -2097,7 +2083,16 @@ impl cosmic::Application for App {
                             Message::Page(Page::Edit)
                         }));
                     }
-                    _ => {}
+                    // A card's name ("docker", "usage"): shown.
+                    other => {
+                        let Some(section) = Section::ALL.into_iter().find(|s| format!("{s:?}").eq_ignore_ascii_case(other)) else { continue };
+                        if !app.prefs.sections.contains(&section) {
+                            app.prefs.sections.push(section);
+                        }
+                        if section == Section::Clocks && app.prefs.clocks.is_empty() {
+                            app.prefs.clocks = vec!["America/New_York".into(), "Asia/Tokyo".into()];
+                        }
+                    }
                 }
             }
             tasks.push(run(async {
@@ -2144,6 +2139,9 @@ impl cosmic::Application for App {
             Message::Page(page) => {
                 self.page = page;
                 self.show_qr = false;
+                self.confirming = None;
+                // The QR holds the password: only on its page.
+                self.wifi_qr = None;
                 self.drag = None;
                 self.drag_over = None;
                 if page == Page::Hotspot {
@@ -2156,9 +2154,6 @@ impl cosmic::Application for App {
                         return fire(async move { _ = sys::scan_wifi(device).await });
                     }
                 }
-                // The password only on the page, and only once asked for.
-                self.wifi_password = None;
-                self.wifi_qr = None;
                 if page == Page::Network {
                     self.details = None;
                     return run(async { Message::Details(sys::details().await) });
@@ -2167,20 +2162,23 @@ impl cosmic::Application for App {
             Message::ShowQr(on) => {
                 self.show_qr = on;
                 let Some(ap) = self.net.access_points.iter().find(|ap| ap.active).cloned() else { return Task::none() };
-                if !on || self.wifi_qr.is_some() {
+                if !on || self.wifi_qr.as_ref().is_some_and(|(ssid, _)| *ssid == ap.ssid) {
                     return Task::none();
                 }
                 if !ap.secure {
-                    self.wifi_qr = icons::qr(&sys::wifi_qr_text(&ap.ssid, None));
+                    self.wifi_qr = icons::qr(&sys::wifi_qr_text(&ap.ssid, None)).map(|qr| (ap.ssid, qr));
                 } else if let Some(path) = ap.saved {
-                    return run(async move { Message::WifiPassword(sys::wifi_password(path).await) });
+                    return run(async move { Message::WifiPassword(ap.ssid, sys::wifi_password(path).await) });
                 }
             }
-            Message::WifiPassword(password) => {
-                let ssid = self.net.access_points.iter().find(|ap| ap.active).map(|ap| ap.ssid.clone()).unwrap_or_default();
-                self.wifi_qr = password.as_deref().and_then(|p| icons::qr(&sys::wifi_qr_text(&ssid, Some(p))));
-                self.wifi_password = password;
-            }
+            Message::WifiPassword(ssid, password) => match password {
+                Some(p) => self.wifi_qr = icons::qr(&sys::wifi_qr_text(&ssid, Some(&p))).map(|qr| (ssid, qr)),
+                // Not to be read (a company login, a keyring): no share.
+                None => {
+                    self.show_qr = false;
+                    self.wifi_unshared = Some(ssid);
+                }
+            },
             Message::Displays(displays) => self.displays = displays,
             Message::DisplayOn(name, on) => {
                 return run(async move {
@@ -2282,9 +2280,8 @@ impl cosmic::Application for App {
                 self.processes_by_memory = memory;
                 return run(async move { Message::Processes(memory, dev::processes(memory).await) });
             }
-            Message::AskEnd(pid) => self.ending = pid,
             Message::End(pid) => {
-                self.ending = None;
+                self.confirming = None;
                 let memory = self.processes_by_memory;
                 return run(async move {
                     dev::end(pid).await;
@@ -2385,6 +2382,9 @@ impl cosmic::Application for App {
                 }
             }
             Message::Eject(drive) => {
+                if std::mem::replace(&mut self.ejecting, true) {
+                    return Task::none();
+                }
                 self.eject_error = None;
                 return run(async move {
                     let ejected = sys::eject(drive).await.map_err(|e| e.to_string());
@@ -2395,6 +2395,7 @@ impl cosmic::Application for App {
                 // "Target is busy": something still has a file open on it.
                 self.eject_error = ejected.err();
                 self.drives = drives;
+                self.ejecting = false;
             }
             Message::OpenPath(path) => {
                 crate::host::spawn("xdg-open", &[path.as_str()]);
@@ -3347,8 +3348,8 @@ impl cosmic::Application for App {
         }
         // Each assistant's meter (its session and week) and the session's
         // share; every window and when it starts over, on hover.
-        let read: Vec<&usage::Provider> = self.usage.iter().filter(|p| p.problem.is_none() && !p.limits.is_empty()).collect();
-        if self.prefs.usage_panel && !read.is_empty() {
+        let read: Vec<&usage::Provider> = self.usage.iter().collect();
+        if self.usage_wanted() && self.prefs.usage_panel && !read.is_empty() {
             let meters = read.iter().fold(widget::Row::new().spacing(gap), |row, p| {
                 let of = |window: usage::Window| p.limits.iter().find(|l| l.window == window).map_or(0.0, |l| l.percent);
                 let severe = p.limits.iter().any(|l| l.severe);
@@ -3455,5 +3456,14 @@ impl cosmic::Application for App {
 
     fn on_close_requested(&self, id: window::Id) -> Option<Message> {
         Some(Message::Closed(id))
+    }
+}
+
+/// "Session (5 h)", "Weekly", "Weekly · Opus".
+fn window_name(window: &usage::Window) -> String {
+    match window {
+        usage::Window::Session => T.session_window.to_string(),
+        usage::Window::Weekly => T.weekly.to_string(),
+        usage::Window::Model(model) => format!("{} · {model}", T.weekly),
     }
 }

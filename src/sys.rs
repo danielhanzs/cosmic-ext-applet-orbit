@@ -991,22 +991,27 @@ pub async fn drives() -> zbus::Result<Vec<Drive>> {
         found.push((Drive { name, size: size(bytes), mount, drive, mounted: Vec::new(), unlocked: Vec::new() }, path.clone(), backing));
     }
     // Each drive's file systems, to unmount (and lock) all before it goes.
-    let all: Vec<(OwnedObjectPath, OwnedObjectPath, Option<OwnedObjectPath>)> =
-        found.iter().map(|(d, path, backing)| (d.drive.clone(), path.clone(), backing.clone())).collect();
     let mut drives: Vec<Drive> = found
-        .into_iter()
-        .map(|(mut d, _, _)| {
-            for (drive, path, backing) in &all {
-                if *drive == d.drive {
-                    d.mounted.push(path.clone());
-                    d.unlocked.extend(backing.clone());
-                }
+        .iter()
+        .map(|(d, ..)| {
+            let mut d = d.clone();
+            for (_, path, backing) in found.iter().filter(|(o, ..)| o.drive == d.drive) {
+                d.mounted.push(path.clone());
+                d.unlocked.extend(backing.clone());
             }
             d
         })
         .collect();
     drives.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(drives)
+}
+
+/// Unmounted or locked already (in Files, since the list was read): done.
+fn done(result: zbus::Result<zbus::Message>) -> zbus::Result<()> {
+    match result {
+        Err(zbus::Error::MethodError(name, _, _)) if ["NotMounted", "NotUnlocked"].iter().any(|e| name.as_str().ends_with(e)) => Ok(()),
+        other => other.map(drop),
+    }
 }
 
 /// "16 GB", "512 MB": as drives are sold, in powers of ten.
@@ -1023,10 +1028,10 @@ pub async fn eject(drive: Drive) -> zbus::Result<()> {
     let conn = crate::bus::system().await?;
     let none: HashMap<&str, Value<'_>> = HashMap::new();
     for fs in &drive.mounted {
-        conn.call_method(Some(UDISKS), fs, Some("org.freedesktop.UDisks2.Filesystem"), "Unmount", &(&none,)).await?;
+        done(conn.call_method(Some(UDISKS), fs, Some("org.freedesktop.UDisks2.Filesystem"), "Unmount", &(&none,)).await)?;
     }
     for encrypted in &drive.unlocked {
-        conn.call_method(Some(UDISKS), encrypted, Some("org.freedesktop.UDisks2.Encrypted"), "Lock", &(&none,)).await?;
+        done(conn.call_method(Some(UDISKS), encrypted, Some("org.freedesktop.UDisks2.Encrypted"), "Lock", &(&none,)).await)?;
     }
     let iface = Some("org.freedesktop.UDisks2.Drive");
     if conn.call_method(Some(UDISKS), &drive.drive, iface, "PowerOff", &(&none,)).await.is_err() {

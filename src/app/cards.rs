@@ -555,8 +555,12 @@ impl App {
             .into()
     }
 
-    /// An action that asks first: its button, then "Sure?" and a way back.
-    pub(super) fn guarded(&self, key: String, icon_name: &'static str, tip: &'static str, message: Option<Message>) -> Element<'_, Message> {
+    /// An action that (if `ask`) asks first: its button, then "Sure?" and a
+    /// way back.
+    pub(super) fn guarded(&self, key: String, icon_name: &'static str, tip: &'static str, message: Option<Message>, ask: bool) -> Element<'_, Message> {
+        if !ask {
+            return tip_button(icon_name, tip, message);
+        }
         match message {
             Some(message) if self.confirming.as_deref() == Some(key.as_str()) => widget::Row::new()
                 .spacing(2)
@@ -564,33 +568,16 @@ impl App {
                 .push(button::destructive(T.sure).on_press(message))
                 .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::Confirm(None)))
                 .into(),
-            message => widget::tooltip(
-                button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message.map(|_| Message::Confirm(Some(key)))),
-                text::caption(tip),
-                widget::tooltip::Position::Left,
-            )
-            .into(),
+            message => tip_button(icon_name, tip, message.map(|_| Message::Confirm(Some(key)))),
         }
     }
 
     /// Ending a process: asked first; nothing for one that isn't the user's.
     pub(super) fn end_button(&self, pid: Option<u32>) -> Element<'_, Message> {
-        let Some(pid) = pid else {
-            return widget::space().width(Length::Fixed(28.0)).into();
-        };
-        if self.ending == Some(pid) {
-            return widget::Row::new()
-                .spacing(2)
-                .push(button::destructive(T.end_confirm).on_press(Message::End(pid)))
-                .push(button::icon(icon::from_name("window-close-symbolic")).padding(4).on_press(Message::AskEnd(None)))
-                .into();
+        match pid {
+            Some(pid) => self.guarded(format!("end:{pid}"), "process-stop-symbolic", T.end_process, Some(Message::End(pid)), true),
+            None => widget::space().width(Length::Fixed(28.0)).into(),
         }
-        widget::tooltip(
-            button::icon(icon::from_name("process-stop-symbolic")).padding(4).on_press(Message::AskEnd(Some(pid))),
-            text::caption(T.end_process),
-            widget::tooltip::Position::Left,
-        )
-        .into()
     }
 
     /// SSH: a destination typed, the ones used lately, the config's hosts.
@@ -701,29 +688,23 @@ impl App {
         }
         for vm in vms {
             let busy = self.vms_busy.contains(&vm.name);
-            let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| {
-                widget::tooltip(
-                    button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
-                    text::caption(tip),
-                    widget::tooltip::Position::Left,
-                )
-            };
             let running = vm.running();
             column = column.push(
                 widget::Row::new()
                     .spacing(6)
                     .align_y(Alignment::Center)
                     .push(widget::Column::new().push(text::body(vm.name.clone())).push(text::caption(vm.state.clone())).width(Length::Fill))
-                    .push_maybe(running.then(|| act("video-display-symbolic", T.console, Some(Message::Console(vm.name.clone())))))
+                    .push_maybe(running.then(|| tip_button("video-display-symbolic", T.console, Some(Message::Console(vm.name.clone())))))
                     .push(if running {
                         self.guarded(
                             format!("shutdown:{}", vm.name),
                             "system-shutdown-symbolic",
                             T.shut_down,
                             (!busy).then(|| Message::VmAction("shutdown", vm.name.clone())),
+                            true,
                         )
                     } else {
-                        act("media-playback-start-symbolic", T.start, (!busy).then(|| Message::VmAction("start", vm.name.clone()))).into()
+                        tip_button("media-playback-start-symbolic", T.start, (!busy).then(|| Message::VmAction("start", vm.name.clone())))
                     }),
             );
         }
@@ -806,48 +787,19 @@ impl App {
             column = column.push(text::caption(T.services_hint));
         }
         if let Some(err) = &self.services_error {
-            column = column.push(text::caption(err.clone()).class(theme::Text::Custom(|theme| iced::widget::text::Style {
-                color: Some(theme.cosmic().destructive_color().into()),
-                ..Default::default()
-            })));
+            column = column.push(error_text(err));
         }
         for u in shown {
             let busy = self.services_busy.contains(&key(u));
             let pinned = self.prefs.pinned_services.contains(&key(u));
             let (running, failed) = (u.running(), u.failed());
-            let dot = container(widget::space())
-                .width(Length::Fixed(8.0))
-                .height(Length::Fixed(8.0))
-                .class(theme::Container::custom(move |theme| {
-                    let cosmic = theme.cosmic();
-                    let color: Color = if failed {
-                        cosmic.destructive_color().into()
-                    } else if running {
-                        cosmic.success_color().into()
-                    } else {
-                        Color::from(cosmic.button.on).scale_alpha(0.3)
-                    };
-                    container::Style {
-                        background: Some(color.into()),
-                        border: iced::Border { radius: 4.0.into(), ..Default::default() },
-                        ..Default::default()
-                    }
-                }));
             let about = if u.description.is_empty() { u.sub.clone() } else { format!("{} · {}", u.sub, u.description) };
-            let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| {
-                widget::tooltip(
-                    button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
-                    text::caption(tip),
-                    widget::tooltip::Position::Left,
-                )
-            };
-            let (icon_name, tip, action) =
-                if running { ("media-playback-stop-symbolic", T.stop, "stop") } else { ("media-playback-start-symbolic", T.start, "start") };
+            let (icon_name, tip, action) = start_stop(running);
             column = column.push(
                 widget::Row::new()
                     .spacing(6)
                     .align_y(Alignment::Center)
-                    .push(dot)
+                    .push(state_dot(running, failed))
                     .push(
                         widget::Column::new()
                             .push(text::body(u.short().to_string()).wrapping(iced::widget::text::Wrapping::None))
@@ -855,26 +807,24 @@ impl App {
                             .width(Length::Fill)
                             .clip(true),
                     )
-                    .push(act(
+                    .push(tip_button(
                         if pinned { "starred-symbolic" } else { "non-starred-symbolic" },
                         if pinned { T.unpin } else { T.pin },
                         Some(Message::PinService(key(u))),
                     ))
-                    .push(act("text-x-generic-symbolic", T.logs, Some(Message::ServiceLogs(u.name.clone()))))
+                    .push(tip_button("text-x-generic-symbolic", T.logs, Some(Message::ServiceLogs(u.name.clone()))))
                     // The system's: stopping or restarting one asks first
                     // (the session may hang on it).
-                    .push(if running && !self.services_user {
-                        self.guarded(format!("stop:{}", key(u)), icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone())))
-                    } else {
-                        act(icon_name, tip, (!busy).then(|| Message::ServiceAction(action, u.name.clone()))).into()
-                    })
+                    .push(self.guarded(
+                        format!("stop:{}", key(u)),
+                        icon_name,
+                        tip,
+                        (!busy).then(|| Message::ServiceAction(action, u.name.clone())),
+                        running && !self.services_user,
+                    ))
                     .push_maybe(running.then(|| {
                         let restart = (!busy).then(|| Message::ServiceAction("restart", u.name.clone()));
-                        if self.services_user {
-                            act("system-reboot-symbolic", T.restart, restart).into()
-                        } else {
-                            self.guarded(format!("restart:{}", key(u)), "system-reboot-symbolic", T.restart, restart)
-                        }
+                        self.guarded(format!("restart:{}", key(u)), "system-reboot-symbolic", T.restart, restart, !self.services_user)
                     })),
             );
         }
@@ -898,32 +848,6 @@ impl App {
         if stacks.is_empty() {
             column = column.push(text::caption(T.no_containers));
         }
-        // Green running, faint stopped.
-        let state = |running: bool| -> Element<'_, Message> {
-            container(widget::space())
-                .width(Length::Fixed(8.0))
-                .height(Length::Fixed(8.0))
-                .class(theme::Container::custom(move |theme| {
-                    let cosmic = theme.cosmic();
-                    let color: Color =
-                        if running { cosmic.success_color().into() } else { Color::from(cosmic.button.on).scale_alpha(0.3) };
-                    container::Style {
-                        background: Some(color.into()),
-                        border: iced::Border { radius: 4.0.into(), ..Default::default() },
-                        ..Default::default()
-                    }
-                }))
-                .into()
-        };
-        // An icon button with its name on hover; none while that's busy.
-        let act = |icon_name: &'static str, tip: &'static str, message: Option<Message>| -> Element<'_, Message> {
-            widget::tooltip(
-                button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message),
-                text::caption(tip),
-                widget::tooltip::Position::Left,
-            )
-            .into()
-        };
         for stack in stacks {
             let open = self.docker_open.contains(&stack.name);
             let name = if stack.name.is_empty() { T.other_containers.to_string() } else { stack.name.clone() };
@@ -934,7 +858,7 @@ impl App {
                     widget::Row::new()
                         .spacing(8)
                         .align_y(Alignment::Center)
-                        .push(state(stack.running() > 0))
+                        .push(state_dot(stack.running() > 0, false))
                         .push(text::body(name).width(Length::Fill))
                         .push(text::caption(format!("{}/{}", stack.running(), stack.containers.len())))
                         .push(icon::from_name(if open { "go-up-symbolic" } else { "go-down-symbolic" }).size(16)),
@@ -947,20 +871,12 @@ impl App {
             // A Compose stack as a whole: its folder, and start, stop, restart.
             if !stack.name.is_empty() {
                 if let Some(folder) = &stack.folder {
-                    row = row.push(act("folder-open-symbolic", T.project_terminal, Some(Message::DockerFolder(folder.clone()))));
+                    row = row.push(tip_button("folder-open-symbolic", T.project_terminal, Some(Message::DockerFolder(folder.clone()))));
                 }
-                let (icon_name, tip, action) = if stack.running() > 0 {
-                    ("media-playback-stop-symbolic", T.stop, "stop")
-                } else {
-                    ("media-playback-start-symbolic", T.start, "start")
-                };
+                let (icon_name, tip, action) = start_stop(stack.running() > 0);
                 let message = (!busy).then(|| Message::DockerStackAction(action, stack.name.clone()));
                 // Stopping a whole stack asks first.
-                row = row.push(if action == "stop" {
-                    self.guarded(format!("stop:{key}"), icon_name, tip, message)
-                } else {
-                    act(icon_name, tip, message)
-                });
+                row = row.push(self.guarded(format!("stop:{key}"), icon_name, tip, message, action == "stop"));
                 // Restarting is for what runs.
                 if stack.running() > 0 {
                     row = row.push(self.guarded(
@@ -968,6 +884,7 @@ impl App {
                         "system-reboot-symbolic",
                         T.restart,
                         (!busy).then(|| Message::DockerStackAction("restart", stack.name.clone())),
+                        true,
                     ));
                 }
             }
@@ -981,27 +898,23 @@ impl App {
                         .spacing(8)
                         .padding([0, 8, 0, 24])
                         .align_y(Alignment::Center)
-                        .push(state(c.running))
+                        .push(state_dot(c.running, false))
                         .push(
                             widget::Column::new()
                                 .push(text::body(c.service.as_str()))
                                 .push(text::caption(c.status.as_str()).wrapping(iced::widget::text::Wrapping::None))
                                 .width(Length::Fill),
                         )
-                        .push_maybe(c.web.as_ref().filter(|_| c.running).map(|url| act("web-browser-symbolic", T.open_port, Some(Message::OpenUrl(url.clone())))))
-                        .push(act("text-x-generic-symbolic", T.logs, Some(Message::DockerLogs(c.id.clone()))))
-                        .push(act("utilities-terminal-symbolic", T.terminal, c.running.then(|| Message::DockerShell(c.id.clone()))))
+                        .push_maybe(c.web.as_ref().filter(|_| c.running).map(|url| tip_button("web-browser-symbolic", T.open_port, Some(Message::OpenUrl(url.clone())))))
+                        .push(tip_button("text-x-generic-symbolic", T.logs, Some(Message::DockerLogs(c.id.clone()))))
+                        .push(tip_button("utilities-terminal-symbolic", T.terminal, c.running.then(|| Message::DockerShell(c.id.clone()))))
                         .push({
                             let busy = self.docker_busy.contains(&c.id);
-                            let (icon_name, tip, action) = if c.running {
-                                ("media-playback-stop-symbolic", T.stop, "stop")
-                            } else {
-                                ("media-playback-start-symbolic", T.start, "start")
-                            };
-                            act(icon_name, tip, (!busy).then(|| Message::DockerContainer(action, c.id.clone())))
+                            let (icon_name, tip, action) = start_stop(c.running);
+                            tip_button(icon_name, tip, (!busy).then(|| Message::DockerContainer(action, c.id.clone())))
                         })
                         .push_maybe(c.running.then(|| {
-                            act("system-reboot-symbolic", T.restart, (!self.docker_busy.contains(&c.id)).then(|| Message::DockerContainer("restart", c.id.clone())))
+                            tip_button("system-reboot-symbolic", T.restart, (!self.docker_busy.contains(&c.id)).then(|| Message::DockerContainer("restart", c.id.clone())))
                         })),
                 );
             }
@@ -1147,20 +1060,10 @@ impl App {
                 widget::Row::new()
                     .spacing(6)
                     .align_y(Alignment::Center)
-                    .push(text::body(p.name).font(cosmic::font::bold()))
-                    .push(text::caption(p.plan.clone())),
+                    .push(text::body(p.name).font(cosmic::font::bold())),
             );
-            match &p.problem {
-                Some(usage::Problem::Expired) => column = column.push(text::caption(T.usage_expired)),
-                Some(usage::Problem::Failed(err)) => column = column.push(error_text(err)),
-                None => {}
-            }
             for limit in &p.limits {
-                let name = match &limit.window {
-                    usage::Window::Session => T.session_window.to_string(),
-                    usage::Window::Weekly => T.weekly.to_string(),
-                    usage::Window::Model(model) => format!("{} · {model}", T.weekly),
-                };
+                let name = window_name(&limit.window);
                 let share = format!("{:.0}%{}", limit.percent, self.resets(limit));
                 column = column.push(
                     widget::Column::new()
@@ -1178,4 +1081,38 @@ impl App {
         }
         column.into()
     }
+}
+
+/// An icon button with its name on hover; greyed out without a message.
+pub(super) fn tip_button(icon_name: &'static str, tip: &'static str, message: Option<Message>) -> Element<'static, Message> {
+    widget::tooltip(button::icon(icon::from_name(icon_name)).padding(4).on_press_maybe(message), text::caption(tip), widget::tooltip::Position::Left)
+        .into()
+}
+
+/// The icon, name and action that start or (running) stop something.
+fn start_stop(running: bool) -> (&'static str, &'static str, &'static str) {
+    if running { ("media-playback-stop-symbolic", T.stop, "stop") } else { ("media-playback-start-symbolic", T.start, "start") }
+}
+
+/// A small dot: red failed, green running, faint stopped.
+fn state_dot(running: bool, failed: bool) -> Element<'static, Message> {
+    container(widget::space())
+        .width(Length::Fixed(8.0))
+        .height(Length::Fixed(8.0))
+        .class(theme::Container::custom(move |theme| {
+            let cosmic = theme.cosmic();
+            let color: Color = if failed {
+                cosmic.destructive_color().into()
+            } else if running {
+                cosmic.success_color().into()
+            } else {
+                Color::from(cosmic.button.on).scale_alpha(0.3)
+            };
+            container::Style {
+                background: Some(color.into()),
+                border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                ..Default::default()
+            }
+        }))
+        .into()
 }

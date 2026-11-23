@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //! The AI coding assistants' usage limits, as CodexBar shows them: Claude
-//! Code's and Codex's session and weekly windows, from their own APIs,
-//! with the sign-in each tool already has. Only the ones signed in show.
+//! Code's and Codex's session and weekly windows. Read only from what the
+//! tools themselves write on this computer: no sign-in of theirs is read,
+//! nothing is asked of their makers' servers.
 //!
-//! Tokens are read from the tools' own files on the host, sent only to the
-//! tool's maker over HTTPS (to curl on its standard input, not its command
-//! line), never logged, never kept. An expired one isn't refreshed here:
-//! that's the tool's job (refreshing rotates the token it relies on).
+//! - Codex writes its limits into its session logs as it works.
+//! - Claude Code hands them to its status line command; one line in its
+//!   settings keeps a copy for Orbit (see the README):
+//!   `tee ~/.claude/orbit-status.json | <the status line as it was>`.
 
 use jiff::Timestamp;
 use serde_json::Value;
@@ -27,25 +28,14 @@ pub struct Limit {
     /// 0..100
     pub percent: f32,
     pub resets: Option<Timestamp>,
-    /// Near or at the limit, as the service says.
+    /// Near the limit.
     pub severe: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Problem {
-    /// Signed in once, but the sign-in has run out: the tool renews it.
-    Expired,
-    /// Asked and failed (offline, refused…).
-    Failed(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Provider {
     pub name: &'static str,
-    /// "Max", "Team", "Plus"…
-    pub plan: String,
     pub limits: Vec<Limit>,
-    pub problem: Option<Problem>,
 }
 
 impl Provider {
@@ -55,28 +45,23 @@ impl Provider {
     }
 }
 
-/// A file of the user's on the host (a Flatpak doesn't see their home).
-async fn home_file(path: &str) -> Option<String> {
-    let script = r#"test -f "$HOME/$1" && head -c 65536 "$HOME/$1""#;
-    crate::host::output("sh", &["-c", script, "sh", path], 5).await.ok().filter(|t| !t.is_empty())
+/// The output of a script run on the host, in the user's home (a Flatpak
+/// doesn't see it); nothing for no output.
+async fn home(script: &str, arg: &str) -> Option<String> {
+    crate::host::output("sh", &["-c", script, "sh", arg], 5).await.ok().filter(|t| !t.trim().is_empty())
 }
 
-/// A JSON document from `url`, with these headers (the token among them).
-async fn get(url: &str, headers: &str) -> Result<Value, String> {
-    let out = crate::host::output_with_input(
-        "curl",
-        &["-sS", "--fail-with-body", "--max-time", "15", "--max-filesize", "1000000", "--proto", "=https", "-H", "@-", url],
-        headers.as_bytes(),
-        20,
-    )
-    .await?;
-    serde_json::from_str(&out).map_err(|e| e.to_string())
-}
-
-/// Every provider the user is signed in to, with its limits.
+/// Every assistant that has told its limits, with them.
 pub async fn read() -> Vec<Provider> {
     let (claude, codex) = tokio::join!(claude(), codex());
-    claude.into_iter().chain(codex).collect()
+    claude.into_iter().chain(codex).filter(|p| !p.limits.is_empty()).collect()
+}
+
+/// A window as last told; one whose reset has passed since starts over.
+fn limit(window: Window, percent: f64, resets: Option<Timestamp>) -> Limit {
+    let over = resets.is_some_and(|r| r <= Timestamp::now());
+    let percent = if over { 0.0 } else { percent.clamp(0.0, 100.0) as f32 };
+    Limit { window, percent, resets: resets.filter(|_| !over), severe: percent >= 90.0 }
 }
 
 fn title(word: &str) -> String {
@@ -87,101 +72,67 @@ fn title(word: &str) -> String {
 // ---------------------------------------------------------------- Claude
 
 async fn claude() -> Option<Provider> {
-    let credentials: Value = serde_json::from_str(&home_file(".claude/.credentials.json").await?).ok()?;
-    let oauth = &credentials["claudeAiOauth"];
-    let token = oauth["accessToken"].as_str().filter(|t| !t.is_empty())?;
-    let mut provider =
-        Provider { name: "Claude", plan: title(oauth["subscriptionType"].as_str().unwrap_or("")), limits: Vec::new(), problem: None };
-    // Milliseconds; renewed by Claude Code itself.
-    let expires = oauth["expiresAt"].as_i64().unwrap_or(0);
-    if expires <= Timestamp::now().as_millisecond() {
-        provider.problem = Some(Problem::Expired);
-        return Some(provider);
-    }
-    let headers = format!(
-        "Authorization: Bearer {token}\nanthropic-beta: oauth-2025-04-20\nAccept: application/json\nUser-Agent: claude-cli/2.1.0 (external, cli)\n"
-    );
-    match get("https://api.anthropic.com/api/oauth/usage", &headers).await {
-        Ok(usage) => provider.limits = claude_limits(&usage),
-        Err(err) if err.contains("401") => provider.problem = Some(Problem::Expired),
-        Err(err) => provider.problem = Some(Problem::Failed(err)),
-    }
-    Some(provider)
+    let status = home(r#"test -f "$HOME/$1" && head -c 65536 "$HOME/$1""#, ".claude/orbit-status.json").await?;
+    let status: Value = serde_json::from_str(&status).ok()?;
+    Some(Provider { name: "Claude", limits: claude_limits(&status["rate_limits"]) })
 }
 
-/// `limits`: [{"kind": "session" | "weekly_all" | "weekly_scoped", "percent",
-/// "severity", "resets_at", "scope": {"model": {"display_name"}}}]; older
-/// answers only have "five_hour" and "seven_day": {"utilization", "resets_at"}.
-fn claude_limits(usage: &Value) -> Vec<Limit> {
-    let resets = |v: &Value| v.as_str().and_then(|t| t.parse::<Timestamp>().ok());
-    let listed: Vec<Limit> = usage["limits"]
-        .as_array()
-        .map(|limits| {
-            limits
-                .iter()
-                .filter_map(|l| {
-                    let window = match l["kind"].as_str()? {
-                        "session" => Window::Session,
-                        "weekly_all" => Window::Weekly,
-                        "weekly_scoped" => Window::Model(l["scope"]["model"]["display_name"].as_str().unwrap_or("").to_string()),
-                        _ => return None,
-                    };
-                    Some(Limit {
-                        window,
-                        percent: l["percent"].as_f64()? as f32,
-                        resets: resets(&l["resets_at"]),
-                        severe: !matches!(l["severity"].as_str(), None | Some("normal")),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    if !listed.is_empty() {
-        return listed;
-    }
-    [("five_hour", Window::Session), ("seven_day", Window::Weekly)]
+/// The status line's `rate_limits`: {"five_hour", "seven_day", (a model's
+/// own week) "seven_day_opus"…: {"used_percentage", "resets_at" (Unix
+/// seconds)}}; a window is left out until used.
+fn claude_limits(limits: &Value) -> Vec<Limit> {
+    let mut found: Vec<Limit> = limits
+        .as_object()
         .into_iter()
-        .filter_map(|(key, window)| {
-            let w = &usage[key];
-            let percent = w["utilization"].as_f64()? as f32;
-            Some(Limit { window, percent, resets: resets(&w["resets_at"]), severe: percent >= 90.0 })
+        .flatten()
+        .filter_map(|(key, w)| {
+            let window = match key.as_str() {
+                "five_hour" => Window::Session,
+                "seven_day" => Window::Weekly,
+                other => Window::Model(title(other.strip_prefix("seven_day_")?)),
+            };
+            let resets = w["resets_at"].as_i64().and_then(|s| Timestamp::from_second(s).ok());
+            Some(limit(window, w["used_percentage"].as_f64()?, resets))
         })
-        .collect()
+        .collect();
+    found.sort_by_key(|l| match l.window {
+        Window::Session => 0,
+        Window::Weekly => 1,
+        Window::Model(_) => 2,
+    });
+    found
 }
 
 // ---------------------------------------------------------------- Codex
 
 async fn codex() -> Option<Provider> {
-    let auth: Value = serde_json::from_str(&home_file(".codex/auth.json").await?).ok()?;
-    let token = auth["tokens"]["access_token"].as_str().filter(|t| !t.is_empty())?;
-    let mut provider = Provider { name: "Codex", plan: String::new(), limits: Vec::new(), problem: None };
-    let mut headers = format!("Authorization: Bearer {token}\nAccept: application/json\nUser-Agent: Orbit\n");
-    if let Some(account) = auth["tokens"]["account_id"].as_str().filter(|a| !a.is_empty() && !a.contains(['\r', '\n'])) {
-        headers.push_str(&format!("ChatGPT-Account-Id: {account}\n"));
-    }
-    match get("https://chatgpt.com/backend-api/wham/usage", &headers).await {
-        Ok(usage) => {
-            provider.plan = title(usage["plan_type"].as_str().unwrap_or(""));
-            provider.limits = codex_limits(&usage);
-        }
-        Err(err) if err.contains("401") => provider.problem = Some(Problem::Expired),
-        Err(err) => provider.problem = Some(Problem::Failed(err)),
-    }
-    Some(provider)
+    // The latest of the recent sessions that has told its limits.
+    let script = r#"for f in $(ls -t "$HOME"/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -n 5); do
+        line=$(grep -F '"rate_limits":{' "$f" | tail -n 1)
+        [ -n "$line" ] && { printf '%s' "$line" | head -c 65536; exit 0; }
+    done"#;
+    let line: Value = serde_json::from_str(&home(script, "").await?).ok()?;
+    Some(Provider { name: "Codex", limits: codex_limits(&line) })
 }
 
-/// `rate_limit`: {"primary_window", "secondary_window"}: {"used_percent",
-/// "reset_at" (Unix seconds), "limit_window_seconds"}.
-fn codex_limits(usage: &Value) -> Vec<Limit> {
-    ["primary_window", "secondary_window"]
+/// A session log's line: {"timestamp", "payload": {"rate_limits":
+/// {"primary", "secondary": {"used_percent", "window_minutes", "resets_at"
+/// (Unix seconds), or before that "resets_in_seconds" (from the line's
+/// time)}}}}.
+fn codex_limits(line: &Value) -> Vec<Limit> {
+    let at = line["timestamp"].as_str().and_then(|t| t.parse::<Timestamp>().ok());
+    ["primary", "secondary"]
         .iter()
         .filter_map(|key| {
-            let w = &usage["rate_limit"][key];
-            let percent = w["used_percent"].as_f64()? as f32;
+            let w = &line["payload"]["rate_limits"][key];
+            let percent = w["used_percent"].as_f64()?;
             // Up to a day long: the session; longer: the week.
-            let window = if w["limit_window_seconds"].as_i64().unwrap_or(0) <= 86_400 { Window::Session } else { Window::Weekly };
-            let resets = w["reset_at"].as_i64().and_then(|s| Timestamp::from_second(s).ok());
-            Some(Limit { window, percent, resets, severe: percent >= 90.0 })
+            let window = if w["window_minutes"].as_i64().unwrap_or(0) <= 1440 { Window::Session } else { Window::Weekly };
+            let resets = match w["resets_at"].as_i64() {
+                Some(s) => Timestamp::from_second(s).ok(),
+                None => at.zip(w["resets_in_seconds"].as_i64()).and_then(|(at, s)| at.checked_add(jiff::SignedDuration::from_secs(s)).ok()),
+            };
+            Some(limit(window, percent, resets))
         })
         .collect()
 }
@@ -192,35 +143,32 @@ mod tests {
 
     #[test]
     fn reads_claude() {
-        let usage: Value = serde_json::from_str(
-            r#"{"five_hour":{"utilization":24.0,"resets_at":"2026-11-23T11:39:59.687297+00:00"},
-                "limits":[{"kind":"session","percent":24,"severity":"normal","resets_at":"2026-11-23T11:39:59.687297+00:00"},
-                          {"kind":"weekly_all","percent":70,"severity":"warning","resets_at":"2026-11-24T23:59:59+00:00"},
-                          {"kind":"weekly_scoped","percent":38,"severity":"normal","resets_at":null,"scope":{"model":{"display_name":"Opus"}}},
-                          {"kind":"something_new","percent":1}]}"#,
+        let status: Value = serde_json::from_str(
+            r#"{"model":{"id":"x"},"rate_limits":{"seven_day":{"used_percentage":91.5,"resets_at":4102444800},
+                "five_hour":{"used_percentage":23.5,"resets_at":4102444800},
+                "seven_day_opus":{"used_percentage":38,"resets_at":1000},
+                "spend_limit":{"used_percentage":62.8,"resets_at":4102444800}}}"#,
         )
         .unwrap();
-        let limits = claude_limits(&usage);
-        assert_eq!(limits.len(), 3);
-        assert_eq!((limits[0].window.clone(), limits[0].percent, limits[0].severe), (Window::Session, 24.0, false));
-        assert!(limits[1].severe && limits[0].resets.is_some() && limits[2].resets.is_none());
-        assert_eq!(limits[2].window, Window::Model("Opus".into()));
-        // An older answer: the two windows.
-        let old: Value = serde_json::from_str(r#"{"five_hour":{"utilization":95,"resets_at":null},"seven_day":null}"#).unwrap();
-        let limits = claude_limits(&old);
-        assert_eq!((limits.len(), limits[0].severe), (1, true));
+        let limits = claude_limits(&status["rate_limits"]);
+        assert_eq!(limits.iter().map(|l| l.window.clone()).collect::<Vec<_>>(), [Window::Session, Window::Weekly, Window::Model("Opus".into())]);
+        assert_eq!((limits[0].percent, limits[0].severe, limits[1].severe), (23.5, false, true));
+        // Its reset long past: started over.
+        assert_eq!((limits[2].percent, limits[2].resets), (0.0, None));
+        assert!(claude_limits(&Value::Null).is_empty());
     }
 
     #[test]
     fn reads_codex() {
-        let usage: Value = serde_json::from_str(
-            r#"{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":12,"reset_at":1795000000,"limit_window_seconds":18000},
-                "secondary_window":{"used_percent":91,"reset_at":1795500000,"limit_window_seconds":604800}}}"#,
+        let line: Value = serde_json::from_str(
+            r#"{"timestamp":"2099-01-01T00:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{
+                "primary":{"used_percent":12,"window_minutes":300,"resets_in_seconds":600},
+                "secondary":{"used_percent":95,"window_minutes":10080,"resets_at":4102444800}}}}"#,
         )
         .unwrap();
-        let limits = codex_limits(&usage);
+        let limits = codex_limits(&line);
         assert_eq!(limits.iter().map(|l| l.window.clone()).collect::<Vec<_>>(), [Window::Session, Window::Weekly]);
-        assert!(limits[1].severe && limits[0].resets.is_some());
-        assert_eq!(title("plus"), "Plus");
+        assert_eq!(limits[0].resets, Some("2099-01-01T00:10:00Z".parse().unwrap()));
+        assert!(limits[1].severe && !limits[0].severe);
     }
 }
