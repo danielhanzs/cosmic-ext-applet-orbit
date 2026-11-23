@@ -29,6 +29,18 @@ fn svg_with(defs: &str, body: &str) -> icon::Handle {
     icon::from_svg_bytes(text.into_bytes()).symbolic(true)
 }
 
+/// A usage meter, as CodexBar draws one: two bars, the session's above and
+/// the week's below, each filled as far as it's used.
+pub fn meter(session: f32, weekly: f32) -> icon::Handle {
+    let bar = |y: f32, used: f32| {
+        let fill = (used.clamp(0.0, 100.0) / 100.0 * 14.0).max(1.0);
+        format!(
+            r#"<rect x="1" y="{y}" width="14" height="4" rx="2" opacity=".35"/><rect x="1" y="{y}" width="{fill:.2}" height="4" rx="2"/>"#
+        )
+    };
+    svg(&format!("{}{}", bar(3.0, session), bar(9.0, weekly)))
+}
+
 /// A battery filled as charged; while charging, a bolt with a clear gap
 /// around it, which reads on a full battery and an empty one alike.
 pub fn battery(percent: f64, charging: bool) -> icon::Handle {

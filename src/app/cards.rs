@@ -1127,4 +1127,55 @@ impl App {
         }
         column.into()
     }
+
+    /// The AI coding assistants signed in to: each window's share used, a
+    /// bar, and when it starts over.
+    pub(super) fn usage_view(&self) -> Element<'_, Message> {
+        let mut column = widget::Column::new().spacing(6).push(
+            widget::Row::new()
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .push(icon::icon(icons::meter(60.0, 30.0)).size(18))
+                .push(text::heading(T.section_usage).width(Length::Fill))
+                .push(button::icon(icon::from_name("view-refresh-symbolic")).padding(4).on_press_maybe((!self.usage_reading).then_some(Message::UsageRefresh))),
+        );
+        if self.usage.is_empty() && self.usage_at.is_some() {
+            column = column.push(text::caption(T.usage_none));
+        }
+        for p in &self.usage {
+            column = column.push(
+                widget::Row::new()
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(text::body(p.name).font(cosmic::font::bold()))
+                    .push(text::caption(p.plan.clone())),
+            );
+            match &p.problem {
+                Some(usage::Problem::Expired) => column = column.push(text::caption(T.usage_expired)),
+                Some(usage::Problem::Failed(err)) => column = column.push(error_text(err)),
+                None => {}
+            }
+            for limit in &p.limits {
+                let name = match &limit.window {
+                    usage::Window::Session => T.session_window.to_string(),
+                    usage::Window::Weekly => T.weekly.to_string(),
+                    usage::Window::Model(model) => format!("{} · {model}", T.weekly),
+                };
+                let share = format!("{:.0}%{}", limit.percent, self.resets(limit));
+                column = column.push(
+                    widget::Column::new()
+                        .spacing(2)
+                        .push(
+                            widget::Row::new()
+                                .align_y(Alignment::Center)
+                                .push(text::caption(name).width(Length::Fill))
+                                // Near the limit: in the warning color.
+                                .push(if limit.severe { error_text(&share) } else { text::caption(share).into() }),
+                        )
+                        .push(widget::determinate_linear(limit.percent / 100.0).width(Length::Fill)),
+                );
+            }
+        }
+        column.into()
+    }
 }

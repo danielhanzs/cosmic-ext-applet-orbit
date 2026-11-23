@@ -149,7 +149,6 @@ strings!(
     section_island,
     section_audio,
     keyboard,
-    general,
     tiles,
     cards,
     hourly,
@@ -265,6 +264,14 @@ strings!(
     shut_down,
     sure,
     stop_mirroring,
+    section_usage,
+    session_window,
+    weekly,
+    usage_expired,
+    usage_none,
+    appearance,
+    on_panel,
+    on_panel_hint,
     no_more_events,
 );
 

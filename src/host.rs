@@ -44,6 +44,33 @@ pub async fn output(program: &str, args: &[&str], secs: u64) -> Result<String, S
     }
 }
 
+/// Like `output`, with `input` on the program's standard input: for what
+/// shouldn't be on its command line (where `ps` shows it), like a token.
+/// The input is never logged.
+pub async fn output_with_input(program: &str, args: &[&str], input: &[u8], secs: u64) -> Result<String, String> {
+    use tokio::io::AsyncWriteExt;
+    let run = async {
+        let mut child = command(program)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("{program}: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input).await.map_err(|e| format!("{program}: {e}"))?;
+        }
+        child.wait_with_output().await.map_err(|e| format!("{program}: {e}"))
+    };
+    match tokio::time::timeout(std::time::Duration::from_secs(secs), run).await {
+        Ok(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
+        Ok(Ok(out)) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        Ok(Err(err)) => Err(err),
+        Err(_) => Err(format!("{program}: no answer")),
+    }
+}
+
 /// `N` bytes from the kernel's random source; none without one.
 pub fn random<const N: usize>() -> Option<[u8; N]> {
     use std::io::Read;

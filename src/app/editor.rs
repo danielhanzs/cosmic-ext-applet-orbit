@@ -21,7 +21,13 @@ impl App {
         // Tabs: the picked one in the accent, underlined.
         let mut tabs = widget::Row::new();
         for (tab, name) in
-            [(EditTab::General, T.general), (EditTab::Tiles, T.tiles), (EditTab::Cards, T.cards), (EditTab::About, T.about)]
+            [
+                (EditTab::Appearance, T.appearance),
+                (EditTab::Panel, T.panel),
+                (EditTab::Tiles, T.tiles),
+                (EditTab::Cards, T.cards),
+                (EditTab::About, T.about),
+            ]
         {
             let picked = tab == self.edit_tab;
             let label = button::custom(
@@ -54,7 +60,8 @@ impl App {
             .push(header)
             .push(tabs)
             .push(match self.edit_tab {
-                EditTab::General => self.edit_general(),
+                EditTab::Appearance => self.edit_appearance(),
+                EditTab::Panel => self.edit_panel(),
                 EditTab::Tiles => self.edit_tiles(),
                 EditTab::Cards => self.edit_cards(),
                 EditTab::About => self.edit_about(),
@@ -62,10 +69,9 @@ impl App {
             .into()
     }
 
-    /// How the popup opens and sits, the cards in it, the tiles' look, and
-    /// what the panel shows.
-    pub(super) fn edit_general(&self) -> Element<'_, Message> {
-        use crate::config::{TileStyle, WifiBadge};
+    /// How the popup opens and sits, and the tiles' look.
+    pub(super) fn edit_appearance(&self) -> Element<'_, Message> {
+        use crate::config::TileStyle;
         let opens = widget::Column::new()
             .spacing(10)
             .push(option(T.dropdown, T.dropdown_hint, Layout::Dropdown, self.prefs.layout, Message::SetLayout))
@@ -80,6 +86,25 @@ impl App {
             .push(option(T.style_high, T.style_high_hint, TileStyle::High, self.prefs.tile_style, Message::TileStyle))
             .push(option(T.style_medium, T.style_medium_hint, TileStyle::Medium, self.prefs.tile_style, Message::TileStyle))
             .push(option(T.style_low, T.style_low_hint, TileStyle::Low, self.prefs.tile_style, Message::TileStyle));
+        widget::Column::new()
+            .spacing(16)
+            .push(group(T.layout, T.layout_hint, opens.into()))
+            .push(group(
+                T.columns,
+                T.columns_hint,
+                widget::Column::new()
+                    .spacing(10)
+                    .push(column_count)
+                    .push(described(switch(T.islands, self.prefs.islands, Message::SetIslands), T.islands_hint))
+                    .into(),
+            ))
+            .push(group(T.tile_style, T.tile_style_hint, looks.into()))
+            .into()
+    }
+
+    /// What the button on the panel shows, and the marks it puts up.
+    pub(super) fn edit_panel(&self) -> Element<'_, Message> {
+        use crate::config::WifiBadge;
         let mut icons = widget::Row::new().spacing(4);
         for (mode, name) in [(PanelIcons::None, T.icons_none), (PanelIcons::Active, T.icons_active), (PanelIcons::All, T.icons_all)] {
             icons = icons.push(choice(name, mode == self.prefs.panel_icons, Message::PanelIcons(mode)));
@@ -102,18 +127,6 @@ impl App {
         }
         widget::Column::new()
             .spacing(16)
-            .push(group(T.layout, T.layout_hint, opens.into()))
-            .push(group(
-                T.columns,
-                T.columns_hint,
-                widget::Column::new()
-                    .spacing(10)
-                    .push(column_count)
-                    .push(described(switch(T.islands, self.prefs.islands, Message::SetIslands), T.islands_hint))
-                    .into(),
-            ))
-            .push(group(T.cards, T.cards_hint, self.edit_sections()))
-            .push(group(T.tile_style, T.tile_style_hint, looks.into()))
             .push(group(
                 T.panel,
                 T.panel_hint,
@@ -124,6 +137,17 @@ impl App {
                     .push(icons)
                     .push(text::body(T.panel_spacing))
                     .push(spacing)
+                    .into(),
+            ))
+            // Everything else the panel can show, in one place.
+            .push(group(
+                T.on_panel,
+                T.on_panel_hint,
+                widget::Column::new()
+                    .spacing(10)
+                    .push(switch(T.weather, self.prefs.weather_panel, Message::WeatherPanel))
+                    .push(switch(T.pomodoro, self.prefs.pomodoro_panel, Message::PomodoroPanel))
+                    .push(switch(T.section_usage, self.prefs.usage_panel, Message::UsagePanel))
                     .into(),
             ))
             .push(group(
@@ -422,7 +446,7 @@ impl App {
         sections.into()
     }
 
-    /// Each card's own settings.
+    /// Which cards show and where, then each card's own settings.
     pub(super) fn edit_cards(&self) -> Element<'_, Message> {
         let city = widget::text_input(T.city_auto, self.city_input.as_str())
             .on_input(Message::City)
@@ -444,7 +468,6 @@ impl App {
                         .on_press(Message::PickPlace(place.clone())),
                 )
             }))
-            .push(switch(T.show_on_panel, self.prefs.weather_panel, Message::WeatherPanel))
             .push(switch(T.hourly, self.prefs.weather_hourly, Message::WeatherHourly));
         if self.prefs.weather_hourly {
             weather = weather.push(text::body(T.hours)).push(count(&[6, 12, 24], self.prefs.weather_hours, Message::WeatherHours));
@@ -472,6 +495,7 @@ impl App {
             }));
         widget::Column::new()
             .spacing(16)
+            .push(group(T.cards, T.cards_hint, self.edit_sections()))
             .push(group(T.weather, T.weather_hint, weather.into()))
             .push(group(T.section_clocks, T.clocks_hint, clocks.into()))
             .into()

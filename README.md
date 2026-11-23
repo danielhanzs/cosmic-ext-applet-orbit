@@ -150,6 +150,15 @@ Off until you turn them on:
 
   Containers outside Compose are listed together. Nothing that removes
   anything (`down`, `prune`) is offered.
+- **AI usage**: the usage limits of the AI coding assistants you're signed
+  in to, as [CodexBar](https://github.com/steipete/CodexBar) shows them:
+  Claude Code's session (5 h), weekly and per-model weekly windows, and
+  Codex's session and weekly ones, each with its share used, a bar and
+  when it starts over. Read from their own APIs with the sign-in each tool
+  already has (only the ones signed in show); the token goes to the tool's
+  maker over HTTPS, never on a command line, never logged, and an expired
+  one is left for the tool to renew. Also on the panel as a two-bar meter
+  (session above, week below) with the session's share, red near a limit.
 - **SSH**: the hosts of `~/.ssh/config` (and what it includes) and the
   places you connected to lately, searchable; or type `user@host`. A click
   opens `ssh` in COSMIC's terminal.
@@ -175,13 +184,16 @@ its tile, its page or the island; optionally with Do not disturb on while
 you focus.
 
 ### Settings
-The editor (the pencil in the popup) has four tabs, each setting with a
+The editor (the pencil in the popup) has five tabs, each setting with a
 line on what it does:
-- **General**: how the popup opens, its columns, separate islands, which
-  cards show and where, the tiles' style, what the panel shows, and badges.
+- **Appearance**: how the popup opens, its columns, separate islands, and
+  the tiles' style.
+- **Panel**: the clock, the tiles' icons and their spacing; what else the
+  panel shows (the weather, the pomodoro, the AI usage meter); and badges.
 - **Tiles**: the tile grid, tiles to add, and your own tiles.
-- **Cards**: each card's own settings — the weather's place and how much of
-  it shows, the clocks' cities.
+- **Cards**: which cards show, in which column and order, then each card's
+  own settings — the weather's place and how much of it shows, the clocks'
+  cities.
 - **About**: version, links, license.
 
 ### VPN and Wi-Fi passwords that just work
@@ -373,6 +385,7 @@ cargo test
 | `src/system.rs` | processor, memory and network use |
 | `src/ddc.rs` | external monitors' brightness over DDC/CI |
 | `src/displays.rs` | displays through cosmic-randr |
+| `src/usage.rs` | the AI coding assistants' usage limits (Claude Code, Codex) |
 | `src/dev.rs` | SSH hosts, listening ports, the busiest processes, libvirt's machines |
 | `src/services.rs` | systemd's services through systemctl, and their journal |
 | `src/docker.rs` | Docker's Compose stacks and containers, their logs and shells |
@@ -406,10 +419,10 @@ Options:
   `3` (columns); `medium`, `low` (tile styles)
 - cards open or added: `calendar`, `weather`, `audio`, `system`, `tasks`,
   `clocks`, `notes`, `docker` (its first stack open), `services`, `ssh`,
-  `ports`, `vms`;
+  `ports`, `vms`, `usage`;
   `find:<text>` searches the services card for that
 - a page: `displays`, `network`, `keepawake`; the editor on a tab:
-  `general`, `tiles`, `cards`
+  `appearance`, `panel`, `tiles`, `cards`
 - `user`: your name and picture in the header
 
 ### Releasing

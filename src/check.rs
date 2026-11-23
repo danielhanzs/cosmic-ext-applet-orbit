@@ -108,6 +108,19 @@ pub fn run() {
                 None => Err("not installed".into()),
             },
         );
+        for p in crate::usage::read().await {
+            let found = match &p.problem {
+                Some(crate::usage::Problem::Expired) => Err("signed out or expired: open it once".to_string()),
+                Some(crate::usage::Problem::Failed(err)) => Err(err.clone()),
+                None => Ok(p
+                    .limits
+                    .iter()
+                    .map(|l| format!("{:?} {:.0}%", l.window, l.percent))
+                    .collect::<Vec<_>>()
+                    .join(", ")),
+            };
+            line(&format!("{} usage", p.name), found);
+        }
         let layouts = keyboard::layouts();
         line(
             "Keyboard layouts",

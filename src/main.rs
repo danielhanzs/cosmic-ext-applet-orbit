@@ -26,6 +26,7 @@ mod sys;
 mod system;
 mod tasks;
 mod updates;
+mod usage;
 mod weather;
 mod workspaces;
 

@@ -118,6 +118,8 @@ pub enum Section {
     Docker,
     /// systemd's services.
     Services,
+    /// The AI coding assistants' usage limits.
+    Usage,
     /// SSH hosts to connect to.
     Ssh,
     /// The ports something listens on.
@@ -127,7 +129,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 16] = [
+    pub const ALL: [Section; 17] = [
         Section::Status,
         Section::Controls,
         Section::Calendar,
@@ -141,6 +143,7 @@ impl Section {
         Section::Notes,
         Section::Docker,
         Section::Services,
+        Section::Usage,
         Section::Ssh,
         Section::Ports,
         Section::Vms,
@@ -191,6 +194,8 @@ pub struct Prefs {
     pub weather_place: Option<crate::weather::Place>,
     /// The weather now on the panel.
     pub weather_panel: bool,
+    /// The AI assistants' usage meter on the panel, when signed in to one.
+    pub usage_panel: bool,
     /// The forecast open, or only today's line.
     pub weather_open: bool,
     /// The forecast's hours shown, and how many (up to 24).
@@ -232,10 +237,11 @@ impl Default for Prefs {
             // The cards added later start off, there to turn on.
             sections: Section::ALL
                 .into_iter()
-                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker | Section::Services | Section::Ssh | Section::Ports | Section::Vms))
+                .filter(|s| !matches!(s, Section::Audio | Section::System | Section::Tasks | Section::Clocks | Section::Notes | Section::Docker | Section::Services | Section::Usage | Section::Ssh | Section::Ports | Section::Vms))
                 .collect(),
             weather_place: None,
             weather_panel: false,
+            usage_panel: true,
             weather_open: false,
             weather_hourly: true,
             weather_hours: 24,
@@ -321,7 +327,7 @@ impl Prefs {
         let own = match section {
             Section::Status | Section::Controls => 0,
             Section::Calendar | Section::Weather | Section::Tasks | Section::Clocks | Section::Notes | Section::Services | Section::Ssh => 1,
-            Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker | Section::Ports | Section::Vms => 2,
+            Section::Notifications | Section::Island | Section::Audio | Section::System | Section::Docker | Section::Ports | Section::Vms | Section::Usage => 2,
         };
         let put = self.placement.iter().find(|(s, _)| *s == section).map(|(_, c)| *c as usize);
         put.unwrap_or(own).min(self.columns() - 1)

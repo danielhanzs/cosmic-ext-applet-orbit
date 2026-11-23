@@ -24,7 +24,7 @@ use crate::{
     icons,
     desktop,
     style,
-    ddc, dev, displays, docker, keyboard, services, swipe::swipe, system, tasks, workspaces,
+    ddc, dev, displays, docker, keyboard, services, usage, swipe::swipe, system, tasks, workspaces,
     i18n::{self, T},
     media::{self, Media},
     notifications::{self, Notification},
@@ -250,6 +250,11 @@ pub struct App {
     /// Docker's stacks (None: no Docker to ask), and the ones opened.
     docker: Option<Vec<docker::Stack>>,
     docker_open: Vec<String>,
+    /// The AI assistants signed in to, with their limits; when last read,
+    /// and whether a read runs.
+    usage: Vec<usage::Provider>,
+    usage_at: Option<Instant>,
+    usage_reading: bool,
     /// SSH: the config's hosts, and a destination being typed.
     ssh_hosts: Vec<dev::SshHost>,
     ssh_input: String,
@@ -421,6 +426,11 @@ pub enum Message {
     DockerDone(String, Option<Vec<docker::Stack>>),
     /// A terminal in a stack's folder.
     DockerFolder(String),
+    Usage(Vec<usage::Provider>),
+    /// A surface (the panel's tooltip) to make or remove.
+    Surface(cosmic::surface::Action<Message>),
+    UsageRefresh,
+    UsagePanel(bool),
     SshHosts(Vec<dev::SshHost>),
     SshInput(String),
     /// Connect: to a config host, or a destination typed.
@@ -1037,6 +1047,9 @@ impl App {
             self.ddc_read = Some(Instant::now());
             tasks.push(run(async { Message::Monitors(ddc::monitors().await) }));
         }
+        if self.prefs.sections.contains(&Section::Usage) && self.usage_at.is_none_or(|at| at.elapsed() > Duration::from_secs(60)) {
+            tasks.push(self.read_usage());
+        }
         if self.prefs.sections.contains(&Section::Ssh) {
             tasks.push(run(async { Message::SshHosts(dev::ssh_hosts().await) }));
         }
@@ -1319,6 +1332,7 @@ impl App {
             Section::Clocks => (self.clocks_view(), Look::Padded),
             Section::Docker => (self.docker_view(), Look::Padded),
             Section::Services => (self.services_view(), Look::Padded),
+            Section::Usage => (self.usage_view(), Look::Padded),
             Section::Ssh => (self.ssh_view(), Look::Padded),
             Section::Ports => (self.ports_view(), Look::Padded),
             Section::Vms => (self.vms_view(), Look::Padded),
@@ -1387,6 +1401,55 @@ impl App {
             ddc::set(display, level).await;
             Message::MonitorWritten(display)
         })
+    }
+
+    /// Every assistant's windows, a line each, for the panel's tooltip:
+    /// "Claude Team · Session 27% ↻ 11:39".
+    fn usage_summary(&self) -> String {
+        let mut lines = Vec::new();
+        for p in &self.usage {
+            lines.push(if p.plan.is_empty() { p.name.to_string() } else { format!("{} · {}", p.name, p.plan) });
+            match &p.problem {
+                Some(usage::Problem::Expired) => lines.push(format!("  {}", T.usage_expired)),
+                Some(usage::Problem::Failed(err)) => lines.push(format!("  {}", err.lines().next().unwrap_or_default())),
+                None => {}
+            }
+            for l in &p.limits {
+                let name = match &l.window {
+                    usage::Window::Session => T.session_window.to_string(),
+                    usage::Window::Weekly => T.weekly.to_string(),
+                    usage::Window::Model(model) => format!("{} · {model}", T.weekly),
+                };
+                lines.push(format!("  {name}: {:.0}%{}", l.percent, self.resets(l)));
+            }
+        }
+        lines.join("\n")
+    }
+
+    /// "  ↻ 11:39" today, "  ↻ K 00:59" another day; nothing unknown.
+    fn resets(&self, limit: &usage::Limit) -> String {
+        limit.resets.map_or(String::new(), |at| {
+            let at = at.to_zoned(jiff::tz::TimeZone::system());
+            if at.date() == self.now.date() {
+                format!("  ↻ {}", i18n::clock(at.time()))
+            } else {
+                format!("  ↻ {} {}", i18n::weekday_short(at.date()), i18n::clock(at.time()))
+            }
+        })
+    }
+
+    /// The AI assistants' limits read again, unless a read runs.
+    fn read_usage(&mut self) -> app::Task<Message> {
+        if self.usage_reading {
+            return Task::none();
+        }
+        self.usage_reading = true;
+        run(async { Message::Usage(usage::read().await) })
+    }
+
+    /// Whether the usage limits are shown anywhere: their card, the panel.
+    fn usage_wanted(&self) -> bool {
+        self.prefs.sections.contains(&Section::Usage) || self.prefs.usage_panel
     }
 
     /// Changes a setting and keeps it.
@@ -1701,7 +1764,10 @@ fn switch(label: &'static str, on: bool, message: fn(bool) -> Message) -> Elemen
 /// The editor's pages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditTab {
-    General,
+    /// How the popup opens and looks.
+    Appearance,
+    /// What the panel shows.
+    Panel,
     Tiles,
     Cards,
     About,
@@ -1760,6 +1826,7 @@ fn section_name(section: Section) -> &'static str {
         Section::Notes => T.section_notes,
         Section::Docker => "Docker",
         Section::Services => T.section_services,
+        Section::Usage => T.section_usage,
         Section::Ssh => "SSH",
         Section::Ports => T.section_ports,
         Section::Vms => T.section_vms,
@@ -1859,6 +1926,9 @@ impl cosmic::Application for App {
             docker: None,
             docker_open: Vec::new(),
             docker_busy: Vec::new(),
+            usage: Vec::new(),
+            usage_at: None,
+            usage_reading: false,
             ssh_hosts: Vec::new(),
             ssh_input: String::new(),
             ports: Vec::new(),
@@ -1904,7 +1974,7 @@ impl cosmic::Application for App {
             updates: 0,
             stream_drag: None,
             picking: None,
-            edit_tab: EditTab::General,
+            edit_tab: EditTab::Appearance,
             sample: None,
             load: system::Load::default(),
             cpu_history: std::collections::VecDeque::new(),
@@ -1978,8 +2048,9 @@ impl cosmic::Application for App {
                     _ if option.starts_with("find:") => app.services_query = option["find:".len()..].to_string(),
                     "medium" => app.prefs.tile_style = crate::config::TileStyle::Medium,
                     "low" => app.prefs.tile_style = crate::config::TileStyle::Low,
-                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" | "ssh" | "ports" | "vms" => {
+                    "audio" | "system" | "tasks" | "clocks" | "notes" | "docker" | "services" | "ssh" | "ports" | "vms" | "usage" => {
                         let section = match option {
+                            "usage" => Section::Usage,
                             "ssh" => Section::Ssh,
                             "ports" => Section::Ports,
                             "vms" => Section::Vms,
@@ -2014,11 +2085,12 @@ impl cosmic::Application for App {
                             Message::Page(page)
                         }));
                     }
-                    "general" | "tiles" | "cards" => {
+                    "general" | "appearance" | "panel" | "tiles" | "cards" => {
                         app.edit_tab = match option {
-                            "general" => EditTab::General,
+                            "panel" => EditTab::Panel,
                             "tiles" => EditTab::Tiles,
-                            _ => EditTab::Cards,
+                            "cards" => EditTab::Cards,
+                            _ => EditTab::Appearance,
                         };
                         tasks.push(run(async {
                             tokio::time::sleep(Duration::from_secs(6)).await;
@@ -2173,6 +2245,14 @@ impl cosmic::Application for App {
                 self.docker_busy.retain(|k| *k != key);
                 self.docker = stacks;
             }
+            Message::Usage(providers) => {
+                self.usage_reading = false;
+                self.usage_at = Some(Instant::now());
+                self.usage = providers;
+            }
+            Message::UsageRefresh => return self.read_usage(),
+            Message::Surface(action) => return cosmic::task::message(cosmic::Action::Surface(action)),
+            Message::UsagePanel(on) => self.pref(|p| p.usage_panel = on),
             Message::SshHosts(hosts) => self.ssh_hosts = hosts,
             Message::SshInput(input) => self.ssh_input = input,
             Message::Ssh(destination) => {
@@ -2360,6 +2440,10 @@ impl cosmic::Application for App {
                     if at.elapsed() >= lasts {
                         self.wifi_lost = None;
                     }
+                }
+                // The AI assistants' limits every five minutes, for the panel.
+                if self.usage_wanted() && self.usage_at.is_none_or(|at| at.elapsed() >= Duration::from_secs(300)) {
+                    tasks.push(self.read_usage());
                 }
                 // The user's tiles' states: every few seconds while the popup
                 // shows, now and then for the panel; one round at a time.
@@ -3192,68 +3276,105 @@ impl cosmic::Application for App {
     fn view(&self) -> Element<'_, Message> {
         let applet = &self.core.applet;
         let size = applet.suggested_size(true).0;
+        let horizontal = applet.is_horizontal();
+        // Native: COSMIC's interface density (compact 8, standard 12, spacious 16).
+        let gap = self.prefs.spacing.gap(cosmic::theme::spacing().space_xs);
+        // Every icon tells what it stands for, on hover (not while the popup's open).
+        let tip = |element: Element<'static, Message>, text: String| -> Element<'static, Message> {
+            applet.applet_tooltip(element, text, self.popup.is_some(), Message::Surface, None).into()
+        };
+        let icon = |name: &str, shade: Shade| status_icon(named(name), size, shade);
         let mut icons: Vec<Element<'_, Message>> = Vec::new();
-        let push = |icons: &mut Vec<Element<'_, Message>>, name: &str| icons.push(status_icon(named(name), size, Shade::Plain));
         // Do not disturb: no bell either; they still wait in the center.
         if !self.notifications.is_empty() && !self.dnd {
-            push(&mut icons, "notification-new-symbolic");
+            let text = format!("{}: {}", T.notifications, self.notifications.len());
+            icons.push(tip(icon("notification-new-symbolic", Shade::Plain), text));
         }
         if !self.camera.is_empty() {
-            push(&mut icons, "camera-web-symbolic");
+            icons.push(tip(icon("camera-web-symbolic", Shade::Plain), i18n::using("filming", &self.camera)));
         }
         if !self.audio.recording.is_empty() {
-            push(&mut icons, "audio-input-microphone-symbolic");
+            icons.push(tip(icon("audio-input-microphone-symbolic", Shade::Plain), i18n::using("recording", &self.audio.recording)));
         }
         if self.vpn_on() {
-            push(&mut icons, "network-vpn-symbolic");
+            let names: Vec<&str> = self.net.vpns.iter().filter(|v| v.active.is_some()).map(|v| v.name.as_str()).collect();
+            icons.push(tip(icon("network-vpn-symbolic", Shade::Plain), format!("VPN: {}", names.join(", "))));
         }
-        match &self.net.primary {
-            Some(p) if p.wired => push(&mut icons, "network-wired-symbolic"),
-            Some(_) => push(&mut icons, wifi_icon(
-                self.net.access_points.iter().find(|a| a.active).map_or(0, |a| a.strength),
-            )),
-            None if self.wifi_lost.is_some() => icons.push(status_icon(named("network-wireless-offline-symbolic"), size, Shade::Alert)),
-            None if self.net.wifi_enabled => push(&mut icons, "network-wireless-offline-symbolic"),
-            None => push(&mut icons, "network-offline-symbolic"),
+        let ap = self.net.access_points.iter().find(|a| a.active);
+        icons.push(match &self.net.primary {
+            Some(p) if p.wired => tip(icon("network-wired-symbolic", Shade::Plain), format!("{}: {}", T.wired, p.name)),
+            Some(p) => {
+                let strength = ap.map_or(0, |a| a.strength);
+                tip(icon(wifi_icon(strength), Shade::Plain), format!("{} · {strength}%", ap.map_or(p.name.as_str(), |a| a.ssid.as_str())))
+            }
+            None if self.wifi_lost.is_some() => tip(icon("network-wireless-offline-symbolic", Shade::Alert), T.wifi_dropped.to_string()),
+            None if self.net.wifi_enabled => tip(icon("network-wireless-offline-symbolic", Shade::Plain), T.not_connected.to_string()),
+            None => tip(icon("network-offline-symbolic", Shade::Plain), T.not_connected.to_string()),
+        });
+        let connected: Vec<String> = self
+            .bt
+            .devices
+            .iter()
+            .filter(|d| d.connected)
+            .map(|d| d.battery.map_or(d.name.clone(), |b| format!("{} {b}%", d.name)))
+            .collect();
+        if !connected.is_empty() {
+            icons.push(tip(icon("bluetooth-active-symbolic", Shade::Plain), connected.join(", ")));
         }
-        if self.bt.devices.iter().any(|d| d.connected) {
-            push(&mut icons, "bluetooth-active-symbolic");
-        }
-        push(&mut icons, if self.audio.muted { "audio-volume-muted-symbolic" } else { "audio-volume-high-symbolic" });
+        let output = self.audio.outputs.iter().find(|o| o.default).map_or("", |o| o.description.as_str());
+        icons.push(if self.audio.muted {
+            tip(icon("audio-volume-muted-symbolic", Shade::Plain), format!("{output} · {}", T.muted))
+        } else {
+            tip(icon("audio-volume-high-symbolic", Shade::Plain), format!("{output} · {:.0}%", self.audio.volume * 100.0))
+        });
         // The tiles' own icons: the ones on, or all with the off ones faint.
-        let mut tile_icons = Vec::new();
         for tile in self.prefs.tiles.iter().filter(|t| !t.has_status_icon() && self.available(**t)) {
             let view = self.tile(*tile);
             let shortcut = matches!(tile, Tile::Screenshot | Tile::Workspaces);
-            match self.prefs.panel_icons {
-                PanelIcons::Active if view.on => tile_icons.push(status_icon(view.icon, size, Shade::Plain)),
-                PanelIcons::All if !shortcut => tile_icons.push(status_icon(view.icon, size, if view.on { Shade::Plain } else { Shade::Faint })),
-                _ => {}
-            }
+            let shade = match self.prefs.panel_icons {
+                PanelIcons::Active if view.on => Shade::Plain,
+                PanelIcons::All if !shortcut => if view.on { Shade::Plain } else { Shade::Faint },
+                _ => continue,
+            };
+            let text = if view.subtitle.is_empty() { view.title.clone() } else { format!("{} · {}", view.title, view.subtitle) };
+            icons.push(tip(status_icon(view.icon, size, shade), text));
         }
         if let Some(b) = &self.battery {
             let handle = icons::battery(b.percent, b.charging);
             let low = self.prefs.low_battery_badge && !b.charging && b.percent <= 20.0;
-            icons.push(status_icon(handle, size, if low { Shade::Alert } else { Shade::Plain }));
+            let left = b.left.map_or(String::new(), |d| format!(" ({})", hours_minutes(d)));
+            icons.push(tip(status_icon(handle, size, if low { Shade::Alert } else { Shade::Plain }), format!("{:.0}%{left}", b.percent)));
         }
-        // Before the battery and the clock, at the end of the status icons.
-        let at = icons.len() - usize::from(self.battery.is_some());
-        icons.splice(at..at, tile_icons);
-        let horizontal = applet.is_horizontal();
-        // Native: COSMIC's interface density (compact 8, standard 12, spacious 16).
-        let gap = self.prefs.spacing.gap(cosmic::theme::spacing().space_xs);
+        // Each assistant's meter (its session and week) and the session's
+        // share; every window and when it starts over, on hover.
+        let read: Vec<&usage::Provider> = self.usage.iter().filter(|p| p.problem.is_none() && !p.limits.is_empty()).collect();
+        if self.prefs.usage_panel && !read.is_empty() {
+            let meters = read.iter().fold(widget::Row::new().spacing(gap), |row, p| {
+                let of = |window: usage::Window| p.limits.iter().find(|l| l.window == window).map_or(0.0, |l| l.percent);
+                let severe = p.limits.iter().any(|l| l.severe);
+                let meter = icons::meter(of(usage::Window::Session), of(usage::Window::Weekly));
+                let shown = p.headline().map_or(0.0, |l| l.percent);
+                row.push(
+                    widget::Row::new()
+                        .spacing(4)
+                        .align_y(Alignment::Center)
+                        .push(status_icon(meter, size, if severe { Shade::Alert } else { Shade::Plain }))
+                        .push(applet.text(format!("{shown:.0}%"))),
+                )
+            });
+            icons.push(tip(meters.into(), self.usage_summary()));
+        }
         if let Some(w) = self.weather.as_ref().filter(|_| self.prefs.weather_panel) {
-            icons.push(
-                widget::Row::new()
-                    .spacing(4)
-                    .align_y(Alignment::Center)
-                    .push(status_icon(named(w.condition.icon(w.day)), size, Shade::Plain))
-                    .push(applet.text(format!("{:.0}°", w.temperature)))
-                    .into(),
-            );
+            let shown = widget::Row::new()
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .push(status_icon(named(w.condition.icon(w.day)), size, Shade::Plain))
+                .push(applet.text(format!("{:.0}°", w.temperature)));
+            icons.push(tip(shown.into(), format!("{} · {} · {}", w.place, condition_name(w.condition), format!("{:.0}°", w.temperature))));
         }
         if self.prefs.pomodoro_panel && self.pomodoro.started() {
-            icons.push(applet.text(pomodoro::clock(self.pomodoro.remaining(Instant::now()))).into());
+            let left = pomodoro::clock(self.pomodoro.remaining(Instant::now()));
+            icons.push(tip(applet.text(left.clone()).into(), format!("{} · {left}", self.phase_name())));
         }
         if self.prefs.clock {
             let date = self.now.date();
@@ -3262,7 +3383,7 @@ impl cosmic::Application for App {
             } else {
                 self.now.strftime("%H\n%M").to_string()
             };
-            icons.push(applet.text(clock).into());
+            icons.push(tip(applet.text(clock).into(), i18n::long_date(date)));
         }
         let content: Element<'_, Message> = if horizontal {
             widget::row::with_children(icons).spacing(gap).align_y(Alignment::Center).into()
